@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+redis
+cryptography
+pyjwt
+httpx
+langchain
+requests
+pydantic
