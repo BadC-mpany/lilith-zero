@@ -1,0 +1,12 @@
+# Ignore everything by default
+**/*
+
+# But DO NOT ignore these specific files and directories needed for the build
+!src/
+!secrets/
+!policies.yaml
+!requirements.txt
+!pyproject.toml
+!poetry.lock
+!Dockerfile.interceptor
+!Dockerfile.mcp

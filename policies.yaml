@@ -1,0 +1,50 @@
+# Sentinel Policy Configuration
+# This file defines API key permissions, upstream servers, and security rules.
+
+# --- Customer & API Key Definitions ---
+customers:
+  # This key is for the demonstration agent.
+  - api_key: "sk_live_demo_123"
+    owner: "Demo User"
+    # The hidden upstream URL for the MCP server. The agent does not know this.
+    mcp_upstream_url: "http://mcp_server:9000/execute"
+    # The policy identifier to apply to this key.
+    policy_name: "default_policy"
+
+# --- Policy Definitions ---
+policies:
+  - name: "default_policy"
+    # --- STATIC RULES (ACL) ---
+    # Defines a simple ALLOW/DENY for specific tools.
+    # If a tool is not listed, it is implicitly denied.
+    static_rules:
+      read_file: ALLOW
+      web_search: ALLOW
+      delete_db: DENY
+
+    # --- DYNAMIC RULES (Taint Logic) ---
+    # Defines rules that react to the agent's behavior during a session.
+    taint_rules:
+      # Rule 1: Reading a sensitive file adds a 'sensitive_data' taint.
+      - tool: read_file
+        action: ADD_TAINT
+        tag: "sensitive_data"
+        # Optional: You can add conditions, e.g., only taint if a specific file is read.
+        # "conditions": [
+        #   {"arg": "path", "pattern": "/etc/secrets.txt"}
+        # ]
+
+      # Rule 2: Using the web_search tool is forbidden if the session is tainted.
+      - tool: web_search
+        action: CHECK_TAINT
+        # A list of taints that will block this tool.
+        forbidden_tags: ["sensitive_data"]
+        # The error message returned to the agent if blocked.
+        error: "Exfiltration Blocked: Cannot search web after accessing sensitive files."
+
+  - name: "read_only_policy"
+    static_rules:
+      read_file: ALLOW
+      web_search: DENY
+      delete_db: DENY
+    taint_rules: []

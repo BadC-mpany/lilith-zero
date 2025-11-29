@@ -1,23 +1,42 @@
 import time
 import jwt
 import redis
+import os
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Dict, Any
-from sentinel_core import CryptoUtils
+from .sentinel_core import CryptoUtils
 
-# --- CONFIGURATION ---
+
+# --- CONFIGURATION CLASS ---
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file='.env', extra='ignore')
+
+    mcp_public_key_path: str = "secrets/mcp_public.pem"
+    redis_host: str = "localhost"
+    redis_port: int = 6379
+    redis_db: int = 1  # db=1 for Replay Cache
+
+
+# --- GLOBAL CONFIGURATION LOAD ---
+settings = Settings()
+
 try:
-    with open("mcp_public.pem", "rb") as f:
+    with open(settings.mcp_public_key_path, "rb") as f:
         VERIFY_KEY = f.read()
 except FileNotFoundError:
-    raise RuntimeError("Please run keygen.py first!")
+    raise RuntimeError(
+        f"Public key not found at {settings.mcp_public_key_path}. "
+        "Please run keygen.py first!"
+    )
 
 app = FastAPI(title="Secure MCP Resource (Zone C)")
 security = HTTPBearer()
-redis_cache = redis.Redis(host='localhost', port=6379,
-                          db=1)  # db=1 for Replay Cache
+redis_cache = redis.Redis(
+    host=settings.redis_host, port=settings.redis_port, db=settings.redis_db
+)
 
 
 class ToolRequest(BaseModel):
@@ -60,7 +79,6 @@ def verify_sentinel_token(
         raise HTTPException(status_code=403, detail="Token Scope Mismatch")
 
     # 4. PARAMETER BINDING (Anti-TOCTOU)
-    # We hash the args WE received. It must match the hash the Interceptor signed.
     received_hash = CryptoUtils.hash_params(req.args)
     if received_hash != payload.get("p_hash"):
         raise HTTPException(
