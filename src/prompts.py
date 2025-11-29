@@ -28,6 +28,7 @@ Begin!
 Question: {input}
 Thought:{agent_scratchpad}
 """
+# it is not clear to me that the LLM will do this properly. I will look at the raw input and output to check
 
 # Instantiate the PromptTemplate for easy import
 prompt_template = PromptTemplate.from_template(AGENT_SYSTEM_PROMPT)

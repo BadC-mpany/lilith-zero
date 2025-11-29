@@ -72,7 +72,7 @@ def main():
     # 2. Initialize LLM
     llm = ChatOpenAI(
         model=config.OPENROUTER_MODEL,
-        temperature=0,
+        temperature=0, # config
         openai_api_key=config.OPENROUTER_API_KEY,
         base_url=config.OPENROUTER_BASE_URL
     )

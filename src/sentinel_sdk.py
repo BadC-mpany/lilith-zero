@@ -71,7 +71,7 @@ class SentinelSecureTool(BaseTool):
         try:
             print(f"[Agent] Requesting approval for {self.name} with args {args_dict}...")
             with httpx.Client() as client:
-                response = client.post(f"{self._interceptor_url}/v1/proxy-execute", json=payload, headers=headers, timeout=10)
+                response = client.post(f"{self._interceptor_url}/v1/proxy-execute", json=payload, headers=headers, timeout=10) # timeout is 10 seconds. let's do a default, with user-configurable timeout.
                 response.raise_for_status()
             print("[Agent] Access Granted. Result received.")
             return str(response.json())

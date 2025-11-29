@@ -4,6 +4,8 @@ from langchain_core.pydantic_v1 import BaseModel, Field
 # This tells the LangChain agent executor exactly what arguments to expect
 # and how to format them, preventing positional argument errors.
 
+# if we want to add more tools, can this be automatized? like get this from MCP store?
+
 class WebSearchInput(BaseModel):
     """Input for the web_search tool."""
     query: str = Field(description="The search query string.")
