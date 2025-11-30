@@ -75,3 +75,7 @@ Thumbs.db
 ehthumbs.db
 Desktop.ini
 $RECYCLE.BIN/
+
+
+.cursor/*
+redis/*

@@ -10,7 +10,7 @@ import json
 from fastapi import FastAPI, HTTPException, Header
 from pydantic import BaseModel
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from typing import Dict, Any, List, Optional, Union
+from typing import Dict, Any, List, Optional
 from .sentinel_core import CryptoUtils
 from .tool_registry import get_registry
 
@@ -211,28 +211,22 @@ class PatternEvaluator:
         current_classes: List[str]
     ) -> bool:
         """Evaluate a single condition item."""
-        if "session_has_class" in item:
-            # Check if any tool in history has this class
-            history = self.get_session_history(session_id)
-            target_class = item["session_has_class"]
-            return any(target_class in entry.get("classes", []) for entry in history)
-        
-        elif "session_has_tool" in item:
-            # Check if specific tool was executed in history
-            history = self.get_session_history(session_id)
-            target_tool = item["session_has_tool"]
-            return any(entry["tool"] == target_tool for entry in history)
-        
-        elif "current_tool_class" in item:
-            # Check if current tool has this class
+        # Current tool conditions (no I/O needed)
+        if "current_tool_class" in item:
             return item["current_tool_class"] in current_classes
-        
-        elif "current_tool" in item:
-            # Check if current tool matches
+        if "current_tool" in item:
             return item["current_tool"] == current_tool
         
-        elif "session_has_taint" in item:
-            # Check if session has specific taint tag
+        # History-based conditions (fetch once if needed)
+        if "session_has_class" in item or "session_has_tool" in item:
+            history = self.get_session_history(session_id)
+            if "session_has_class" in item:
+                return any(item["session_has_class"] in entry.get("classes", []) for entry in history)
+            if "session_has_tool" in item:
+                return any(entry["tool"] == item["session_has_tool"] for entry in history)
+        
+        # Taint-based conditions
+        if "session_has_taint" in item:
             taint_key = f"session:{session_id}:taints"
             current_taints = {t.decode('utf-8') for t in self.redis.smembers(taint_key)}
             return item["session_has_taint"] in current_taints

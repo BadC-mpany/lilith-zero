@@ -98,15 +98,6 @@ class ToolRegistry:
         """Returns the list of classes for a given tool name."""
         tool = self.get_tool(name)
         return tool.classes if tool else []
-    
-    def get_all_tool_names(self) -> List[str]:
-        """Returns all registered tool names."""
-        return list(self.tools.keys())
-    
-    def get_schema(self, name: str) -> Optional[Type[BaseModel]]:
-        """Returns the Pydantic schema for a tool."""
-        tool = self.get_tool(name)
-        return tool.args_schema if tool else None
 
 
 # Global registry instance
