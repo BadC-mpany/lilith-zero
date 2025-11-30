@@ -1,3 +1,4 @@
+import logging
 import uuid
 import time
 import argparse
@@ -145,9 +146,19 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    # Enable full langchain debugging if verbose is set
+    # --- Logging Configuration ---
+    # Get the root logger for our application module
+    app_logger = logging.getLogger("src")
+    
     if args.verbose:
+        # In verbose mode, enable full langchain debugging and app-level INFO logs
         langchain.debug = True
+        app_logger.setLevel(logging.INFO)
+    else:
+        # In silent mode, suppress all non-critical logs from our app and libraries
+        app_logger.setLevel(logging.CRITICAL)
+        logging.getLogger("httpx").setLevel(logging.CRITICAL)
+
 
     console.print("[bold green]Verifying backend services are running...[/bold green]")
     try:
