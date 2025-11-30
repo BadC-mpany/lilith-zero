@@ -87,12 +87,9 @@ class SentinelSecureTool(BaseTool):
         headers = {"X-API-Key": self._api_key, "Content-Type": "application/json"}
 
         try:
-            print() # Force a newline to separate from agent's Action Input
-            logger.info(f"Requesting approval for tool '{self.name}' with args: {args_dict}")
             with httpx.Client() as client:
                 response = client.post(f"{self._interceptor_url}/v1/proxy-execute", json=payload, headers=headers, timeout=10) # timeout is 10 seconds. let's do a default, with user-configurable timeout.
                 response.raise_for_status()
-            logger.info(f"Access Granted for tool '{self.name}'. Result received.")
             return str(response.json())
         except httpx.HTTPStatusError as e:
             detail = e.response.json().get('detail', e.response.text)
@@ -119,12 +116,9 @@ class SentinelSecureTool(BaseTool):
         headers = {"X-API-Key": self._api_key, "Content-Type": "application/json"}
 
         try:
-            print() # Force a newline to separate from agent's Action Input
-            logger.info(f"(Async) Requesting approval for tool '{self.name}' with args: {args_dict}")
             async with httpx.AsyncClient() as client:
                 response = await client.post(f"{self._interceptor_url}/v1/proxy-execute", json=payload, headers=headers, timeout=10)
                 response.raise_for_status()
-            logger.info(f"(Async) Access Granted for tool '{self.name}'. Result received.")
             return str(response.json())
         except httpx.HTTPStatusError as e:
             detail = e.response.json().get('detail', e.response.text)

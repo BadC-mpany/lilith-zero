@@ -216,3 +216,5 @@ websockets==15.0.1
     # via uvicorn
 yarl==1.22.0
     # via aiohttp
+
+rich

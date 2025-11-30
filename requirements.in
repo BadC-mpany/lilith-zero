@@ -10,3 +10,5 @@ httpx
 redis
 cryptography
 pyjwt
+
+rich
