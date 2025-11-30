@@ -7,7 +7,7 @@ customers:
   - api_key: "sk_live_demo_123"
     owner: "Demo User"
     # The hidden upstream URL for the MCP server. The agent does not know this.
-    mcp_upstream_url: "http://mcp_server:9000/execute"
+    mcp_upstream_url: "http://localhost:9000/execute"
     # The policy identifier to apply to this key.
     policy_name: "default_policy"
 
@@ -23,28 +23,50 @@ policies:
       delete_db: DENY
 
     # --- DYNAMIC RULES (Taint Logic) ---
-    # Defines rules that react to the agent's behavior during a session.
+    # Supports both tool-name-based and class-based rules, plus patterns.
     taint_rules:
-      # Rule 1: Reading a sensitive file adds a 'sensitive_data' taint.
+      # Simple rule: Tool-name-based
+      # Reading any file adds a 'sensitive_data' taint
       - tool: read_file
         action: ADD_TAINT
         tag: "sensitive_data"
-        # Optional: You can add conditions, e.g., only taint if a specific file is read.
-        # "conditions": [
-        #   {"arg": "path", "pattern": "/etc/secrets.txt"}
-        # ]
 
-      # Rule 2: Using the web_search tool is forbidden if the session is tainted.
-      - tool: web_search
+      # Simple rule: Class-based
+      # Any tool with CONSEQUENTIAL_WRITE class is blocked if session has sensitive_data taint
+      - tool_class: CONSEQUENTIAL_WRITE
         action: CHECK_TAINT
-        # A list of taints that will block this tool.
         forbidden_tags: ["sensitive_data"]
-        # The error message returned to the agent if blocked.
-        error: "Exfiltration Blocked: Cannot search web after accessing sensitive files."
+        error: "Exfiltration Blocked: Cannot use external communication tools after accessing sensitive files."
+      
+      # Pattern-based rule: Sequence detection
+      # Block if SENSITIVE_READ followed by CONSEQUENTIAL_WRITE
+      - pattern:
+          type: sequence
+          steps:
+            - class: SENSITIVE_READ
+            - class: CONSEQUENTIAL_WRITE
+          max_distance: null  # Any distance apart
+        action: BLOCK_SECOND
+        error: "Security Policy: Direct exfiltration pattern detected (read sensitive → external write)."
+      
+      # Pattern-based rule: Logic condition
+      # Block any HUMAN_VERIFY tools if session has accessed sensitive data
+      - pattern:
+          type: logic
+          condition:
+            AND:
+              - session_has_class: SENSITIVE_READ
+              - current_tool_class: HUMAN_VERIFY
+        action: BLOCK_CURRENT
+        error: "Security Policy: Cannot perform destructive operations after accessing sensitive data."
 
   - name: "read_only_policy"
     static_rules:
       read_file: ALLOW
       web_search: DENY
       delete_db: DENY
-    taint_rules: []
+    taint_rules:
+      # Even in read-only mode, track that files were read
+      - tool: read_file
+        action: ADD_TAINT
+        tag: "data_accessed"
