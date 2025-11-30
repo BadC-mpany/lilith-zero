@@ -1,0 +1,58 @@
+[
+    {
+      "className": "SAFE_READ",
+      "classificationRule": "Assign if the tool reads public, generic system info, or non-sensitive data. No private user data or secrets involved.",
+      "description": "Operations that retrieve data with zero confidentiality risk.",
+      "exampleFunctionName": "get_current_time",
+      "exampleFunctionDescription": "Returns the current system time in UTC.",
+      "necessity": "Prevents false positives by allowing the agent to gather harmless context without triggering security alerts."
+    },
+    {
+      "className": "SENSITIVE_READ",
+      "classificationRule": "Assign if the tool retrieves private user data, internal documents, secrets, or proprietary database records.",
+      "description": "Operations that access confidential information. Acts as a 'Taint Source'.",
+      "exampleFunctionName": "read_user_email",
+      "exampleFunctionDescription": "Fetches the body and metadata of a specific email message by ID.",
+      "necessity": "Identifies the entry point of sensitive data to immediately begin Taint tracking."
+    },
+    {
+      "className": "SAFE_WRITE",
+      "classificationRule": "Assign if the tool writes to ephemeral, local-only storage (scratchpads, temp files) that is not visible externally.",
+      "description": "Low-risk data storage used for intermediate reasoning or temporary caching.",
+      "exampleFunctionName": "write_to_scratchpad",
+      "exampleFunctionDescription": "Appends text to a temporary, session-scoped scratchpad file.",
+      "necessity": "Enables complex agent reasoning and state maintenance without risking external data leakage."
+    },
+    {
+      "className": "CONSEQUENTIAL_WRITE",
+      "classificationRule": "Assign if the tool sends data to external services, users, or modifies persistent system state (DB updates).",
+      "description": "External sinks or state-changing operations. Acts as a 'Taint Sink'.",
+      "exampleFunctionName": "send_slack_message",
+      "exampleFunctionDescription": "Posts a message to a public Slack channel visible to the team.",
+      "necessity": "The primary enforcement point to block exfiltration of Tainted data or unauthorized system modifications."
+    },
+    {
+      "className": "UNSAFE_EXECUTE",
+      "classificationRule": "Assign if the tool runs arbitrary code, shell commands, or raw SQL queries.",
+      "description": "High-risk capabilities that allow broad, undefined system access.",
+      "exampleFunctionName": "python_repl",
+      "exampleFunctionDescription": "Executes arbitrary Python code in a sandboxed environment.",
+      "necessity": "Isolates 'God Mode' tools that require strict sandboxing and cannot be secured via simple input validation."
+    },
+    {
+      "className": "HUMAN_VERIFY",
+      "classificationRule": "Assign if the tool performs irreversible, destructive, or high-value actions (financial, deletion).",
+      "description": "Critical actions where the cost of error is unacceptable.",
+      "exampleFunctionName": "delete_production_database",
+      "exampleFunctionDescription": "Permanently deletes the main production database cluster.",
+      "necessity": "Provides a mandatory 'human-in-the-loop' safety net for actions that automated rules cannot reliably judge."
+    },
+    {
+      "className": "SANITIZER",
+      "classificationRule": "Assign if the tool's explicit purpose is to remove sensitive data (PII, secrets) from an input.",
+      "description": "Transforms Tainted data into Clean data. Acts as a 'Taint Cleaner'.",
+      "exampleFunctionName": "redact_pii",
+      "exampleFunctionDescription": "Scans input text and replaces sensitive PII with generic placeholders.",
+      "necessity": "Allows the agent to safely export answers derived from sensitive sources by ensuring the output is de-identified."
+    } 
+  ]

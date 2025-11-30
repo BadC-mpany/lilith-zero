@@ -1,0 +1,40 @@
+tools:
+  web_search:
+    description: "Searches the web for information using a search query."
+    classes: [CONSEQUENTIAL_WRITE]  # Can exfiltrate data
+    auto_classified: false  # manually reviewed
+    args:
+      query:
+        type: string
+        description: "The search query string"
+        required: true
+    
+  read_file:
+    description: "Reads content from a file at the specified path."
+    classes: [SENSITIVE_READ]  # Assumes files could be sensitive
+    auto_classified: false
+    args:
+      path:
+        type: string
+        description: "The file path to read from"
+        required: true
+    
+  delete_db:
+    description: "Permanently deletes the database. DESTRUCTIVE operation."
+    classes: [HUMAN_VERIFY]  # Requires human approval
+    auto_classified: false
+    args:
+      confirm:
+        type: boolean
+        description: "Confirmation flag to proceed with deletion. Must be True."
+        required: true
+    
+  redact_pii:
+    description: "Removes PII from text input"
+    classes: [SANITIZER]
+    auto_classified: true  # LLM classified this
+    args:
+      text:
+        type: string
+        description: "Text to sanitize"
+        required: true
