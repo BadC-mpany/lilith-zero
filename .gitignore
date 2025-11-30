@@ -79,3 +79,4 @@ $RECYCLE.BIN/
 
 .cursor/*
 redis/*
+tests_grego/*
