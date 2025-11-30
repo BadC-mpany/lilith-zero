@@ -1,3 +1,4 @@
+import logging
 import time
 import uuid
 import jwt
@@ -10,6 +11,10 @@ from pydantic import BaseModel
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Dict, Any, List, Optional
 from .sentinel_core import CryptoUtils
+
+# --- LOGGING CONFIGURATION ---
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 
 # --- CONFIGURATION CLASSES ---
@@ -77,6 +82,7 @@ def load_policies_from_yaml(file_path: str):
         policy_name = policy_data["name"]
         POLICIES[policy_name] = PolicyDefinition(**policy_data)
 
+
 try:
     load_policies_from_yaml(settings.policies_yaml_path)
 except Exception as e:
@@ -104,8 +110,11 @@ async def interceptor_proxy(req: ProxyRequest, x_api_key: str = Header(None)):
     4. Proxies request to hidden MCP URL.
     """
 
+    logger.info(f"Received proxy request for tool '{req.tool_name}' from session '{req.session_id}'")
+
     # 1. AUTHENTICATION
     if not x_api_key or x_api_key not in CUSTOMERS:
+        logger.warning(f"Rejected request with invalid API key: {x_api_key}")
         raise HTTPException(status_code=401, detail="Invalid API Key")
 
     customer_config = CUSTOMERS[x_api_key]
@@ -119,21 +128,24 @@ async def interceptor_proxy(req: ProxyRequest, x_api_key: str = Header(None)):
     # 2. STATIC RULE CHECK (ACL)
     permission = policy_definition.static_rules.get(req.tool_name, "DENY")
     if permission == "DENY":
+        logger.warning(f"STATIC BLOCK: Tool '{req.tool_name}' denied for session '{req.session_id}' by static policy.")
         raise HTTPException(
             status_code=403, detail=f"Policy Violation: Tool '{req.tool_name}' is forbidden."
         )
 
     # 3. DYNAMIC STATE CHECK (Taint Analysis)
     taint_key = f"session:{req.session_id}:taints"
-    # Get current session taints from Redis
     current_taints = {t.decode('utf-8') for t in redis_client.smembers(taint_key)}
+    logger.info(f"Session '{req.session_id}' has taints: {current_taints if current_taints else 'None'}")
 
     # Check if this tool is blocked by existing taints
     for rule in policy_definition.taint_rules:
         if rule.tool == req.tool_name and rule.action == "CHECK_TAINT":
             if rule.forbidden_tags:
                 forbidden = set(rule.forbidden_tags)
-                if not current_taints.isdisjoint(forbidden):
+                intersection = current_taints.intersection(forbidden)
+                if intersection:
+                    logger.warning(f"DYNAMIC BLOCK: Tool '{req.tool_name}' denied for session '{req.session_id}' due to intersecting taints: {intersection}")
                     # We found an intersection -> BLOCK
                     raise HTTPException(status_code=403, detail=rule.error)
 
@@ -148,11 +160,13 @@ async def interceptor_proxy(req: ProxyRequest, x_api_key: str = Header(None)):
         "iat": now,
         "exp": now + 5
     }
+    logger.info(f"Request approved. Minting capability token for tool '{req.tool_name}' with jti: {token_payload['jti']}")
 
     signed_token = jwt.encode(token_payload, SIGNING_KEY, algorithm="EdDSA")
 
     # 5. SECURE PROXY EXECUTION
     upstream_url = customer_config.mcp_upstream_url
+    logger.info(f"Proxying request to MCP at {upstream_url}")
 
     async with httpx.AsyncClient() as client:
         try:
@@ -163,16 +177,19 @@ async def interceptor_proxy(req: ProxyRequest, x_api_key: str = Header(None)):
                 timeout=5.0
             )
         except httpx.RequestError as e:
+            logger.error(f"Upstream MCP connection error: {e}")
             raise HTTPException(
                 status_code=502, detail=f"Upstream MCP Resource Unreachable: {e}")
 
     if mcp_response.status_code != 200:
+        logger.error(f"MCP returned an error: {mcp_response.status_code} - {mcp_response.text}")
         raise HTTPException(
             status_code=mcp_response.status_code, detail=mcp_response.text)
 
     # 6. STATE UPDATE (Side Effects)
     for rule in policy_definition.taint_rules:
         if rule.tool == req.tool_name and rule.action == "ADD_TAINT":
+            logger.info(f"STATE UPDATE: Adding taint '{rule.tag}' to session '{req.session_id}'")
             redis_client.sadd(taint_key, rule.tag)
             redis_client.expire(taint_key, 3600)
 

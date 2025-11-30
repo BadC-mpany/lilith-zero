@@ -1,3 +1,4 @@
+import logging
 import time
 import jwt
 import redis
@@ -8,6 +9,11 @@ from pydantic import BaseModel
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Dict, Any
 from .sentinel_core import CryptoUtils
+
+# --- LOGGING CONFIGURATION ---
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
 
 
 # --- CONFIGURATION CLASS ---
@@ -92,7 +98,7 @@ def execute_tool(req: ToolRequest, authorized: bool = Depends(verify_sentinel_to
     """
     The actual tool logic. This only runs if the Verifier passes.
     """
-    print(f"[MCP] Executing {req.tool} with {req.args}")
+    logger.info(f"Executing tool '{req.tool}' with args: {req.args}")
 
     if req.tool == "read_file":
         # Simulate reading a private file

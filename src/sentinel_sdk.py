@@ -1,11 +1,29 @@
 import os
 import json
+import logging
 from typing import Optional, Any
 import httpx
 
 # Import Pydantic v1 components from langchain_core for compatibility with BaseTool
-from langchain_core.pydantic_v1 import BaseModel, Field, PrivateAttr
-from langchain_core.tools import BaseTool
+from langchain_core.pydantic_v1 import BaseModel, Field
+from langchain_core.tools import BaseTool, ToolException
+
+# --- LOGGING CONFIGURATION ---
+logger = logging.getLogger(__name__)
+
+
+class SecurityBlockException(ToolException):
+    """
+    Exception raised when a security policy blocks a tool execution.
+    This is a permanent denial - the agent should not retry.
+    """
+    def __init__(self, message: str, tool_name: str, reason: str):
+        # The 'message' is what the LLM will see.
+        super().__init__(f"Tool '{tool_name}' was blocked by a security policy. Reason: {reason}")
+        self.tool_name = tool_name
+        self.reason = reason
+
+
 
 
 class SentinelSecureTool(BaseTool):
@@ -59,7 +77,7 @@ class SentinelSecureTool(BaseTool):
     def _run(self, *args: Any, **kwargs: Any) -> str:
         if self._session_id is None:
             raise ValueError("Session ID must be set before running the tool.")
-        
+
         try:
             args_dict = self._parse_input(*args, **kwargs)
         except ValueError as e:
@@ -69,17 +87,23 @@ class SentinelSecureTool(BaseTool):
         headers = {"X-API-Key": self._api_key, "Content-Type": "application/json"}
 
         try:
-            print(f"[Agent] Requesting approval for {self.name} with args {args_dict}...")
+            print() # Force a newline to separate from agent's Action Input
+            logger.info(f"Requesting approval for tool '{self.name}' with args: {args_dict}")
             with httpx.Client() as client:
                 response = client.post(f"{self._interceptor_url}/v1/proxy-execute", json=payload, headers=headers, timeout=10) # timeout is 10 seconds. let's do a default, with user-configurable timeout.
                 response.raise_for_status()
-            print("[Agent] Access Granted. Result received.")
+            logger.info(f"Access Granted for tool '{self.name}'. Result received.")
             return str(response.json())
         except httpx.HTTPStatusError as e:
             detail = e.response.json().get('detail', e.response.text)
-            print(f"[Agent] Access Denied: {detail}")
-            return f"Result: SECURITY_BLOCK: {detail}"
+            logger.warning(f"Access Denied for tool '{self.name}': {detail}")
+            raise SecurityBlockException(
+                message=f"Tool '{self.name}' was blocked by a security policy.",
+                tool_name=self.name,
+                reason=detail
+            )
         except Exception as e:
+            logger.error(f"An unexpected system error occurred while running tool '{self.name}': {e}", exc_info=True)
             return f"Result: SYSTEM_ERROR: {str(e)}"
 
     async def _arun(self, *args: Any, **kwargs: Any) -> str:
@@ -95,15 +119,21 @@ class SentinelSecureTool(BaseTool):
         headers = {"X-API-Key": self._api_key, "Content-Type": "application/json"}
 
         try:
-            print(f"[Agent] (Async) Requesting approval for {self.name} with args {args_dict}...")
+            print() # Force a newline to separate from agent's Action Input
+            logger.info(f"(Async) Requesting approval for tool '{self.name}' with args: {args_dict}")
             async with httpx.AsyncClient() as client:
                 response = await client.post(f"{self._interceptor_url}/v1/proxy-execute", json=payload, headers=headers, timeout=10)
                 response.raise_for_status()
-            print("[Agent] (Async) Access Granted. Result received.")
+            logger.info(f"(Async) Access Granted for tool '{self.name}'. Result received.")
             return str(response.json())
         except httpx.HTTPStatusError as e:
             detail = e.response.json().get('detail', e.response.text)
-            print(f"[Agent] (Async) Access Denied: {detail}")
-            return f"Result: SECURITY_BLOCK: {detail}"
+            logger.warning(f"(Async) Access Denied for tool '{self.name}': {detail}")
+            raise SecurityBlockException(
+                message=f"Tool '{self.name}' was blocked by a security policy.",
+                tool_name=self.name,
+                reason=detail
+            )
         except Exception as e:
+            logger.error(f"(Async) An unexpected system error occurred while running tool '{self.name}': {e}", exc_info=True)
             return f"Result: SYSTEM_ERROR: {str(e)}"
