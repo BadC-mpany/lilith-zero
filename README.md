@@ -64,13 +64,14 @@ These instructions use Docker Compose to run the backend infrastructure (Interce
 
 ### Step 2: Generate Cryptographic Keys
 
-The Interceptor and MCP use an Ed25519 keypair to sign and verify requests. Run this command once to create the `secrets` directory and the key files.
+The Interceptor and MCP use an Ed25519 keypair to sign and verify requests. Run these commands from the project root directory once to create the `secrets` directory and the key files.
 
 ```powershell
 python -m venv temp_env
 .\temp_env\Scripts\activate
 pip install cryptography
 python sentinel_core/keygen/src/key_gen.py
+New-Item -ItemType Directory -Force -Path sentinel_core/secrets
 Copy-Item secrets/*.pem sentinel_core/secrets/ -Force
 deactivate
 Remove-Item -Recurse -Force temp_env
@@ -154,7 +155,7 @@ This file is the control plane for the entire security system.
 Integrating Sentinel into your own LangChain agent is straightforward.
 
 1.  Ensure your agent's environment has access to the Sentinel source (`src`) or has it installed as a package.
-2.  Use the `sentinel_tool_loader` to create secure tool instances.
+2.  Use the `load_sentinel_tools` function from `sentinel_agent.tool_loader` to create secure tool instances.
 3.  Set the `session_id` before starting your agent loop.
 
 **Example Code Snippet:**
