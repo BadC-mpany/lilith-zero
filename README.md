@@ -117,6 +117,26 @@ python run_experiments.py
 
 You will see the formatted output for each of the four test scenarios, demonstrating the Sentinel system allowing, tainting, and blocking actions as designed.
 
+### Step 6 (Optional): Interactive Conversational Mode
+
+For manual testing and interactive exploration of the security policies, you can use the `conversational_agent.py` script. This provides a professional, chat-like interface to talk directly with the Sentinel-secured agent.
+
+1.  **Ensure your backend is running** (`docker-compose up`).
+2.  **Activate the agent environment**:
+    ```powershell
+    .\sentinel_env\Scripts\activate
+    ```
+3.  **Run the Agent:**
+
+    *   **Default (Clean) Mode:** For a simple, clean chat experience.
+        ```powershell
+        python conversational_agent.py
+        ```
+    *   **Verbose (Debug) Mode:** To see the agent's full thought process, security checks, and detailed LLM inputs/outputs, use the `--verbose` flag.
+        ```powershell
+        python conversational_agent.py --verbose
+        ```
+
 ## System Configuration: `policies.yaml`
 
 This file is the control plane for the entire security system.
