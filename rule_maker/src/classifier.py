@@ -13,13 +13,13 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
-def load_class_definitions(classes_path: str = "rule_maker/taint_classes.json") -> List[Dict[str, Any]]:
+def load_class_definitions(classes_path: str = "rule_maker/data/taint_classes.json") -> List[Dict[str, Any]]:
     """Load class definitions from taint_classes.json"""
     with open(classes_path, 'r') as f:
         return json.load(f)
 
 
-def load_existing_tools(registry_path: str = "rule_maker/tool_registry.yaml") -> Dict[str, Any]:
+def load_existing_tools(registry_path: str = "rule_maker/data/tool_registry.yaml") -> Dict[str, Any]:
     """Load existing tool registry"""
     if not os.path.exists(registry_path):
         return {"tools": {}}

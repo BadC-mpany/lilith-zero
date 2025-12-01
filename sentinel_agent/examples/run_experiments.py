@@ -4,11 +4,13 @@ import uuid
 import time
 import traceback
 from typing import Dict, Any, List
+import sys
+import os
 
-# Import modular components
-from src import config
-from src.prompts import prompt_template
-from src.sentinel_tool_loader import load_sentinel_tools
+# Import modular components from the new structure
+from sentinel_agent.src import config
+from sentinel_agent.src.prompts import prompt_template
+from sentinel_agent.src.tool_loader import load_sentinel_tools
 
 # Import LangChain components
 from langchain.agents import AgentExecutor, create_react_agent

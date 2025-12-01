@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+pydantic-settings
+pyyaml
+httpx
+redis
+pyjwt
+cryptography
+pydantic

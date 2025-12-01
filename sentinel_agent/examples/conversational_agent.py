@@ -6,11 +6,10 @@ import langchain
 from typing import Dict, Any, List
 
 # Import modular components
-from src import config
-from src.sentinel_tool_loader import load_sentinel_tools
-from src.rich_callbacks import RichCallbackHandler, console
-from src.sentinel_sdk import SecurityBlockException
-
+import config
+from tool_loader import load_sentinel_tools
+from rich_callbacks import RichCallbackHandler, console
+from sentinel_sdk import SecurityBlockException
 
 # Import LangChain components
 from langchain.agents import AgentExecutor, create_react_agent
@@ -148,7 +147,7 @@ if __name__ == "__main__":
 
     # --- Logging Configuration ---
     # Get the root logger for our application module
-    app_logger = logging.getLogger("src")
+    app_logger = logging.getLogger("sentinel-agent")
     
     if args.verbose:
         # In verbose mode, enable full langchain debugging and app-level INFO logs
@@ -170,4 +169,5 @@ if __name__ == "__main__":
     except (ImportError, httpx.RequestError) as e:
         console.print(f"[bold red]CRITICAL ERROR: Could not connect to the Sentinel Interceptor.[/bold red]")
         console.print(f"Please ensure Docker services are running with 'docker-compose up'. Error: {e}")
+
 

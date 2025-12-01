@@ -35,7 +35,7 @@ import yaml
 import os
 import sys
 from typing import List, Dict, Any
-from classifier import classify_tool_with_llm
+from .classifier import classify_tool_with_llm
 from dotenv import load_dotenv
 
 # Load environment variables from .env
@@ -99,7 +99,7 @@ def convert_json_schema_to_yaml_args(input_schema: Dict[str, Any]) -> Dict[str, 
 
 def import_tools_to_registry(
     mcp_file_path: str,
-    registry_path: str = "rule_maker/tool_registry.yaml",
+    registry_path: str = "rule_maker/data/tool_registry.yaml",
     api_key: str = None,
     model: str = "gpt-4o-mini",
     max_examples_per_class: int = 2,
@@ -239,8 +239,8 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--registry",
-        default="rule_maker/tool_registry.yaml",
-        help="Path to tool registry YAML (default: rule_maker/tool_registry.yaml)"
+        default="rule_maker/data/tool_registry.yaml",
+        help="Path to tool registry YAML (default: rule_maker/data/tool_registry.yaml)"
     )
     parser.add_argument(
         "--model",

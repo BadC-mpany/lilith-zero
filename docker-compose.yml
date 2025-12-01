@@ -6,9 +6,9 @@ services:
     hostname: redis
     ports:
       - "6379:6379"
-    command: ["redis-server", "--appendonly", "no"] # Changed to 'no' for ephemeral local dev, persist for production
+    command: ["redis-server", "--appendonly", "no"]
     volumes:
-      - redis_data:/data # Named volume for persistence (optional for local dev)
+      - redis_data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
       interval: 1s
@@ -20,19 +20,19 @@ services:
   interceptor:
     build:
       context: .
-      dockerfile: Dockerfile.interceptor # Will create this Dockerfile
+      dockerfile: sentinel_core/interceptor/python/Dockerfile
     ports:
       - "8000:8000"
     environment:
-      - SENTINEL_URL=http://interceptor:8000 # Inter-service communication
+      - SENTINEL_URL=http://interceptor:8000
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      - REDIS_DB=0 # For Interceptor's taint tracking
+      - REDIS_DB=0
       - INTERCEPTOR_PRIVATE_KEY_PATH=/app/secrets/interceptor_private.pem
       - POLICIES_YAML_PATH=/app/policies.yaml
     volumes:
-      - ./secrets:/app/secrets:ro # Mount secrets as read-only
-      - ./policies.yaml:/app/policies.yaml:ro # Mount policies.yaml as read-only
+      - ./sentinel_core/secrets:/app/secrets:ro
+      - ./sentinel_core/policies.yaml:/app/policies.yaml:ro
     depends_on:
       redis:
         condition: service_healthy
@@ -42,16 +42,16 @@ services:
   mcp_server:
     build:
       context: .
-      dockerfile: Dockerfile.mcp # Will create this Dockerfile
+      dockerfile: sentinel_core/mcp/Dockerfile
     ports:
       - "9000:9000"
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      - REDIS_DB=1 # For MCP's nonce "burn list"
+      - REDIS_DB=1
       - MCP_PUBLIC_KEY_PATH=/app/secrets/mcp_public.pem
     volumes:
-      - ./secrets:/app/secrets:ro # Mount secrets as read-only
+      - ./sentinel_core/secrets:/app/secrets:ro
     depends_on:
       redis:
         condition: service_healthy

@@ -1,4 +1,4 @@
-from src.sentinel_sdk import SentinelSecureTool
+from sentinel_sdk.src.sentinel_sdk import SentinelSecureTool
 import uuid
 import time
 import sys
@@ -14,9 +14,13 @@ def run_simulation():
     print(f"--- STARTING SESSION: {session_id} ---\n")
 
     # Initialize Tools
-    tool_read = SentinelSecureTool(name="read_file", description="Read a file", session_id=session_id)
-    tool_search = SentinelSecureTool(name="web_search", description="Search internet", session_id=session_id)
-    tool_delete = SentinelSecureTool(name="delete_db", description="Delete database", session_id=session_id)
+    tool_read = SentinelSecureTool(name="read_file", description="Read a file")
+    tool_search = SentinelSecureTool(name="web_search", description="Search internet")
+    tool_delete = SentinelSecureTool(name="delete_db", description="Delete database")
+
+    # Set session ID for all tools
+    for tool in [tool_read, tool_search, tool_delete]:
+        tool.set_session_id(session_id)
 
     # SCENARIO 1: Allowed Action (Web Search on clean session)
     print("1. Attempting Web Search (Clean State)...")
