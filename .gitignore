@@ -41,6 +41,7 @@ temp_env/
 # --- Sensitive Information ---
 # NEVER commit secrets or local environment configuration.
 secrets/
+sentinel_core/secrets/
 *.env
 .env.*
 !.env.example

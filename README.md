@@ -64,15 +64,13 @@ These instructions use Docker Compose to run the backend infrastructure (Interce
 
 ### Step 2: Generate Cryptographic Keys
 
-The Interceptor and MCP use an Ed25519 keypair to sign and verify requests. Run these commands from the project root directory once to create the `secrets` directory and the key files.
+The Interceptor and MCP use an Ed25519 keypair to sign and verify requests. Run these commands from the project root directory once to create the `sentinel_core/secrets` directory and the key files.
 
 ```powershell
 python -m venv temp_env
 .\temp_env\Scripts\activate
 pip install cryptography
 python sentinel_core/keygen/src/key_gen.py
-New-Item -ItemType Directory -Force -Path sentinel_core/secrets
-Copy-Item secrets/*.pem sentinel_core/secrets/ -Force
 deactivate
 Remove-Item -Recurse -Force temp_env
 ```

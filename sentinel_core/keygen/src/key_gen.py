@@ -10,7 +10,7 @@ def generate_keys():
     and resistance to side-channel attacks.
     """
     # Ensure secrets directory exists
-    secrets_dir = "secrets"
+    secrets_dir = "sentinel_core/secrets"
     os.makedirs(secrets_dir, exist_ok=True)
     
     private_key = ed25519.Ed25519PrivateKey.generate()
