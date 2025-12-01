@@ -9,6 +9,7 @@ from sentinel_sdk import SentinelSecureTool
 from .tool_registry import get_registry
 from .path_utils import get_project_path
 
+
 def load_sentinel_tools(api_key: str, policies_yaml_path: str = None) -> List[SentinelSecureTool]:
     """
     Loads and returns a list of SentinelSecureTool instances based on the policies
@@ -22,9 +23,9 @@ def load_sentinel_tools(api_key: str, policies_yaml_path: str = None) -> List[Se
         policies_yaml_path = get_project_path("sentinel_core", "policies.yaml")
     elif not os.path.isabs(policies_yaml_path):
         policies_yaml_path = get_project_path(policies_yaml_path)
-    
+
     policies_yaml_path = str(policies_yaml_path)
-    
+
     if not os.path.exists(policies_yaml_path):
         raise FileNotFoundError(f"Policies YAML file not found at {policies_yaml_path}")
 
@@ -37,7 +38,7 @@ def load_sentinel_tools(api_key: str, policies_yaml_path: str = None) -> List[Se
         if cfg.get("api_key") == api_key:
             customer_config = cfg
             break
-    
+
     if not customer_config:
         raise ValueError(f"API Key '{api_key}' not found in {policies_yaml_path} customers.")
 
@@ -54,7 +55,7 @@ def load_sentinel_tools(api_key: str, policies_yaml_path: str = None) -> List[Se
 
     # Get the tool registry which contains descriptions and schemas
     registry = get_registry()
-    
+
     sentinel_tools: List[SentinelSecureTool] = []
     # The agent should be aware of all tools defined in its static rules,
     # whether they are ALLOWED or DENIED. This allows the agent to attempt
@@ -66,14 +67,13 @@ def load_sentinel_tools(api_key: str, policies_yaml_path: str = None) -> List[Se
             # The interceptor is the final authority.
             print(f"Warning: Tool '{tool_name}' from policy not found in tool registry. Skipping.")
             continue
-        
+
         sentinel_tools.append(
             SentinelSecureTool(
-                name=tool_name, 
+                name=tool_name,
                 description=tool_def.description,
                 args_schema=tool_def.args_schema
             )
         )
-    
-    return sentinel_tools
 
+    return sentinel_tools

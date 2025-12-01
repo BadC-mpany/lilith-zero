@@ -150,6 +150,23 @@ This file is the control plane for the entire security system.
     - **`ADD_TAINT`:** If `tool` is used, apply the specified `tag` to the session.
     - **`CHECK_TAINT`:** Before allowing `tool` to run, check if the session has any of the `forbidden_tags`. If so, block the request and return the specified `error` message.
 
+## Tool Classification: `rule_maker`
+
+The `rule_maker` directory contains utilities for managing tool security classifications. Tools are classified into security classes (e.g., `SENSITIVE_READ`, `CONSEQUENTIAL_WRITE`, `HUMAN_VERIFY`) which are used by the interceptor to enforce policies.
+
+- **`tool_registry.yaml`:** Defines all tools with their security classes. The interceptor loads this file to determine tool classifications.
+- **Classifier:** LLM-based tool classification system for automatically categorizing new tools.
+- **MCP Import:** Bulk import tools from MCP (Model Context Protocol) format with automatic classification.
+
+**Quick Example:**
+
+```bash
+# Classify a single tool (requires OPENROUTER_API_KEY in .env)
+python rule_maker/src/classifier.py "send_email" "Sends email to recipient"
+```
+
+For detailed documentation, see `rule_maker/docs/README.md` and `rule_maker/docs/QUICK_START.md`.
+
 ## Integration with Your Own Agent
 
 Integrating Sentinel into your own LangChain agent is straightforward.

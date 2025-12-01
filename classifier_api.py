@@ -61,23 +61,23 @@ class ToolClassifyResponse(BaseModel):
 async def classify_tool(req: ToolClassifyRequest):
     """
     Classify a tool into security classes.
-    
+
     Returns:
         - classes: List of security class names
         - reasoning: Explanation of classification
     """
     try:
         logger.info(f"Classifying tool: {req.tool_name}")
-        
+
         result = classify_tool_with_llm(
             tool_name=req.tool_name,
             tool_description=req.tool_description,
             max_examples_per_class=req.max_examples_per_class
         )
-        
+
         logger.info(f"Classification complete: {result['classes']}")
         return result
-        
+
     except Exception as e:
         logger.error(f"Classification error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -131,11 +131,10 @@ async def list_classes():
 if __name__ == "__main__":
     logger.info("Starting Classifier API on http://0.0.0.0:8001")
     logger.info("API docs available at http://localhost:8001/docs")
-    
+
     uvicorn.run(
         app,
         host="0.0.0.0",
         port=8001,
         log_level="info"
     )
-
