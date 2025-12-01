@@ -25,8 +25,8 @@ logger = logging.getLogger(__name__)
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file='.env', extra='ignore')
 
-    interceptor_private_key_path: str = "secrets/interceptor_private.pem"
-    redis_host: str = "localhost"
+    interceptor_private_key_path: str = "/app/secrets/interceptor_private.pem"
+    redis_host: str = "redis"
     redis_port: int = 6379
     redis_db: int = 0
 

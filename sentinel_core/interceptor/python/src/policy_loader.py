@@ -3,6 +3,7 @@
 import yaml
 import os
 from pydantic import BaseModel
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Dict, List, Any, Optional
 
 # --- Data Models ---
@@ -35,6 +36,11 @@ class CustomerConfig(BaseModel):
 
 # --- Loader Class ---
 
+class PolicyLoaderSettings(BaseSettings):
+    model_config = SettingsConfigDict(env_file='.env', extra='ignore')
+    policies_yaml_path: str = "/app/policies.yaml"
+    tool_registry_path: str = "/app/rule_maker/data/tool_registry.yaml"
+
 class PolicyLoader:
     """
     Loads all security policies and tool classifications from YAML files.
@@ -43,15 +49,19 @@ class PolicyLoader:
     """
     def __init__(
         self,
-        policies_path: str = "sentinel-core/policies.yaml",
-        tool_registry_path: str = "rule_maker/data/tool_registry.yaml"
+        policies_path: str = None,
+        tool_registry_path: str = None
     ):
+        # Use environment variables if paths not provided
+        settings = PolicyLoaderSettings()
+        self.policies_path = policies_path or settings.policies_yaml_path
+        self.tool_registry_path = tool_registry_path or settings.tool_registry_path
         self.customers: Dict[str, CustomerConfig] = {}
         self.policies: Dict[str, PolicyDefinition] = {}
         self.tool_classes: Dict[str, List[str]] = {}
 
-        self._load_tool_registry(tool_registry_path)
-        self._load_policies(policies_path)
+        self._load_tool_registry(self.tool_registry_path)
+        self._load_policies(self.policies_path)
 
     def _load_tool_registry(self, path: str):
         """Loads tool names and their security classes from the tool registry."""

@@ -1,4 +1,4 @@
-from sentinel_sdk.src.sentinel_sdk import SentinelSecureTool
+from sentinel_sdk import SentinelSecureTool, SecurityBlockException
 import uuid
 import time
 import sys
@@ -24,23 +24,35 @@ def run_simulation():
 
     # SCENARIO 1: Allowed Action (Web Search on clean session)
     print("1. Attempting Web Search (Clean State)...")
-    res = tool_search._run(query="LangChain tutorial")
-    print(f"Result: {res}\n")
+    try:
+        res = tool_search._run(query="LangChain tutorial")
+        print(f"Result: {res}\n")
+    except SecurityBlockException as e:
+        print(f"SECURITY BLOCK: {e.reason}\n")
 
     # SCENARIO 2: Explicitly Denied Action (Static ACL)
     print("2. Attempting Database Deletion (Static Rule)...")
-    res = tool_delete._run(confirm=True)
-    print(f"Result: {res}\n")
+    try:
+        res = tool_delete._run(confirm=True)
+        print(f"Result: {res}\n")
+    except SecurityBlockException as e:
+        print(f"SECURITY BLOCK (Expected): {e.reason}\n")
 
     # SCENARIO 3: Triggering Taint (Reading Confidential File)
     print("3. Reading Confidential File (Adds Taint)...")
-    res = tool_read._run(path="/etc/secrets.txt")
-    print(f"Result: {res}\n")
+    try:
+        res = tool_read._run(path="/etc/secrets.txt")
+        print(f"Result: {res}\n")
+    except SecurityBlockException as e:
+        print(f"SECURITY BLOCK: {e.reason}\n")
 
     # SCENARIO 4: Dynamic Block (Web Search AFTER Taint)
     print("4. Attempting Web Search (Tainted State)...")
-    res = tool_search._run(query="How to leak secrets")
-    print(f"Result: {res}\n")
+    try:
+        res = tool_search._run(query="How to leak secrets")
+        print(f"Result: {res}\n")
+    except SecurityBlockException as e:
+        print(f"SECURITY BLOCK (Expected - Taint Check): {e.reason}\n")
 
     # SCENARIO 5: Tampering / Replay Attempt (Manual Hack)
     # This simulates an attacker trying to bypass the SDK

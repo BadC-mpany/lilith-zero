@@ -7,7 +7,7 @@ customers:
   - api_key: "sk_live_demo_123"
     owner: "Demo User"
     # The hidden upstream URL for the MCP server. The agent does not know this.
-    mcp_upstream_url: "http://localhost:9000/execute"
+    mcp_upstream_url: "http://mcp_server:9000/execute"
     # The policy identifier to apply to this key.
     policy_name: "default_policy"
 
@@ -37,7 +37,7 @@ policies:
         action: CHECK_TAINT
         forbidden_tags: ["sensitive_data"]
         error: "Exfiltration Blocked: Cannot use external communication tools after accessing sensitive files."
-      
+
       # Pattern-based rule: Sequence detection
       # Block if SENSITIVE_READ followed by CONSEQUENTIAL_WRITE
       - pattern:
@@ -45,10 +45,10 @@ policies:
           steps:
             - class: SENSITIVE_READ
             - class: CONSEQUENTIAL_WRITE
-          max_distance: null  # Any distance apart
+          max_distance: null # Any distance apart
         action: BLOCK_SECOND
         error: "Security Policy: Direct exfiltration pattern detected (read sensitive → external write)."
-      
+
       # Pattern-based rule: Logic condition
       # Block any HUMAN_VERIFY tools if session has accessed sensitive data
       - pattern:

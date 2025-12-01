@@ -67,13 +67,13 @@ These instructions use Docker Compose to run the backend infrastructure (Interce
 The Interceptor and MCP use an Ed25519 keypair to sign and verify requests. Run this command once to create the `secrets` directory and the key files.
 
 ```powershell
-# In a new terminal
 python -m venv temp_env
 .\temp_env\Scripts\activate
 pip install cryptography
-python src/key_gen.py
+python sentinel_core/keygen/src/key_gen.py
+Copy-Item secrets/*.pem sentinel_core/secrets/ -Force
 deactivate
-rmdir /s /q temp_env
+Remove-Item -Recurse -Force temp_env
 ```
 
 ### Step 3: Run the Backend Services
@@ -105,6 +105,7 @@ In a **new terminal**, set up a clean Python 3.12 virtual environment. This is c
 3.  **Install dependencies:**
     ```powershell
     pip install -r requirements.txt
+    pip install -e sentinel_sdk -e sentinel_agent
     ```
 
 ### Step 5: Run the Experiment Suite
@@ -112,7 +113,7 @@ In a **new terminal**, set up a clean Python 3.12 virtual environment. This is c
 With the backend running and the agent environment activated, execute the test script.
 
 ```powershell
-python run_experiments.py
+python sentinel_agent/examples/run_experiments.py
 ```
 
 You will see the formatted output for each of the four test scenarios, demonstrating the Sentinel system allowing, tainting, and blocking actions as designed.
@@ -128,14 +129,14 @@ For manual testing and interactive exploration of the security policies, you can
     ```
 3.  **Run the Agent:**
 
-    *   **Default (Clean) Mode:** For a simple, clean chat experience.
-        ```powershell
-        python conversational_agent.py
-        ```
-    *   **Verbose (Debug) Mode:** To see the agent's full thought process, security checks, and detailed LLM inputs/outputs, use the `--verbose` flag.
-        ```powershell
-        python conversational_agent.py --verbose
-        ```
+    - **Default (Clean) Mode:** For a simple, clean chat experience.
+      ```powershell
+      python sentinel_agent/examples/conversational_agent.py
+      ```
+    - **Verbose (Debug) Mode:** To see the agent's full thought process, security checks, and detailed LLM inputs/outputs, use the `--verbose` flag.
+      ```powershell
+      python sentinel_agent/examples/conversational_agent.py --verbose
+      ```
 
 ## System Configuration: `policies.yaml`
 
@@ -161,33 +162,19 @@ Integrating Sentinel into your own LangChain agent is straightforward.
 ```python
 import os
 import uuid
-from src.sentinel_tool_loader import load_sentinel_tools
+from sentinel_agent.tool_loader import load_sentinel_tools
 from langchain.agents import AgentExecutor, create_react_agent
-# ... your LLM and prompt setup
+from sentinel_sdk import SecurityBlockException
 
-# --- Your Agent Setup ---
-# 1. Ensure SENTINEL_API_KEY is in the environment
 API_KEY = os.getenv("SENTINEL_API_KEY")
-if not API_KEY:
-    raise ValueError("SENTINEL_API_KEY not set")
-
-# 2. Generate a unique ID for this conversation
 session_id = str(uuid.uuid4())
-
-# 3. Load the tools allowed by your API key
 secure_tools = load_sentinel_tools(api_key=API_KEY)
 
-# 4. Set the session ID on each tool
 for tool in secure_tools:
     tool.set_session_id(session_id)
 
-# 5. Create your agent as you normally would
-# llm = ...
-# prompt = ...
 agent = create_react_agent(llm, secure_tools, prompt)
-agent_executor = AgentExecutor(agent=agent, tools=secure_tools, verbose=True)
-
-# 6. Run your agent
+agent_executor = AgentExecutor(agent=agent, tools=secure_tools, handle_tool_error=True)
 agent_executor.invoke({"input": "Your user's first prompt"})
 ```
 

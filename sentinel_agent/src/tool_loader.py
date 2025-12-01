@@ -6,9 +6,10 @@ from typing import List, Dict
 
 # Use absolute paths for agent-side dependencies
 from sentinel_sdk import SentinelSecureTool
-from tool_registry import get_registry
+from .tool_registry import get_registry
+from .path_utils import get_project_path
 
-def load_sentinel_tools(api_key: str, policies_yaml_path: str = "sentinel_core/policies.yaml") -> List[SentinelSecureTool]:
+def load_sentinel_tools(api_key: str, policies_yaml_path: str = None) -> List[SentinelSecureTool]:
     """
     Loads and returns a list of SentinelSecureTool instances based on the policies
     defined in the policies.yaml file for a given API key.
@@ -16,6 +17,14 @@ def load_sentinel_tools(api_key: str, policies_yaml_path: str = "sentinel_core/p
     This loader is for the AGENT side. It determines which tools to expose to the agent
     but does not enforce any rules itself.
     """
+    # Resolve path relative to project root if not absolute
+    if policies_yaml_path is None:
+        policies_yaml_path = get_project_path("sentinel_core", "policies.yaml")
+    elif not os.path.isabs(policies_yaml_path):
+        policies_yaml_path = get_project_path(policies_yaml_path)
+    
+    policies_yaml_path = str(policies_yaml_path)
+    
     if not os.path.exists(policies_yaml_path):
         raise FileNotFoundError(f"Policies YAML file not found at {policies_yaml_path}")
 

@@ -12,6 +12,8 @@ from typing import Dict, List, Any, Optional, Type
 # Use pydantic v1 for LangChain compatibility
 from langchain_core.pydantic_v1 import BaseModel, Field, create_model
 
+from .path_utils import get_project_path
+
 
 class ToolDefinition:
     """Represents a single tool's complete definition."""
@@ -70,8 +72,16 @@ class ToolDefinition:
 class ToolRegistry:
     """Central registry for all tool definitions."""
     
-    def __init__(self, registry_path: str = "rule_maker/tool_registry.yaml"):
-        self.registry_path = registry_path
+    def __init__(self, registry_path: str = None):
+        # Use project root-relative path if not provided
+        if registry_path is None:
+            registry_path = get_project_path("rule_maker", "data", "tool_registry.yaml")
+        else:
+            # If relative path provided, resolve against project root
+            if not os.path.isabs(registry_path):
+                registry_path = get_project_path(registry_path)
+        
+        self.registry_path = str(registry_path)
         self.tools: Dict[str, ToolDefinition] = {}
         self._load_registry()
     

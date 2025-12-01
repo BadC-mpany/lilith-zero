@@ -4,9 +4,9 @@ import logging
 from fastapi import FastAPI, Depends
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# Use absolute paths for core dependencies
-from sentinel_core.mcp.src.token_verifier import verify_sentinel_token, ToolRequest
-from sentinel_core.mcp.src.tool_executor import execute_tool_logic
+# Use relative imports since all modules are in PYTHONPATH
+from token_verifier import verify_sentinel_token, ToolRequest
+from tool_executor import execute_tool_logic
 
 # --- LOGGING CONFIGURATION ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')

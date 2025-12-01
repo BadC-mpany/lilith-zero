@@ -1,14 +1,25 @@
 # sentinel-core/mcp/src/token_verifier.py
 
+import os
 import time
 import jwt
 import redis
 from fastapi import HTTPException, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Dict, Any
 
 from crypto_utils import CryptoUtils
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file='.env', extra='ignore')
+    mcp_public_key_path: str = "/app/secrets/mcp_public.pem"
+    redis_host: str = "redis"
+    redis_port: int = 6379
+    redis_db: int = 1
+
+settings = Settings()
 
 class ToolRequest(BaseModel):
     tool: str
@@ -17,8 +28,8 @@ class ToolRequest(BaseModel):
 def verify_sentinel_token(
     req: ToolRequest,
     auth: HTTPAuthorizationCredentials = Depends(HTTPBearer()),
-    redis_cache: redis.Redis = Depends(lambda: redis.Redis(host="localhost", port=6379, db=1)),
-    verify_key: bytes = Depends(lambda: open("sentinel_core/secrets/mcp_public.pem", "rb").read())
+    redis_cache: redis.Redis = Depends(lambda: redis.Redis(host=settings.redis_host, port=settings.redis_port, db=settings.redis_db)),
+    verify_key: bytes = Depends(lambda: open(settings.mcp_public_key_path, "rb").read())
 ):
     """
     The Verifier Middleware.

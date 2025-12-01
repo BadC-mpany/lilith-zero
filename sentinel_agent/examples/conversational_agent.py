@@ -6,9 +6,10 @@ import langchain
 from typing import Dict, Any, List
 
 # Import modular components
-import config
-from tool_loader import load_sentinel_tools
-from rich_callbacks import RichCallbackHandler, console
+# Use proper package imports - packages are installed in editable mode
+from sentinel_agent import config
+from sentinel_agent.tool_loader import load_sentinel_tools
+from sentinel_agent.rich_callbacks import RichCallbackHandler, console
 from sentinel_sdk import SecurityBlockException
 
 # Import LangChain components
