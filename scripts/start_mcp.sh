@@ -4,9 +4,11 @@
 
 set -e
 
-# Get the directory where this script is located
+# Get the directory where this script is located (scripts/)
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-cd "$SCRIPT_DIR"
+# Get project root (one level up from scripts/)
+PROJECT_ROOT="$( cd "$SCRIPT_DIR/.." && pwd )"
+cd "$PROJECT_ROOT"
 
 echo "=========================================="
 echo "Starting Sentinel MCP Server"
@@ -27,15 +29,15 @@ if [ -n "$VIRTUAL_ENV" ]; then
     fi
 fi
 
-# If no activated venv, check for common venv directory names
+# If no activated venv, check for common venv directory names (in project root)
 if [ -z "$PYTHON_CMD" ]; then
     for venv_dir in venv .venv env sentinel_env; do
-        if [ -f "$SCRIPT_DIR/$venv_dir/Scripts/python.exe" ]; then
-            PYTHON_CMD="$SCRIPT_DIR/$venv_dir/Scripts/python.exe"
+        if [ -f "$PROJECT_ROOT/$venv_dir/Scripts/python.exe" ]; then
+            PYTHON_CMD="$PROJECT_ROOT/$venv_dir/Scripts/python.exe"
             VENV_NAME="$venv_dir"
             break
-        elif [ -f "$SCRIPT_DIR/$venv_dir/bin/python" ]; then
-            PYTHON_CMD="$SCRIPT_DIR/$venv_dir/bin/python"
+        elif [ -f "$PROJECT_ROOT/$venv_dir/bin/python" ]; then
+            PYTHON_CMD="$PROJECT_ROOT/$venv_dir/bin/python"
             VENV_NAME="$venv_dir"
             break
         fi
@@ -112,13 +114,13 @@ if [ -z "$PYTHON_CMD" ] || [ ! -f "$PYTHON_CMD" ]; then
     exit 1
 fi
 
-# Check if keys exist
+# Check if keys exist (in project root)
 PUBLIC_KEY_PATH="sentinel_core/secrets/mcp_public.pem"
-if [ ! -f "$PUBLIC_KEY_PATH" ]; then
-    echo "ERROR: Public key not found at $PUBLIC_KEY_PATH"
+if [ ! -f "$PROJECT_ROOT/$PUBLIC_KEY_PATH" ]; then
+    echo "ERROR: Public key not found at $PROJECT_ROOT/$PUBLIC_KEY_PATH"
     echo ""
     echo "Please generate keys first:"
-    echo "  $PYTHON_CMD sentinel_core/keygen/src/key_gen.py"
+    echo "  $PYTHON_CMD $PROJECT_ROOT/sentinel_core/keygen/src/key_gen.py"
     exit 1
 fi
 
@@ -126,7 +128,7 @@ fi
 if command -v redis-cli &> /dev/null; then
     if ! redis-cli ping &> /dev/null 2>&1; then
         echo "WARNING: Redis does not appear to be running!"
-        echo "Please start Redis first: ./start_redis.sh"
+        echo "Please start Redis first: ./scripts/start_redis.sh"
         echo ""
         echo "Continuing anyway..."
     fi
@@ -140,41 +142,41 @@ export REDIS_HOST="${REDIS_HOST:-localhost}"
 export REDIS_PORT="${REDIS_PORT:-6379}"
 export REDIS_DB="${REDIS_DB:-1}"
 
-# Convert paths based on OS and Python type
+# Convert paths based on OS and Python type (using PROJECT_ROOT)
 if [[ "$IS_WINDOWS" == "true" ]] && ([[ "$PYTHON_CMD" == *".exe" ]] || [[ "$PYTHON_CMD" == "py" ]]); then
     # Windows Python - convert WSL/Git Bash paths to Windows format
-    if [[ "$SCRIPT_DIR" == /mnt/* ]]; then
-        DRIVE_LETTER=$(echo "$SCRIPT_DIR" | sed 's|/mnt/\([a-z]\).*|\1|' | tr '[:lower:]' '[:upper:]')
-        WIN_SCRIPT_DIR=$(echo "$SCRIPT_DIR" | sed "s|/mnt/[a-z]|${DRIVE_LETTER}:|")
-    elif [[ "$SCRIPT_DIR" == /c/* ]]; then
-        WIN_SCRIPT_DIR=$(echo "$SCRIPT_DIR" | sed 's|/c/|C:/|')
+    if [[ "$PROJECT_ROOT" == /mnt/* ]]; then
+        DRIVE_LETTER=$(echo "$PROJECT_ROOT" | sed 's|/mnt/\([a-z]\).*|\1|' | tr '[:lower:]' '[:upper:]')
+        WIN_PROJECT_ROOT=$(echo "$PROJECT_ROOT" | sed "s|/mnt/[a-z]|${DRIVE_LETTER}:|")
+    elif [[ "$PROJECT_ROOT" == /c/* ]]; then
+        WIN_PROJECT_ROOT=$(echo "$PROJECT_ROOT" | sed 's|/c/|C:/|')
     else
-        WIN_SCRIPT_DIR="$SCRIPT_DIR"
+        WIN_PROJECT_ROOT="$PROJECT_ROOT"
     fi
-    export MCP_PUBLIC_KEY_PATH="${MCP_PUBLIC_KEY_PATH:-${WIN_SCRIPT_DIR}/${PUBLIC_KEY_PATH}}"
+    export MCP_PUBLIC_KEY_PATH="${MCP_PUBLIC_KEY_PATH:-${WIN_PROJECT_ROOT}/${PUBLIC_KEY_PATH}}"
 else
     # Unix/Mac/Linux - use standard paths
-    export MCP_PUBLIC_KEY_PATH="${MCP_PUBLIC_KEY_PATH:-$SCRIPT_DIR/$PUBLIC_KEY_PATH}"
+    export MCP_PUBLIC_KEY_PATH="${MCP_PUBLIC_KEY_PATH:-$PROJECT_ROOT/$PUBLIC_KEY_PATH}"
 fi
 
-# Set PYTHONPATH with appropriate separator
+# Set PYTHONPATH with appropriate separator (using PROJECT_ROOT)
 if [[ "$IS_WINDOWS" == "true" ]] && ([[ "$PYTHON_CMD" == *".exe" ]] || [[ "$PYTHON_CMD" == "py" ]]); then
     # Windows Python - convert paths and use semicolon separator
-    if [[ "$SCRIPT_DIR" == /mnt/* ]]; then
+    if [[ "$PROJECT_ROOT" == /mnt/* ]]; then
         # Convert /mnt/c/... to C:/... (uppercase drive letter, forward slashes)
-        DRIVE_LETTER=$(echo "$SCRIPT_DIR" | sed 's|/mnt/\([a-z]\).*|\1|' | tr '[:lower:]' '[:upper:]')
-        WIN_SCRIPT_DIR=$(echo "$SCRIPT_DIR" | sed "s|/mnt/[a-z]|${DRIVE_LETTER}:|")
-    elif [[ "$SCRIPT_DIR" == /c/* ]]; then
-        WIN_SCRIPT_DIR=$(echo "$SCRIPT_DIR" | sed 's|/c/|C:/|')
+        DRIVE_LETTER=$(echo "$PROJECT_ROOT" | sed 's|/mnt/\([a-z]\).*|\1|' | tr '[:lower:]' '[:upper:]')
+        WIN_PROJECT_ROOT=$(echo "$PROJECT_ROOT" | sed "s|/mnt/[a-z]|${DRIVE_LETTER}:|")
+    elif [[ "$PROJECT_ROOT" == /c/* ]]; then
+        WIN_PROJECT_ROOT=$(echo "$PROJECT_ROOT" | sed 's|/c/|C:/|')
     else
-        WIN_SCRIPT_DIR="$SCRIPT_DIR"
+        WIN_PROJECT_ROOT="$PROJECT_ROOT"
     fi
     # Use forward slashes and semicolon separator for Windows PYTHONPATH
-    PYTHONPATH="${WIN_SCRIPT_DIR}/sentinel_core/interceptor/python/src${PATH_SEP}${WIN_SCRIPT_DIR}/sentinel_core/mcp/src${PATH_SEP}${WIN_SCRIPT_DIR}/sentinel_core/shared/python/src${PATH_SEP}${WIN_SCRIPT_DIR}/sentinel_agent/src${PATH_SEP}${WIN_SCRIPT_DIR}/sentinel_sdk/src"
+    PYTHONPATH="${WIN_PROJECT_ROOT}/sentinel_core/interceptor/python/src${PATH_SEP}${WIN_PROJECT_ROOT}/sentinel_core/mcp/src${PATH_SEP}${WIN_PROJECT_ROOT}/sentinel_core/shared/python/src${PATH_SEP}${WIN_PROJECT_ROOT}/sentinel_agent/src${PATH_SEP}${WIN_PROJECT_ROOT}/sentinel_sdk/src"
     export PYTHONPATH
 else
     # Unix/Mac/Linux - use colon separator
-    PYTHONPATH="$SCRIPT_DIR/sentinel_core/interceptor/python/src:$SCRIPT_DIR/sentinel_core/mcp/src:$SCRIPT_DIR/sentinel_core/shared/python/src:$SCRIPT_DIR/sentinel_agent/src:$SCRIPT_DIR/sentinel_sdk/src"
+    PYTHONPATH="$PROJECT_ROOT/sentinel_core/interceptor/python/src:$PROJECT_ROOT/sentinel_core/mcp/src:$PROJECT_ROOT/sentinel_core/shared/python/src:$PROJECT_ROOT/sentinel_agent/src:$PROJECT_ROOT/sentinel_sdk/src"
     export PYTHONPATH
 fi
 
@@ -198,10 +200,10 @@ if ! $PYTHON_CMD -c "import fastapi, uvicorn, redis, jwt, cryptography" 2>/dev/n
         fi
         echo ""
         echo "Or install dependencies manually:"
-        echo "  pip install -r sentinel_core/mcp/requirements.txt"
+        echo "  pip install -r $PROJECT_ROOT/sentinel_core/mcp/requirements.txt"
         exit 1
     fi
-    $PYTHON_CMD -m pip install -q -r sentinel_core/mcp/requirements.txt
+    $PYTHON_CMD -m pip install -q -r "$PROJECT_ROOT/sentinel_core/mcp/requirements.txt"
 fi
 
 echo ""
@@ -228,15 +230,16 @@ if [[ "$IS_WINDOWS" == "true" ]] && ([[ "$PYTHON_CMD" == *".exe" ]] || [[ "$PYTH
     echo "=== PATH CONVERSION DEBUG ==="
     echo "IS_WINDOWS: $IS_WINDOWS"
     echo "PYTHON_CMD: $PYTHON_CMD"
-    echo "SCRIPT_DIR (original): $SCRIPT_DIR"
+    echo "SCRIPT_DIR (scripts/): $SCRIPT_DIR"
+    echo "PROJECT_ROOT: $PROJECT_ROOT"
     
-    if [[ "$SCRIPT_DIR" == /mnt/* ]]; then
+    if [[ "$PROJECT_ROOT" == /mnt/* ]]; then
         echo "Path starts with /mnt/, converting..."
         # Use Python to convert /mnt/c/... to C:/... (WITHOUT suppressing errors)
         WIN_SCRIPT_DIR=$($PYTHON_CMD -c "
 import re
 import sys
-path = '$SCRIPT_DIR'
+path = '$PROJECT_ROOT'
 match = re.match(r'/mnt/([a-z])(.*)', path)
 if match:
     drive = match.group(1).upper()
@@ -249,22 +252,37 @@ else:
         WIN_SCRIPT_DIR=$(echo "$WIN_SCRIPT_DIR" | tr -d '\r\n' | sed 's/[[:space:]]*$//')
         # Fallback if Python conversion fails
         if [[ -z "$WIN_SCRIPT_DIR" ]] || [[ "$WIN_SCRIPT_DIR" == /mnt/* ]]; then
-            DRIVE_LOWER=$(echo "$SCRIPT_DIR" | sed -n 's|/mnt/\([a-z]\).*|\1|p')
+            DRIVE_LOWER=$(echo "$PROJECT_ROOT" | sed -n 's|/mnt/\([a-z]\).*|\1|p')
             DRIVE_UPPER=$(echo "$DRIVE_LOWER" | tr '[:lower:]' '[:upper:]')
-            REST_PATH=$(echo "$SCRIPT_DIR" | sed -n "s|/mnt/$DRIVE_LOWER||p")
+            REST_PATH=$(echo "$PROJECT_ROOT" | sed -n "s|/mnt/$DRIVE_LOWER||p")
             WIN_SCRIPT_DIR="${DRIVE_UPPER}:${REST_PATH}"
         fi
-    elif [[ "$SCRIPT_DIR" == /c/* ]] || [[ "$SCRIPT_DIR" == /C/* ]]; then
-        REST_PATH=$(echo "$SCRIPT_DIR" | sed 's|^/c/||' | sed 's|^/C/||')
+    elif [[ "$PROJECT_ROOT" == /c/* ]] || [[ "$PROJECT_ROOT" == /C/* ]]; then
+        REST_PATH=$(echo "$PROJECT_ROOT" | sed 's|^/c/||' | sed 's|^/C/||')
         WIN_SCRIPT_DIR="C:/${REST_PATH}"
     else
-        WIN_SCRIPT_DIR="$SCRIPT_DIR"
+        WIN_SCRIPT_DIR="$PROJECT_ROOT"
     fi
     
-    echo "FINAL WIN_SCRIPT_DIR: $WIN_SCRIPT_DIR"
+    echo "FINAL WIN_SCRIPT_DIR (PROJECT_ROOT): $WIN_SCRIPT_DIR"
+    
+    # Convert SCRIPT_DIR to Windows format for wrapper script path
+    if [[ "$SCRIPT_DIR" == /mnt/* ]]; then
+        DRIVE_LOWER=$(echo "$SCRIPT_DIR" | sed 's|^/mnt/\([a-z]\).*|\1|')
+        DRIVE_UPPER=$(echo "$DRIVE_LOWER" | tr '[:lower:]' '[:upper:]')
+        REST_PATH="${SCRIPT_DIR#/mnt/$DRIVE_LOWER}"
+        WIN_SCRIPTS_DIR="${DRIVE_UPPER}:${REST_PATH}"
+    elif [[ "$SCRIPT_DIR" == /c/* ]] || [[ "$SCRIPT_DIR" == /C/* ]]; then
+        REST_PATH=$(echo "$SCRIPT_DIR" | sed 's|^/c/||' | sed 's|^/C/||')
+        WIN_SCRIPTS_DIR="C:/${REST_PATH}"
+    else
+        WIN_SCRIPTS_DIR="$SCRIPT_DIR"
+    fi
+    
+    echo "WIN_SCRIPTS_DIR (scripts/): $WIN_SCRIPTS_DIR"
     echo "=== END PATH CONVERSION DEBUG ==="
     
-    # Export environment variables for Python (use Windows paths)
+    # Export environment variables for Python (use Windows paths, PROJECT_ROOT)
     export SENTINEL_SCRIPT_DIR="$WIN_SCRIPT_DIR"
     export MCP_PUBLIC_KEY_PATH="${MCP_PUBLIC_KEY_PATH:-${WIN_SCRIPT_DIR}/sentinel_core/secrets/mcp_public.pem}"
     
@@ -275,7 +293,7 @@ else:
     # Try using wrapper script first (more reliable for Windows)
     # Check file exists using bash path, but use Windows path for Python
     if [ -f "$SCRIPT_DIR/run_mcp.py" ]; then
-        echo "Wrapper script found! Executing: $PYTHON_CMD \"$WIN_SCRIPT_DIR/run_mcp.py\""
+        echo "Wrapper script found! Executing: $PYTHON_CMD \"$WIN_SCRIPTS_DIR/run_mcp.py\""
         # Use forward slashes for Windows Python (it accepts them)
         # Pass ALL environment variables explicitly - Windows Python doesn't inherit bash exports
         env MCP_PUBLIC_KEY_PATH="$MCP_PUBLIC_KEY_PATH" \
@@ -283,10 +301,10 @@ else:
             REDIS_HOST="$REDIS_HOST" \
             REDIS_PORT="$REDIS_PORT" \
             REDIS_DB="$REDIS_DB" \
-            $PYTHON_CMD "$WIN_SCRIPT_DIR/run_mcp.py"
+            $PYTHON_CMD "$WIN_SCRIPTS_DIR/run_mcp.py"
     else
         # Fallback: Use Python to set paths and then run the script directly
-        cd sentinel_core/mcp/src
+        cd "$PROJECT_ROOT/sentinel_core/mcp/src"
         
         $PYTHON_CMD -c "
 import sys, os

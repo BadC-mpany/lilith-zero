@@ -4,6 +4,8 @@ import os
 import time
 import jwt
 import redis
+from logging import getLogger
+import logging
 from fastapi import HTTPException, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
@@ -11,6 +13,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Dict, Any, Optional
 
 from crypto_utils import CryptoUtils
+logger = getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 
 class Settings(BaseSettings):
@@ -33,7 +37,7 @@ class Settings(BaseSettings):
             env_kwargs["redis_port"] = int(os.environ["REDIS_PORT"])
         if "REDIS_DB" in os.environ:
             env_kwargs["redis_db"] = int(os.environ["REDIS_DB"])
-        
+
         # Merge environment variables with kwargs
         merged_kwargs = {**env_kwargs, **kwargs}
         super().__init__(**merged_kwargs)
@@ -100,6 +104,7 @@ def verify_sentinel_token(
 # Redis connection pool for reuse
 _redis_pool: Optional[redis.ConnectionPool] = None
 
+
 def get_redis_connection() -> redis.Redis:
     """Get a Redis connection from the pool."""
     global _redis_pool
@@ -125,7 +130,7 @@ def verify_token_direct(token: str, tool_name: str, arguments: Dict[str, Any]) -
     except Exception as e:
         logger.error(f"Failed to connect to Redis: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Redis connection failed")
-    
+
     try:
         with open(settings.mcp_public_key_path, "rb") as f:
             verify_key = f.read()

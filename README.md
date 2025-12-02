@@ -48,7 +48,7 @@ These instructions cover running the backend infrastructure (Interceptor, MCP, R
 
 - **Backend Services:** Choose one:
   - **Docker & Docker Compose:** [Install Docker Desktop](https://www.docker.com/products/docker-desktop/) (recommended)
-  - **Manual Setup:** Redis installed locally + Python 3.10+ (see `START_SERVICES.md`)
+  - **Manual Setup:** Redis installed locally + Python 3.10+ (see scripts in `./scripts/` directory)
 - **Python 3.12:** The agent environment requires a standard Python 3.12 installation.
 
 ### Step 1: Configure Your Environment
@@ -73,7 +73,7 @@ The Interceptor and MCP use an Ed25519 keypair to sign and verify requests. Run 
 python -m venv temp_env
 .\temp_env\Scripts\activate
 pip install cryptography
-python sentinel_core/keygen/src/key_gen.py
+python sentinel_core\keygen\src\key_gen.py
 deactivate
 Remove-Item -Recurse -Force temp_env
 ```
@@ -91,6 +91,11 @@ docker-compose up --build
 **Option B: Running Services Separately** (Alternative)
 
 If you prefer not to use Docker, you can run each service separately using the provided shell scripts. This method works on Windows (Git Bash or PowerShell), macOS, and Linux.
+
+**Important for PowerShell Users:** PowerShell does not execute `.sh` files directly. You must either:
+
+- Use `bash scripts/script_name.sh` (recommended)
+- Use the PowerShell wrapper scripts: `.\scripts\script_name.ps1`
 
 **Prerequisites:**
 
@@ -127,30 +132,66 @@ If you prefer not to use Docker, you can run each service separately using the p
 
 4. **Start the services in separate terminals** (keep each terminal open):
 
+   **Important:** Run these commands from the project root directory (`sentinel`), not from inside the `scripts` folder.
+
    **Terminal 1 - Redis:**
 
+   **Windows (PowerShell):**
+
+   ```powershell
+   bash scripts/start_redis.sh
+   # OR use PowerShell wrapper:
+   .\scripts\start_redis.ps1
+   ```
+
+   **Windows (Git Bash) / macOS / Linux:**
+
    ```bash
-   ./start_redis.sh
+   ./scripts/start_redis.sh
    ```
 
    This script checks if Redis is running and provides installation instructions if not found.
 
    **Terminal 2 - Interceptor:**
 
+   **Windows (PowerShell):**
+
+   ```powershell
+   # Make sure virtual environment is activated
+   .\sentinel_env\Scripts\Activate.ps1
+   bash scripts/start_interceptor.sh
+   # OR use PowerShell wrapper:
+   .\scripts\start_interceptor.ps1
+   ```
+
+   **Windows (Git Bash) / macOS / Linux:**
+
    ```bash
    # Make sure virtual environment is activated
    source sentinel_env/bin/activate  # or: . sentinel_env/bin/activate
-   ./start_interceptor.sh
+   ./scripts/start_interceptor.sh
    ```
 
    The Interceptor will start on `http://localhost:8000`.
 
    **Terminal 3 - MCP Server:**
 
+   **Windows (PowerShell):**
+
+   ```powershell
+   # Make sure virtual environment is activated
+   .\sentinel_env\Scripts\Activate.ps1
+   bash scripts/start_mcp.sh
+   # OR use PowerShell wrapper:
+   .\scripts\start_mcp.ps1
+   ```
+
+   **Windows (Git Bash) / macOS / Linux:**
+
    ```bash
    # Make sure virtual environment is activated
    source sentinel_env/bin/activate  # or: . sentinel_env/bin/activate
-   ./start_mcp.sh
+   ./scripts/start_mcp.sh
    ```
 
    The MCP server will start on `http://localhost:9000`.
@@ -195,7 +236,7 @@ You will see the formatted output for each of the four test scenarios, demonstra
 
 For manual testing and interactive exploration of the security policies, you can use the `conversational_agent.py` script. This provides a professional, chat-like interface to talk directly with the Sentinel-secured agent.
 
-1.  **Ensure your backend is running** (`docker-compose up` or use the shell scripts from `START_SERVICES.md`).
+1.  **Ensure your backend is running** (`docker-compose up` or use the shell scripts from `./scripts/`).
 2.  **Activate the agent environment**:
     ```powershell
     .\sentinel_env\Scripts\activate
