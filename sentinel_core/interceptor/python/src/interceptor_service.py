@@ -60,6 +60,7 @@ class ProxyRequest(BaseModel):
     session_id: str
     tool_name: str
     args: Dict[str, Any]
+    agent_callback_url: Optional[str] = None
 
 
 # --- PATTERN EVALUATION HELPERS ---
@@ -269,7 +270,9 @@ async def interceptor_proxy(req: ProxyRequest, x_api_key: str = Header(None)):
                 "method": "tools/call",
                 "params": {
                     "name": req.tool_name,
-                    "arguments": req.args
+                    "arguments": req.args,
+                    "session_id": req.session_id,
+                    "agent_callback_url": req.agent_callback_url
                 },
                 "id": str(uuid.uuid4())
             }
