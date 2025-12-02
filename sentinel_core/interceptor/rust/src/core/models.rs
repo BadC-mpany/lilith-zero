@@ -1,2 +1,237 @@
-// Domain models
+// Domain models - Pure Rust domain logic with zero I/O dependencies
 
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::str::FromStr;
+use uuid::Uuid;
+
+/// Newtype wrapper around Uuid for type-safe session identification
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct SessionId(Uuid);
+
+impl SessionId {
+    /// Create a new SessionId from a Uuid
+    pub fn new(id: Uuid) -> Self {
+        Self(id)
+    }
+
+    /// Get the underlying Uuid
+    pub fn as_uuid(&self) -> &Uuid {
+        &self.0
+    }
+
+    /// Generate a new random SessionId
+    pub fn generate() -> Self {
+        Self(Uuid::new_v4())
+    }
+}
+
+impl FromStr for SessionId {
+    type Err = uuid::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Uuid::parse_str(s).map(SessionId)
+    }
+}
+
+impl From<SessionId> for String {
+    fn from(id: SessionId) -> Self {
+        id.0.to_string()
+    }
+}
+
+impl TryFrom<String> for SessionId {
+    type Error = uuid::Error;
+
+    fn try_from(s: String) -> Result<Self, Self::Error> {
+        Uuid::parse_str(&s).map(SessionId)
+    }
+}
+
+impl std::fmt::Display for SessionId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+/// Tool call representation with tool name and arguments
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ToolCall {
+    pub tool_name: String,
+    pub args: serde_json::Value,
+}
+
+/// Proxy request structure matching Python ProxyRequest
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProxyRequest {
+    pub session_id: String,
+    pub tool_name: String,
+    pub args: serde_json::Value,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agent_callback_url: Option<String>,
+}
+
+/// Policy evaluation decision result
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Decision {
+    /// Request is allowed
+    Allowed,
+    /// Request is denied with a reason
+    Denied { reason: String },
+    /// Request is allowed but with side effects (taints to add/remove)
+    AllowedWithSideEffects {
+        taints_to_add: Vec<String>,
+        taints_to_remove: Vec<String>,
+    },
+}
+
+/// Policy rule matching Python PolicyRule structure
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PolicyRule {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_class: Option<String>,
+    pub action: String, // ADD_TAINT, CHECK_TAINT, REMOVE_TAINT, BLOCK, BLOCK_CURRENT, BLOCK_SECOND
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tag: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub forbidden_tags: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pattern: Option<serde_json::Value>, // For sequence/logic patterns
+}
+
+impl PolicyRule {
+    /// Check if this rule matches the given tool name and tool classes
+    /// Matches Python PolicyRule.matches_tool() behavior
+    pub fn matches_tool(&self, tool_name: &str, tool_classes: &[String]) -> bool {
+        // Match by exact tool name
+        if let Some(ref rule_tool) = self.tool {
+            if rule_tool == tool_name {
+                return true;
+            }
+        }
+
+        // Match by tool class
+        if let Some(ref rule_class) = self.tool_class {
+            if tool_classes.iter().any(|class| class == rule_class) {
+                return true;
+            }
+        }
+
+        false
+    }
+}
+
+/// Policy definition matching Python PolicyDefinition structure
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PolicyDefinition {
+    pub name: String,
+    /// Static rules: tool_name -> "ALLOW" or "DENY"
+    pub static_rules: HashMap<String, String>,
+    /// Dynamic taint rules
+    pub taint_rules: Vec<PolicyRule>,
+}
+
+/// Customer configuration matching Python CustomerConfig structure
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CustomerConfig {
+    pub owner: String,
+    pub mcp_upstream_url: String,
+    pub policy_name: String,
+}
+
+/// History entry for session history tracking
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HistoryEntry {
+    pub tool: String,
+    pub classes: Vec<String>,
+    pub timestamp: f64,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_session_id_from_str() {
+        let uuid_str = "550e8400-e29b-41d4-a716-446655440000";
+        let session_id = SessionId::from_str(uuid_str).unwrap();
+        assert_eq!(session_id.to_string(), uuid_str);
+    }
+
+    #[test]
+    fn test_session_id_generate() {
+        let id1 = SessionId::generate();
+        let id2 = SessionId::generate();
+        assert_ne!(id1, id2);
+    }
+
+    #[test]
+    fn test_policy_rule_matches_tool_by_name() {
+        let rule = PolicyRule {
+            tool: Some("read_file".to_string()),
+            tool_class: None,
+            action: "ADD_TAINT".to_string(),
+            tag: None,
+            forbidden_tags: None,
+            error: None,
+            pattern: None,
+        };
+
+        assert!(rule.matches_tool("read_file", &[]));
+        assert!(!rule.matches_tool("write_file", &[]));
+    }
+
+    #[test]
+    fn test_policy_rule_matches_tool_by_class() {
+        let rule = PolicyRule {
+            tool: None,
+            tool_class: Some("SENSITIVE_READ".to_string()),
+            action: "CHECK_TAINT".to_string(),
+            tag: None,
+            forbidden_tags: None,
+            error: None,
+            pattern: None,
+        };
+
+        assert!(rule.matches_tool("any_tool", &["SENSITIVE_READ".to_string()]));
+        assert!(rule.matches_tool("any_tool", &["OTHER".to_string(), "SENSITIVE_READ".to_string()]));
+        assert!(!rule.matches_tool("any_tool", &["OTHER".to_string()]));
+    }
+
+    #[test]
+    fn test_proxy_request_serialization() {
+        let request = ProxyRequest {
+            session_id: "test-session".to_string(),
+            tool_name: "read_file".to_string(),
+            args: serde_json::json!({"path": "/tmp/file.txt"}),
+            agent_callback_url: Some("http://example.com/callback".to_string()),
+        };
+
+        let json = serde_json::to_string(&request).unwrap();
+        let deserialized: ProxyRequest = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(request.session_id, deserialized.session_id);
+        assert_eq!(request.tool_name, deserialized.tool_name);
+        assert_eq!(request.agent_callback_url, deserialized.agent_callback_url);
+    }
+
+    #[test]
+    fn test_decision_serialization() {
+        let decision = Decision::Denied {
+            reason: "Policy violation".to_string(),
+        };
+
+        let json = serde_json::to_string(&decision).unwrap();
+        let deserialized: Decision = serde_json::from_str(&json).unwrap();
+
+        match deserialized {
+            Decision::Denied { reason } => assert_eq!(reason, "Policy violation"),
+            _ => panic!("Expected Denied variant"),
+        }
+    }
+}

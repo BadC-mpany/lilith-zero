@@ -20,11 +20,14 @@ serde_jcs = "0.1"
 
 # Cryptography
 ed25519-dalek = { version = "2.1", features = ["rand_core"] }
-jwt-simple = "0.12"
 sha2 = "0.10"
 secrecy = "0.8"
 hex = "0.4"
 subtle = "2.5"  # Constant-time operations
+pem = "3.0"  # PEM file parsing
+pkcs8 = { version = "0.10", features = ["pem", "std"] }
+der = "0.7"  # DER parsing
+base64 = { version = "0.21", features = ["std"] }
 
 # Redis
 redis = { version = "0.24", features = ["tokio-comp", "connection-manager"] }
@@ -59,6 +62,7 @@ reqwest = { version = "0.11", features = ["json"] }
 [dev-dependencies]
 criterion = "0.5"
 mockito = "1.2"
+static_assertions = "1.1"
 
 [[bench]]
 name = "crypto_bench"
