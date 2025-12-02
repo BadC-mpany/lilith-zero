@@ -1,6 +1,6 @@
 // Unit tests for policy evaluator
 
-use sentinel_interceptor::core::models::{Decision, HistoryEntry, PolicyDefinition, PolicyRule};
+use sentinel_interceptor::core::models::{Decision, PolicyDefinition, PolicyRule};
 use sentinel_interceptor::engine::evaluator::PolicyEvaluator;
 use std::collections::{HashMap, HashSet};
 
