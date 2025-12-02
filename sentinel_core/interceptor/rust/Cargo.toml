@@ -1,0 +1,66 @@
+[package]
+name = "sentinel-interceptor"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Async runtime
+tokio = { version = "1.35", features = ["full"] }
+
+# Web framework
+axum = { version = "0.7", features = ["macros"] }
+tower = { version = "0.4", features = ["util", "timeout", "limit"] }
+tower-http = { version = "0.5", features = ["cors", "trace", "compression-gzip"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_yaml = "0.9"
+serde_jcs = "0.1"
+
+# Cryptography
+ed25519-dalek = { version = "2.1", features = ["rand_core"] }
+jwt-simple = "0.12"
+sha2 = "0.10"
+secrecy = "0.8"
+hex = "0.4"
+subtle = "2.5"  # Constant-time operations
+
+# Redis
+redis = { version = "0.24", features = ["tokio-comp", "connection-manager"] }
+bb8-redis = "0.12"
+
+# Database
+sqlx = { version = "0.7", features = ["runtime-tokio-native-tls", "postgres", "chrono", "uuid"] }
+
+# Caching
+moka = { version = "0.12", features = ["future"] }
+
+# Observability
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+prometheus = "0.13"
+
+# Error handling
+thiserror = "1.0"
+anyhow = "1.0"
+
+# Utilities
+uuid = { version = "1.6", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+config = "0.14"
+
+# Rate limiting
+tower_governor = "0.3"
+
+# HTTP client
+reqwest = { version = "0.11", features = ["json"] }
+
+[dev-dependencies]
+criterion = "0.5"
+mockito = "1.2"
+
+[[bench]]
+name = "crypto_bench"
+harness = false
+

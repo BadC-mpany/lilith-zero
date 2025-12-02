@@ -37,6 +37,7 @@ env.bak/
 venv.bak/
 sentinel_env/
 temp_env/
+docs/
 
 # --- Sensitive Information ---
 # NEVER commit secrets or local environment configuration.
