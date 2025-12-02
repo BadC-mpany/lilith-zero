@@ -1,7 +1,6 @@
 // Unit tests for crypto operations
 
 use sentinel_interceptor::core::crypto::CryptoSigner;
-use sentinel_interceptor::core::errors::CryptoError;
 use serde_json::{json, Value};
 
 #[test]
@@ -199,3 +198,4 @@ fn test_canonicalize_numbers() {
 
 // Note: mint_token tests require a valid PEM file, so we'll skip those in unit tests
 // Integration tests should verify JWT token creation and verification
+
