@@ -91,6 +91,7 @@ fn test_add_taint_by_tool_name() {
         forbidden_tags: None,
         error: None,
         pattern: None,
+        exceptions: None,
     };
 
     let policy = PolicyDefinition {
@@ -134,6 +135,7 @@ fn test_add_taint_by_tool_class() {
         forbidden_tags: None,
         error: None,
         pattern: None,
+        exceptions: None,
     };
 
     let policy = PolicyDefinition {
@@ -172,6 +174,7 @@ fn test_check_taint_blocks_when_tainted() {
         forbidden_tags: Some(vec!["sensitive_data".to_string()]),
         error: Some("Exfiltration blocked".to_string()),
         pattern: None,
+        exceptions: None,
     };
 
     let policy = PolicyDefinition {
@@ -213,6 +216,7 @@ fn test_check_taint_allows_when_not_tainted() {
         forbidden_tags: Some(vec!["sensitive_data".to_string()]),
         error: Some("Exfiltration blocked".to_string()),
         pattern: None,
+        exceptions: None,
     };
 
     let policy = PolicyDefinition {
@@ -250,6 +254,7 @@ fn test_remove_taint_tracked() {
         forbidden_tags: None,
         error: None,
         pattern: None,
+        exceptions: None,
     };
 
     let policy = PolicyDefinition {
@@ -295,6 +300,7 @@ fn test_multiple_taint_rules() {
         forbidden_tags: None,
         error: None,
         pattern: None,
+        exceptions: None,
     };
 
     let rule2 = PolicyRule {
@@ -305,6 +311,7 @@ fn test_multiple_taint_rules() {
         forbidden_tags: None,
         error: None,
         pattern: None,
+        exceptions: None,
     };
 
     let policy = PolicyDefinition {

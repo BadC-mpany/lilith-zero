@@ -3,6 +3,7 @@
 use crate::core::errors::InterceptorError;
 use crate::core::models::{Decision, HistoryEntry, PolicyDefinition};
 use crate::engine::pattern_matcher::PatternMatcher;
+use serde_json::Value;
 use std::collections::HashSet;
 
 /// Policy evaluator - evaluates static and dynamic rules
@@ -23,6 +24,25 @@ impl PolicyEvaluator {
         tool_classes: &[String],
         session_history: &[HistoryEntry],
         current_taints: &HashSet<String>,
+    ) -> Result<Decision, InterceptorError> {
+        Self::evaluate_with_args(
+            policy,
+            tool_name,
+            tool_classes,
+            session_history,
+            current_taints,
+            &Value::Null,
+        )
+    }
+
+    /// Evaluate policy with tool arguments (for exception matching)
+    pub fn evaluate_with_args(
+        policy: &PolicyDefinition,
+        tool_name: &str,
+        tool_classes: &[String],
+        session_history: &[HistoryEntry],
+        current_taints: &HashSet<String>,
+        tool_args: &Value,
     ) -> Result<Decision, InterceptorError> {
         // Step 1: Static rule check (ACL)
         let permission = policy.static_rules.get(tool_name).map(|s| s.as_str()).unwrap_or("DENY");
@@ -69,6 +89,21 @@ impl PolicyEvaluator {
                                 // Check if session has any forbidden taint
                                 for forbidden_tag in forbidden_tags {
                                     if current_taints.contains(forbidden_tag) {
+                                        // Check exceptions before denying
+                                        if let Some(ref exceptions) = rule.exceptions {
+                                            if Self::check_exceptions(
+                                                exceptions,
+                                                session_history,
+                                                tool_name,
+                                                tool_classes,
+                                                current_taints,
+                                                tool_args,
+                                            )? {
+                                                // Exception applies, skip this block
+                                                continue;
+                                            }
+                                        }
+
                                         let error_msg = rule.error.clone()
                                             .unwrap_or_else(|| "Security block: forbidden taint detected".to_string());
                                         return Ok(Decision::Denied { reason: error_msg });
@@ -106,5 +141,30 @@ impl PolicyEvaluator {
                 taints_to_remove,
             })
         }
+    }
+
+    /// Check if any exception applies to the current context
+    fn check_exceptions(
+        exceptions: &[crate::core::models::RuleException],
+        session_history: &[HistoryEntry],
+        tool_name: &str,
+        tool_classes: &[String],
+        current_taints: &HashSet<String>,
+        tool_args: &Value,
+    ) -> Result<bool, InterceptorError> {
+        for exception in exceptions {
+            // Reuse PatternMatcher logic with tool_args support
+            if PatternMatcher::evaluate_condition_with_args(
+                &exception.condition,
+                session_history,
+                tool_name,
+                tool_classes,
+                current_taints,
+                tool_args,
+            )? {
+                return Ok(true);
+            }
+        }
+        Ok(false)
     }
 }

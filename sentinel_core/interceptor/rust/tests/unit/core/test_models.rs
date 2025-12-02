@@ -137,6 +137,7 @@ fn test_policy_rule_matches_tool_by_name() {
         forbidden_tags: None,
         error: None,
         pattern: None,
+        exceptions: None,
     };
 
     assert!(rule.matches_tool("read_file", &[]));
@@ -153,6 +154,7 @@ fn test_policy_rule_matches_tool_by_class() {
         forbidden_tags: Some(vec!["sensitive_data".to_string()]),
         error: None,
         pattern: None,
+        exceptions: None,
     };
 
     assert!(rule.matches_tool("any_tool", &["SENSITIVE_READ".to_string()]));
@@ -171,6 +173,7 @@ fn test_policy_rule_matches_tool_both_name_and_class() {
         forbidden_tags: None,
         error: None,
         pattern: None,
+        exceptions: None,
     };
 
     // Matches by name
@@ -191,6 +194,7 @@ fn test_policy_rule_no_match_when_empty() {
         forbidden_tags: None,
         error: None,
         pattern: None,
+        exceptions: None,
     };
 
     // Should not match anything when both are None
@@ -213,6 +217,7 @@ fn test_policy_definition_serialization() {
             forbidden_tags: None,
             error: None,
             pattern: None,
+            exceptions: None,
         }],
     };
 

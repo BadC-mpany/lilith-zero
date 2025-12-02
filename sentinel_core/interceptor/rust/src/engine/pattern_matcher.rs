@@ -148,17 +148,37 @@ impl PatternMatcher {
     }
 
     /// Evaluate a condition recursively (handles AND, OR, NOT)
-    fn evaluate_condition(
+    /// Made public to support rule exceptions
+    pub fn evaluate_condition(
         condition: &Value,
         history: &[HistoryEntry],
         current_tool: &str,
         current_classes: &[String],
         current_taints: &HashSet<String>,
     ) -> Result<bool, InterceptorError> {
+        Self::evaluate_condition_with_args(
+            condition,
+            history,
+            current_tool,
+            current_classes,
+            current_taints,
+            &Value::Null,
+        )
+    }
+
+    /// Evaluate condition with optional tool arguments (for exceptions)
+    pub fn evaluate_condition_with_args(
+        condition: &Value,
+        history: &[HistoryEntry],
+        current_tool: &str,
+        current_classes: &[String],
+        current_taints: &HashSet<String>,
+        tool_args: &Value,
+    ) -> Result<bool, InterceptorError> {
         // Handle AND operator
         if let Some(and_array) = condition.get("AND").and_then(|v| v.as_array()) {
             for item in and_array {
-                if !Self::evaluate_condition(item, history, current_tool, current_classes, current_taints)? {
+                if !Self::evaluate_condition_with_args(item, history, current_tool, current_classes, current_taints, tool_args)? {
                     return Ok(false);
                 }
             }
@@ -168,7 +188,7 @@ impl PatternMatcher {
         // Handle OR operator
         if let Some(or_array) = condition.get("OR").and_then(|v| v.as_array()) {
             for item in or_array {
-                if Self::evaluate_condition(item, history, current_tool, current_classes, current_taints)? {
+                if Self::evaluate_condition_with_args(item, history, current_tool, current_classes, current_taints, tool_args)? {
                     return Ok(true);
                 }
             }
@@ -177,11 +197,11 @@ impl PatternMatcher {
 
         // Handle NOT operator
         if let Some(not_value) = condition.get("NOT") {
-            return Ok(!Self::evaluate_condition(not_value, history, current_tool, current_classes, current_taints)?);
+            return Ok(!Self::evaluate_condition_with_args(not_value, history, current_tool, current_classes, current_taints, tool_args)?);
         }
 
         // Handle atomic conditions
-        Self::evaluate_atomic_condition(condition, history, current_tool, current_classes, current_taints)
+        Self::evaluate_atomic_condition(condition, history, current_tool, current_classes, current_taints, tool_args)
     }
 
     /// Evaluate atomic condition (leaf node in logic tree)
@@ -191,6 +211,7 @@ impl PatternMatcher {
         current_tool: &str,
         current_classes: &[String],
         current_taints: &HashSet<String>,
+        tool_args: &Value,
     ) -> Result<bool, InterceptorError> {
         // Check: current_tool_class
         if let Some(class_name) = condition.get("current_tool_class").and_then(|v| v.as_str()) {
@@ -217,9 +238,85 @@ impl PatternMatcher {
             return Ok(current_taints.contains(taint_name));
         }
 
+        // Check: tool_args_match (for exceptions)
+        if let Some(args_pattern) = condition.get("tool_args_match").and_then(|v| v.as_object()) {
+            return Ok(Self::matches_args(args_pattern, tool_args));
+        }
+
         // Unknown condition type
         Err(InterceptorError::ConfigurationError(
             format!("Unknown atomic condition: {:?}", condition)
         ))
+    }
+
+    /// Check if tool arguments match a pattern (for exceptions)
+    /// Supports simple wildcard matching with '*'
+    fn matches_args(
+        pattern: &serde_json::Map<String, serde_json::Value>,
+        args: &serde_json::Value,
+    ) -> bool {
+        let args_obj = match args.as_object() {
+            Some(obj) => obj,
+            None => return false,
+        };
+
+        for (key, pattern_value) in pattern {
+            let arg_value = match args_obj.get(key) {
+                Some(v) => v,
+                None => return false,
+            };
+
+            // Handle string wildcard patterns (e.g., "internal_*", "*@company.com")
+            if let (Some(pattern_str), Some(arg_str)) = (pattern_value.as_str(), arg_value.as_str()) {
+                if pattern_str.contains('*') {
+                    if !Self::wildcard_match(pattern_str, arg_str) {
+                        return false;
+                    }
+                    continue;
+                }
+            }
+
+            // Exact match for non-wildcard patterns
+            if arg_value != pattern_value {
+                return false;
+            }
+        }
+
+        true
+    }
+
+    /// Simple wildcard matching (supports * as wildcard)
+    fn wildcard_match(pattern: &str, text: &str) -> bool {
+        let parts: Vec<&str> = pattern.split('*').collect();
+        
+        if parts.len() == 1 {
+            // No wildcard, exact match
+            return pattern == text;
+        }
+
+        let mut pos = 0;
+        for (i, part) in parts.iter().enumerate() {
+            if i == 0 {
+                // First part: must match start
+                if !text.starts_with(part) {
+                    return false;
+                }
+                pos = part.len();
+            } else if i == parts.len() - 1 {
+                // Last part: must match end
+                if !text.ends_with(part) {
+                    return false;
+                }
+            } else {
+                // Middle part: must appear somewhere after pos
+                if let Some(found_pos) = text[pos..].find(part) {
+                    pos += found_pos + part.len();
+                } else {
+                    return false;
+                }
+            }
+        }
+
+        true
     }
 }

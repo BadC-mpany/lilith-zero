@@ -86,6 +86,17 @@ pub enum Decision {
     },
 }
 
+/// Exception condition for rules
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RuleException {
+    /// Condition that must be true for exception to apply (logic pattern format)
+    #[serde(rename = "when")]
+    pub condition: serde_json::Value,
+    /// Reason for the exception (documentation)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
+
 /// Policy rule matching Python PolicyRule structure
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PolicyRule {
@@ -102,6 +113,9 @@ pub struct PolicyRule {
     pub error: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pattern: Option<serde_json::Value>, // For sequence/logic patterns
+    /// Exceptions - conditions under which the rule should NOT apply
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub exceptions: Option<Vec<RuleException>>,
 }
 
 impl PolicyRule {
