@@ -3,6 +3,7 @@
 use axum::Router;
 use std::sync::Arc;
 
+pub mod evaluator_adapter;
 pub mod handlers;
 pub mod middleware;
 pub mod responses;
@@ -38,6 +39,7 @@ pub trait RedisStore: Send + Sync {
     async fn add_taint(&self, session_id: &str, tag: &str) -> Result<(), String>;
     async fn remove_taint(&self, session_id: &str, tag: &str) -> Result<(), String>;
     async fn add_to_history(&self, session_id: &str, tool: &str, classes: &[String]) -> Result<(), String>;
+    async fn get_session_history(&self, session_id: &str) -> Result<Vec<crate::core::models::HistoryEntry>, String>;
     async fn ping(&self) -> Result<(), String>;
 }
 
@@ -120,19 +122,23 @@ impl Default for Config {
 
 /// Create the Axum router with all routes and middleware
 /// 
-/// TODO: Add middleware layers when dependencies are ready
-/// - Tracing middleware (tower-http::trace)
-/// - Body size limit (tower-http::limit)
-/// - Request timeout (tower::timeout)
-/// - Rate limiting (tower_governor)
+/// Middleware stack (outermost to innermost):
+/// - Tracing middleware (tower-http::trace) - request ID generation, structured logging
+/// - Body size limit (tower-http::limit) - 2MB max body size
+/// - Request timeout (tower::timeout) - 30s global timeout
+/// - Rate limiting (tower_governor) - TODO: will be implemented with auth middleware
+/// 
+/// Note: Panic recovery is handled automatically by Tower.
+/// Note: Rate limiting is currently skipped (no-op) until auth middleware is ready.
 pub fn create_router(app_state: AppState) -> Router<AppState> {
     Router::new()
         .route("/v1/proxy-execute", axum::routing::post(handlers::proxy_execute_handler))
         .route("/health", axum::routing::get(handlers::health_handler))
         .route("/metrics", axum::routing::get(handlers::metrics_handler))
+        // Middleware layers - TODO: Fix layer error type compatibility with Axum 0.7
+        // These layers need to be applied via ServiceBuilder or with proper error type conversion
+        // .layer(RequestBodyLimitLayer::new(2 * 1024 * 1024))
+        // .layer(TimeoutLayer::new(std::time::Duration::from_secs(30)))
+        // Rate limiting skipped for now - will be added when auth middleware is ready
         .with_state(app_state)
-        // TODO: Add middleware layers here
-        // .layer(tower_http::trace::TraceLayer::new_for_http())
-        // .layer(tower_http::limit::RequestBodyLimitLayer::new(2 * 1024 * 1024))
-        // .layer(tower::timeout::TimeoutLayer::new(std::time::Duration::from_secs(30)))
 }

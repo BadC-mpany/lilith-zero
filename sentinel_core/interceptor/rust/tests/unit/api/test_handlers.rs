@@ -32,6 +32,10 @@ impl RedisStore for MockRedisStore {
         Ok(())
     }
 
+    async fn get_session_history(&self, _session_id: &str) -> Result<Vec<sentinel_interceptor::core::models::HistoryEntry>, String> {
+        Ok(vec![])
+    }
+
     async fn ping(&self) -> Result<(), String> {
         self.ping_result.clone()
     }

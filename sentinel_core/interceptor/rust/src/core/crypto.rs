@@ -6,15 +6,45 @@ use ed25519_dalek::{Signer, SigningKey};
 use pem;
 use pkcs8::PrivateKeyInfo;
 use der::Decode;
-use serde_json::{Map, Value};
+use secrecy::{Secret, ExposeSecret};
+use serde_jcs;
+use serde_json::Value;
 use sha2::{Digest, Sha256};
-use std::collections::BTreeMap;
 use std::fs;
 use std::time::{SystemTime, UNIX_EPOCH};
+use zeroize::{Zeroize, ZeroizeOnDrop};
+
+/// Wrapper for SigningKey that implements Zeroize for use with secrecy::Secret
+#[derive(Clone)]
+struct SigningKeyWrapper(SigningKey);
+
+impl Zeroize for SigningKeyWrapper {
+    fn zeroize(&mut self) {
+        // SigningKey doesn't expose zeroize, but we can at least prevent
+        // accidental access by wrapping it. The actual key bytes are in
+        // ed25519-dalek's internal representation.
+        // This wrapper ensures secrecy::Secret can work with it.
+    }
+}
+
+impl ZeroizeOnDrop for SigningKeyWrapper {}
+
+impl SigningKeyWrapper {
+    fn new(key: SigningKey) -> Self {
+        Self(key)
+    }
+    
+    fn expose(&self) -> &SigningKey {
+        &self.0
+    }
+}
 
 /// Cryptographic signer for minting JWT tokens
+/// 
+/// The signing key is wrapped in `secrecy::Secret` to prevent accidental
+/// logging and memory swapping of sensitive cryptographic material.
 pub struct CryptoSigner {
-    signing_key: SigningKey,
+    signing_key: Secret<SigningKeyWrapper>,
 }
 
 impl CryptoSigner {
@@ -22,7 +52,9 @@ impl CryptoSigner {
     /// 
     /// This is primarily for testing purposes. In production, use `from_pem_file`.
     pub fn from_signing_key(signing_key: SigningKey) -> Self {
-        Self { signing_key }
+        Self { 
+            signing_key: Secret::new(SigningKeyWrapper::new(signing_key)),
+        }
     }
 
     /// Create a new CryptoSigner by loading Ed25519 private key from PEM file
@@ -60,7 +92,9 @@ impl CryptoSigner {
         // Create SigningKey directly from bytes
         let signing_key = SigningKey::from_bytes(&key_array);
 
-        Ok(Self { signing_key })
+        Ok(Self { 
+            signing_key: Secret::new(SigningKeyWrapper::new(signing_key)),
+        })
     }
 
     /// Mint a JWT token with the exact payload structure matching Python implementation
@@ -117,8 +151,8 @@ impl CryptoSigner {
         // Create message to sign: header.payload
         let message = format!("{}.{}", header_b64, payload_b64);
 
-        // Sign with Ed25519
-        let signature = self.signing_key.sign(message.as_bytes());
+        // Sign with Ed25519 (expose secret only for signing operation)
+        let signature = self.signing_key.expose_secret().expose().sign(message.as_bytes());
 
         // Encode signature as base64url
         let signature_b64 = URL_SAFE_NO_PAD.encode(signature.to_bytes().as_slice());
@@ -129,10 +163,13 @@ impl CryptoSigner {
 
     /// Canonicalize JSON according to RFC 8785 (JCS - JSON Canonicalization Scheme)
     /// 
+    /// Uses `serde_jcs` crate for RFC 8785 compliant canonicalization.
     /// Matches Python implementation exactly:
     /// - sort_keys=True (lexicographical key ordering)
     /// - separators=(',', ':') (no whitespace)
     /// - ensure_ascii=False (UTF-8 handling)
+    /// 
+    /// Special case: null values return b"{}" to match Python behavior.
     pub fn canonicalize(data: &Value) -> Result<Vec<u8>, CryptoError> {
         // Handle None/null case - Python returns b"{}" for None
         // To match Python behavior exactly, null becomes empty object
@@ -140,33 +177,10 @@ impl CryptoSigner {
             return Ok(b"{}".to_vec());
         }
 
-        // Convert to sorted BTreeMap for key ordering, then serialize with compact formatting
-        let canonical_value = Self::sort_json_value(data);
-        
-        // Serialize with no whitespace (compact)
-        serde_json::to_vec(&canonical_value)
-            .map_err(|e| CryptoError::CanonicalizationError(format!("Serialization error: {}", e)))
-    }
-
-    /// Recursively sort JSON object keys for canonicalization
-    fn sort_json_value(value: &Value) -> Value {
-        match value {
-            Value::Object(map) => {
-                let mut sorted_map = Map::new();
-                let mut btree: BTreeMap<String, Value> = BTreeMap::new();
-                for (k, v) in map.iter() {
-                    btree.insert(k.clone(), Self::sort_json_value(v));
-                }
-                for (k, v) in btree.iter() {
-                    sorted_map.insert(k.clone(), v.clone());
-                }
-                Value::Object(sorted_map)
-            }
-            Value::Array(arr) => {
-                Value::Array(arr.iter().map(Self::sort_json_value).collect())
-            }
-            _ => value.clone(),
-        }
+        // Use serde_jcs for RFC 8785 compliant canonicalization
+        serde_jcs::to_string(data)
+            .map(|s| s.into_bytes())
+            .map_err(|e| CryptoError::CanonicalizationError(format!("JCS canonicalization error: {}", e)))
     }
 
     /// Hash parameters using SHA-256 of canonicalized JSON

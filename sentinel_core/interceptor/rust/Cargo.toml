@@ -22,6 +22,7 @@ serde_jcs = "0.1"
 ed25519-dalek = { version = "2.1", features = ["rand_core"] }
 sha2 = "0.10"
 secrecy = "0.8"
+zeroize = { version = "1.6", features = ["zeroize_derive"] }
 hex = "0.4"
 subtle = "2.5"  # Constant-time operations
 pem = "3.0"  # PEM file parsing
