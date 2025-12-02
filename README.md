@@ -276,4 +276,4 @@ The current MVP is fully functional but can be hardened and scaled for productio
 - **Structured Logging:** Replace all `print()` statements in the services with Python's `logging` module for production-grade, searchable logs.
 - **Agent Error Handling:** Refine the agent's prompt or the `AgentExecutor` configuration (`max_iterations`) to handle `SECURITY_BLOCK` errors more gracefully instead of retrying indefinitely.
 - **Implement mTLS:** For maximum security, the connection between the Interceptor and the MCP should be secured with mutual TLS (mTLS) in addition to the JWS token verification.
-- **Configuration Management:** For a large-scale deployment, policies in `policies.yaml` could be moved to a dedicated database or a service like HashiCorp Vault.
+- **Configuration Management:** For a large-scale deployment, policies in `policies.yaml` could be moved to a dedicated database or a service like HashiCorp Vault. 
