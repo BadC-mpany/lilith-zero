@@ -7,6 +7,7 @@ import jwt
 import httpx
 import redis
 import json
+import os
 from fastapi import FastAPI, HTTPException, Header
 from pydantic import BaseModel
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -30,12 +31,29 @@ logger = logging.getLogger(__name__)
 
 # --- CONFIGURATION CLASSES ---
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file='.env', extra='ignore')
+    model_config = SettingsConfigDict(env_file='.env', extra='ignore', env_prefix='')
 
     interceptor_private_key_path: str = "/app/secrets/interceptor_private.pem"
-    redis_host: str = "redis"
+    redis_host: str = "localhost"  # Default to localhost for non-Docker environments
     redis_port: int = 6379
     redis_db: int = 0
+    
+    def __init__(self, **kwargs):
+        # Override defaults with environment variables if they exist
+        # Pydantic BaseSettings should read from env automatically, but we ensure it here
+        env_kwargs = {}
+        if "INTERCEPTOR_PRIVATE_KEY_PATH" in os.environ:
+            env_kwargs["interceptor_private_key_path"] = os.environ["INTERCEPTOR_PRIVATE_KEY_PATH"]
+        if "REDIS_HOST" in os.environ:
+            env_kwargs["redis_host"] = os.environ["REDIS_HOST"]
+        if "REDIS_PORT" in os.environ:
+            env_kwargs["redis_port"] = int(os.environ["REDIS_PORT"])
+        if "REDIS_DB" in os.environ:
+            env_kwargs["redis_db"] = int(os.environ["REDIS_DB"])
+        
+        # Merge environment variables with kwargs
+        merged_kwargs = {**env_kwargs, **kwargs}
+        super().__init__(**merged_kwargs)
 
 
 class ProxyRequest(BaseModel):
@@ -300,6 +318,16 @@ async def interceptor_proxy(req: ProxyRequest, x_api_key: str = Header(None)):
         except httpx.RequestError as e:
             logger.error(f"Upstream MCP connection error: {e}")
             raise HTTPException(status_code=502, detail=f"Upstream MCP Unreachable: {e}")
+        except httpx.HTTPStatusError as e:
+            logger.error(f"MCP server returned HTTP error: {e.response.status_code} - {e.response.text}")
+            try:
+                error_detail = e.response.json().get('error', {}).get('message', e.response.text)
+            except:
+                error_detail = e.response.text or str(e)
+            raise HTTPException(status_code=502, detail=f"MCP server error: {error_detail}")
+        except Exception as e:
+            logger.error(f"Unexpected error in interceptor_proxy: {e}", exc_info=True)
+            raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")
         except HTTPException:
             # Re-raise HTTPExceptions (including those from error handling above)
             raise
@@ -316,7 +344,8 @@ async def interceptor_proxy(req: ProxyRequest, x_api_key: str = Header(None)):
                 redis_client.srem(taint_key, rule.tag)
                 logger.info(f"STATE UPDATE: Removed taint '{rule.tag}' from session '{req.session_id}'")
 
-    return mcp_result
+    # Return proper JSON response
+    return {"result": mcp_result}
 
 if __name__ == "__main__":
     import uvicorn

@@ -90,20 +90,72 @@ docker-compose up --build
 
 **Option B: Running Services Separately** (Alternative)
 
-If you prefer not to use Docker, you can run each service separately using the provided shell scripts:
+If you prefer not to use Docker, you can run each service separately using the provided shell scripts. This method works on Windows (Git Bash or PowerShell), macOS, and Linux.
 
-```bash
-# Terminal 1: Start Redis
-./start_redis.sh
+**Prerequisites:**
 
-# Terminal 2: Start Interceptor
-./start_interceptor.sh
+- Redis installed and running (see Redis setup below)
+- Python 3.10+ with a virtual environment activated
+- Cryptographic keys generated (see Step 2)
 
-# Terminal 3: Start MCP Server
-./start_mcp.sh
-```
+**Setup Steps:**
 
-See `START_SERVICES.md` for detailed instructions.
+1. **Install Redis** (if not already installed):
+
+   - **Windows:** Install Redis via WSL (`wsl sudo apt-get install -y redis-server`) or download from [Redis for Windows](https://github.com/microsoftarchive/redis/releases)
+   - **macOS:** `brew install redis`
+   - **Linux:** `sudo apt-get install redis-server` (Debian/Ubuntu) or use your package manager
+
+2. **Create and activate a virtual environment** (if not already done):
+
+   ```bash
+   # Windows PowerShell
+   py -3.12 -m venv sentinel_env
+   .\sentinel_env\Scripts\activate
+
+   # Windows Git Bash / macOS / Linux
+   python3 -m venv sentinel_env
+   source sentinel_env/bin/activate  # or: . sentinel_env/bin/activate
+   ```
+
+3. **Install dependencies** (once, in the activated virtual environment):
+
+   ```bash
+   pip install -r sentinel_core/interceptor/python/requirements.txt
+   pip install -r sentinel_core/mcp/requirements.txt
+   ```
+
+4. **Start the services in separate terminals** (keep each terminal open):
+
+   **Terminal 1 - Redis:**
+
+   ```bash
+   ./start_redis.sh
+   ```
+
+   This script checks if Redis is running and provides installation instructions if not found.
+
+   **Terminal 2 - Interceptor:**
+
+   ```bash
+   # Make sure virtual environment is activated
+   source sentinel_env/bin/activate  # or: . sentinel_env/bin/activate
+   ./start_interceptor.sh
+   ```
+
+   The Interceptor will start on `http://localhost:8000`.
+
+   **Terminal 3 - MCP Server:**
+
+   ```bash
+   # Make sure virtual environment is activated
+   source sentinel_env/bin/activate  # or: . sentinel_env/bin/activate
+   ./start_mcp.sh
+   ```
+
+   The MCP server will start on `http://localhost:9000`.
+
+**Note:** The shell scripts automatically detect your Python environment, convert paths for cross-platform compatibility, and set required environment variables. They will display configuration information when starting.
 
 The services are now running. The Interceptor is available at `http://localhost:8000` and the MCP at `http://localhost:9000`. You can leave these terminals running.
 

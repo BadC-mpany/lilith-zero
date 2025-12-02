@@ -7,7 +7,9 @@ customers:
   - api_key: "sk_live_demo_123"
     owner: "Demo User"
     # The hidden upstream URL for the MCP server. The agent does not know this.
-    mcp_upstream_url: "http://mcp_server:9000"
+    # For Docker: use "http://mcp_server:9000"
+    # For local development: use "http://localhost:9000"
+    mcp_upstream_url: "http://localhost:9000"
     # The policy identifier to apply to this key.
     policy_name: "default_policy"
 

@@ -216,19 +216,26 @@ async def mcp_jsonrpc_endpoint(request: Request):
             verify_token_direct(token, mcp_params.name, mcp_params.arguments)
             # Token verified, proceed with tool execution
             return handle_tools_call(params, request_id)
-        except HTTPException as e:
-            # Convert HTTPException to JSON-RPC error
-            error_msg = e.detail
-            if e.status_code == 401:
-                return create_jsonrpc_error(INVALID_REQUEST, error_msg, request_id)
-            elif e.status_code == 403:
-                return create_jsonrpc_error(INVALID_REQUEST, error_msg, request_id)
+        except HTTPException as http_e:
+            # HTTPException from verify_token_direct - convert to JSON-RPC error
+            # Map HTTP status codes to JSON-RPC error codes
+            if http_e.status_code == 401:
+                error_code = INVALID_REQUEST  # Authentication errors
+            elif http_e.status_code == 403:
+                error_code = INVALID_REQUEST  # Authorization/scope errors
+            elif http_e.status_code == 500:
+                error_code = INTERNAL_ERROR  # Server errors
             else:
-                return create_jsonrpc_error(INVALID_REQUEST, error_msg, request_id)
+                error_code = INTERNAL_ERROR  # Default to internal error
+            
+            logger.error(f"Token verification HTTPException: {http_e.detail} (status: {http_e.status_code})")
+            return create_jsonrpc_error(error_code, http_e.detail, request_id)
         except Exception as e:
             logger.error(f"Token verification error: {e}", exc_info=True)
-            # Don't expose authentication failure details to client
-            return create_jsonrpc_error(INVALID_REQUEST, "Authentication failed", request_id)
+            # Include error details in logs but return generic message
+            error_msg = f"Authentication failed: {type(e).__name__}: {str(e)}"
+            logger.error(f"Full error details: {error_msg}")
+            return create_jsonrpc_error(INTERNAL_ERROR, "Authentication failed", request_id)
     
     else:
         return create_jsonrpc_error(METHOD_NOT_FOUND, f"Method '{method}' not found", request_id)

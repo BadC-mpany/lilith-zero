@@ -10,8 +10,27 @@ logger = logging.getLogger(__name__)
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file='.env', extra='ignore')
+    model_config = SettingsConfigDict(env_file='.env', extra='ignore', env_prefix='')
     tool_registry_path: str = "/app/rule_maker/data/tool_registry.yaml"
+
+    def __init__(self, **kwargs):
+        # Override defaults with environment variables if they exist
+        env_kwargs = {}
+        if "TOOL_REGISTRY_PATH" in os.environ:
+            env_kwargs["tool_registry_path"] = os.environ["TOOL_REGISTRY_PATH"]
+        
+        # Also try to find the file dynamically if not set
+        if not env_kwargs.get("tool_registry_path") and "TOOL_REGISTRY_PATH" not in os.environ:
+            # Try to find tool_registry.yaml relative to common locations
+            script_dir = os.environ.get("SENTINEL_SCRIPT_DIR")
+            if script_dir:
+                candidate_path = os.path.join(script_dir, "rule_maker", "data", "tool_registry.yaml")
+                if os.path.exists(candidate_path):
+                    env_kwargs["tool_registry_path"] = candidate_path
+        
+        # Merge environment variables with kwargs
+        merged_kwargs = {**env_kwargs, **kwargs}
+        super().__init__(**merged_kwargs)
 
 
 settings = Settings()

@@ -89,9 +89,28 @@ class SentinelSecureTool(BaseTool):
             with httpx.Client() as client:
                 response = client.post(f"{self._interceptor_url}/v1/proxy-execute", json=payload, headers=headers, timeout=10)  # timeout is 10 seconds. let's do a default, with user-configurable timeout.
                 response.raise_for_status()
-            return str(response.json())
+                
+                # Check if response has content
+                if not response.content:
+                    logger.error(f"Empty response from interceptor for tool '{self.name}'")
+                    return "Result: Empty response from server"
+                
+                # Parse JSON response
+                try:
+                    response_data = response.json()
+                    # Handle both direct result and wrapped result formats
+                    if isinstance(response_data, dict) and "result" in response_data:
+                        return str(response_data["result"])
+                    return str(response_data)
+                except json.JSONDecodeError as e:
+                    logger.error(f"Invalid JSON response from interceptor for tool '{self.name}': {response.text}")
+                    return f"Result: Invalid JSON response from server: {response.text[:200]}"
+                    
         except httpx.HTTPStatusError as e:
-            detail = e.response.json().get('detail', e.response.text)
+            try:
+                detail = e.response.json().get('detail', e.response.text) if e.response.content else "Unknown error"
+            except:
+                detail = e.response.text if e.response.content else "Unknown error"
             logger.warning(f"Access Denied for tool '{self.name}': {detail}")
             raise SecurityBlockException(
                 message=f"Tool '{self.name}' was blocked by a security policy.",
@@ -118,9 +137,28 @@ class SentinelSecureTool(BaseTool):
             async with httpx.AsyncClient() as client:
                 response = await client.post(f"{self._interceptor_url}/v1/proxy-execute", json=payload, headers=headers, timeout=10)
                 response.raise_for_status()
-            return str(response.json())
+                
+                # Check if response has content
+                if not response.content:
+                    logger.error(f"Empty response from interceptor for tool '{self.name}'")
+                    return "Result: Empty response from server"
+                
+                # Parse JSON response
+                try:
+                    response_data = response.json()
+                    # Handle both direct result and wrapped result formats
+                    if isinstance(response_data, dict) and "result" in response_data:
+                        return str(response_data["result"])
+                    return str(response_data)
+                except json.JSONDecodeError as e:
+                    logger.error(f"Invalid JSON response from interceptor for tool '{self.name}': {response.text}")
+                    return f"Result: Invalid JSON response from server: {response.text[:200]}"
+                    
         except httpx.HTTPStatusError as e:
-            detail = e.response.json().get('detail', e.response.text)
+            try:
+                detail = e.response.json().get('detail', e.response.text) if e.response.content else "Unknown error"
+            except:
+                detail = e.response.text if e.response.content else "Unknown error"
             logger.warning(f"(Async) Access Denied for tool '{self.name}': {detail}")
             raise SecurityBlockException(
                 message=f"Tool '{self.name}' was blocked by a security policy.",

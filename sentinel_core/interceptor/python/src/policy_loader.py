@@ -8,6 +8,7 @@ from typing import Dict, List, Any, Optional
 
 # --- Data Models ---
 
+
 class PolicyRule(BaseModel):
     tool: Optional[str] = None
     tool_class: Optional[str] = None
@@ -24,10 +25,12 @@ class PolicyRule(BaseModel):
             return True
         return False
 
+
 class PolicyDefinition(BaseModel):
     name: str
     static_rules: Dict[str, str]
     taint_rules: List[PolicyRule]
+
 
 class CustomerConfig(BaseModel):
     owner: str
@@ -36,10 +39,68 @@ class CustomerConfig(BaseModel):
 
 # --- Loader Class ---
 
+
+def _find_policies_path() -> str:
+    """Find policies.yaml path, checking multiple locations."""
+    # Check environment variable first
+    env_path = os.environ.get("POLICIES_YAML_PATH")
+    if env_path and os.path.exists(env_path):
+        return env_path
+
+    # Check SENTINEL_SCRIPT_DIR (project root)
+    project_root = os.environ.get("SENTINEL_SCRIPT_DIR")
+    if project_root:
+        rel_path = os.path.join(project_root, "sentinel_core", "policies.yaml")
+        if os.path.exists(rel_path):
+            return rel_path
+
+    # Check current working directory
+    cwd_path = os.path.join(os.getcwd(), "sentinel_core", "policies.yaml")
+    if os.path.exists(cwd_path):
+        return cwd_path
+
+    # Check relative to this file (go up 3 levels from interceptor/python/src)
+    file_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "policies.yaml"))
+    if os.path.exists(file_path):
+        return file_path
+
+    # Default Docker path
+    return "/app/policies.yaml"
+
+
+def _find_tool_registry_path() -> str:
+    """Find tool_registry.yaml path, checking multiple locations."""
+    # Check environment variable first
+    env_path = os.environ.get("TOOL_REGISTRY_PATH")
+    if env_path and os.path.exists(env_path):
+        return env_path
+
+    # Check SENTINEL_SCRIPT_DIR (project root)
+    project_root = os.environ.get("SENTINEL_SCRIPT_DIR")
+    if project_root:
+        rel_path = os.path.join(project_root, "rule_maker", "data", "tool_registry.yaml")
+        if os.path.exists(rel_path):
+            return rel_path
+
+    # Check current working directory
+    cwd_path = os.path.join(os.getcwd(), "rule_maker", "data", "tool_registry.yaml")
+    if os.path.exists(cwd_path):
+        return cwd_path
+
+    # Check relative to this file (go up 5 levels: interceptor/python/src -> sentinel_core -> project root)
+    file_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "..", "rule_maker", "data", "tool_registry.yaml"))
+    if os.path.exists(file_path):
+        return file_path
+
+    # Default Docker path
+    return "/app/rule_maker/data/tool_registry.yaml"
+
+
 class PolicyLoaderSettings(BaseSettings):
     model_config = SettingsConfigDict(env_file='.env', extra='ignore')
-    policies_yaml_path: str = "/app/policies.yaml"
-    tool_registry_path: str = "/app/rule_maker/data/tool_registry.yaml"
+    policies_yaml_path: str = _find_policies_path()
+    tool_registry_path: str = _find_tool_registry_path()
+
 
 class PolicyLoader:
     """
@@ -47,6 +108,7 @@ class PolicyLoader:
     This is a simplified, security-focused loader for the trusted interceptor.
     It does NOT handle agent-side concerns like Pydantic schema generation.
     """
+
     def __init__(
         self,
         policies_path: str = None,
@@ -69,7 +131,7 @@ class PolicyLoader:
             raise FileNotFoundError(f"Tool registry not found at {path}")
         with open(path, 'r') as f:
             config = yaml.safe_load(f)
-        
+
         tools_config = config.get("tools", {})
         for tool_name, tool_config in tools_config.items():
             self.tool_classes[tool_name] = tool_config.get("classes", [])
@@ -100,7 +162,9 @@ class PolicyLoader:
 
 # --- Singleton Instance ---
 
+
 _policy_loader_instance: Optional[PolicyLoader] = None
+
 
 def get_policy_loader() -> PolicyLoader:
     """Returns a singleton instance of the PolicyLoader."""
