@@ -5,6 +5,7 @@ from typing import Dict, Any
 
 logger = logging.getLogger(__name__)
 
+
 def execute_tool_logic(tool_name: str, args: Dict[str, Any]) -> Dict[str, Any]:
     """
     The actual tool logic. This only runs if the Verifier passes.

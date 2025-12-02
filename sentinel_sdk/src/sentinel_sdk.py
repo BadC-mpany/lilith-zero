@@ -17,13 +17,12 @@ class SecurityBlockException(ToolException):
     Exception raised when a security policy blocks a tool execution.
     This is a permanent denial - the agent should not retry.
     """
+
     def __init__(self, message: str, tool_name: str, reason: str):
         # The 'message' is what the LLM will see.
         super().__init__(f"Tool '{tool_name}' was blocked by a security policy. Reason: {reason}")
         self.tool_name = tool_name
         self.reason = reason
-
-
 
 
 class SentinelSecureTool(BaseTool):
@@ -88,7 +87,7 @@ class SentinelSecureTool(BaseTool):
 
         try:
             with httpx.Client() as client:
-                response = client.post(f"{self._interceptor_url}/v1/proxy-execute", json=payload, headers=headers, timeout=10) # timeout is 10 seconds. let's do a default, with user-configurable timeout.
+                response = client.post(f"{self._interceptor_url}/v1/proxy-execute", json=payload, headers=headers, timeout=10)  # timeout is 10 seconds. let's do a default, with user-configurable timeout.
                 response.raise_for_status()
             return str(response.json())
         except httpx.HTTPStatusError as e:

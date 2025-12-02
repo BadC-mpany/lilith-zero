@@ -12,6 +12,13 @@ from pydantic import BaseModel
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Dict, Any, List, Optional
 
+# JSON-RPC 2.0 error codes
+PARSE_ERROR = -32700
+INVALID_REQUEST = -32600
+METHOD_NOT_FOUND = -32601
+INVALID_PARAMS = -32602
+INTERNAL_ERROR = -32603
+
 # Use absolute paths for core dependencies
 from crypto_utils import CryptoUtils
 from policy_loader import get_policy_loader
@@ -30,6 +37,7 @@ class Settings(BaseSettings):
     redis_port: int = 6379
     redis_db: int = 0
 
+
 class ProxyRequest(BaseModel):
     session_id: str
     tool_name: str
@@ -39,17 +47,17 @@ class ProxyRequest(BaseModel):
 # --- PATTERN EVALUATION HELPERS ---
 class PatternEvaluator:
     """Evaluates pattern-based rules against session history."""
-    
+
     def __init__(self, redis_client: redis.Redis, policy_loader):
         self.redis = redis_client
         self.policy_loader = policy_loader
-    
+
     def get_session_history(self, session_id: str) -> List[Dict[str, Any]]:
         """Retrieve execution history for a session."""
         history_key = f"session:{session_id}:history"
         raw_history = self.redis.lrange(history_key, 0, -1)
         return [json.loads(item.decode('utf-8')) for item in raw_history]
-    
+
     def add_to_history(self, session_id: str, tool_name: str, tool_classes: List[str]):
         """Add a tool execution to session history."""
         history_key = f"session:{session_id}:history"
@@ -61,55 +69,55 @@ class PatternEvaluator:
         self.redis.rpush(history_key, json.dumps(entry))
         self.redis.expire(history_key, 3600)
         self.redis.ltrim(history_key, -1000, -1)
-    
+
     def evaluate_sequence_pattern(
-        self, 
-        pattern: Dict[str, Any], 
-        session_id: str, 
+        self,
+        pattern: Dict[str, Any],
+        session_id: str,
         current_tool: str,
         current_classes: List[str]
     ) -> bool:
         steps = pattern.get("steps", [])
         if not steps:
             return False
-        
+
         history = self.get_session_history(session_id)
         full_sequence = history + [{"tool": current_tool, "classes": current_classes}]
-        
+
         return self._sequence_matches(full_sequence, steps, pattern.get("max_distance"))
-    
+
     def _sequence_matches(
-        self, 
-        full_sequence: List[Dict[str, Any]], 
-        steps: List[Dict[str, Any]], 
+        self,
+        full_sequence: List[Dict[str, Any]],
+        steps: List[Dict[str, Any]],
         max_distance: Optional[int]
     ) -> bool:
         if len(steps) > len(full_sequence):
             return False
-        
+
         step_idx = 0
         start_idx = 0
         for i, entry in enumerate(full_sequence):
             if step_idx >= len(steps):
                 break
-            
+
             if self._entry_matches_step(entry, steps[step_idx]):
                 if step_idx == 0:
                     start_idx = i
                 step_idx += 1
-                
+
                 if max_distance is not None and step_idx > 1 and (i - start_idx > max_distance):
                     step_idx = 0
-            
+
         return step_idx == len(steps)
-    
+
     def _entry_matches_step(self, entry: Dict[str, Any], step: Dict[str, Any]) -> bool:
         if "tool" in step:
             return entry["tool"] == step["tool"]
         elif "class" in step:
             return step["class"] in entry.get("classes", [])
         return False
-    
+
     def evaluate_logic_pattern(
         self,
         pattern: Dict[str, Any],
@@ -118,16 +126,16 @@ class PatternEvaluator:
         current_classes: List[str]
     ) -> bool:
         condition = pattern.get("condition", {})
-        
+
         if "AND" in condition:
             return all(self._evaluate_condition_item(item, session_id, current_tool, current_classes) for item in condition["AND"])
         elif "OR" in condition:
             return any(self._evaluate_condition_item(item, session_id, current_tool, current_classes) for item in condition["OR"])
         elif "NOT" in condition:
             return not self._evaluate_condition_item(condition["NOT"], session_id, current_tool, current_classes)
-        
+
         return self._evaluate_condition_item(condition, session_id, current_tool, current_classes)
-    
+
     def _evaluate_condition_item(
         self,
         item: Dict[str, Any],
@@ -139,19 +147,20 @@ class PatternEvaluator:
             return item["current_tool_class"] in current_classes
         if "current_tool" in item:
             return item["current_tool"] == current_tool
-        
+
         if "session_has_class" in item or "session_has_tool" in item:
             history = self.get_session_history(session_id)
             if "session_has_class" in item:
                 return any(item["session_has_class"] in entry.get("classes", []) for entry in history)
             if "session_has_tool" in item:
                 return any(entry["tool"] == item["session_has_tool"] for entry in history)
-        
+
         if "session_has_taint" in item:
             taint_key = f"session:{session_id}:taints"
             return self.redis.sismember(taint_key, item["session_has_taint"])
-        
+
         return False
+
 
 # --- GLOBAL INITIALIZATION ---
 settings = Settings()
@@ -205,12 +214,12 @@ async def interceptor_proxy(req: ProxyRequest, x_api_key: str = Header(None)):
                 pattern_matched = pattern_evaluator.evaluate_sequence_pattern(rule.pattern, req.session_id, req.tool_name, tool_classes)
             elif pattern_type == "logic":
                 pattern_matched = pattern_evaluator.evaluate_logic_pattern(rule.pattern, req.session_id, req.tool_name, tool_classes)
-            
+
             if pattern_matched and rule.action in ["BLOCK", "BLOCK_CURRENT", "BLOCK_SECOND"]:
                 error_msg = rule.error or "Pattern-based security block"
                 logger.warning(f"PATTERN BLOCK: Tool '{req.tool_name}' for session '{req.session_id}'. Pattern: {pattern_type}")
                 raise HTTPException(status_code=403, detail=error_msg)
-        
+
         # Evaluate simple taint rules
         elif rule.matches_tool(req.tool_name, tool_classes):
             if rule.action == "CHECK_TAINT" and rule.forbidden_tags:
@@ -233,19 +242,67 @@ async def interceptor_proxy(req: ProxyRequest, x_api_key: str = Header(None)):
     signed_token = jwt.encode(token_payload, SIGNING_KEY, algorithm="EdDSA")
     logger.info(f"Request approved. Minting token with jti: {token_payload['jti']}")
 
-    # 5. SECURE PROXY EXECUTION
+    # 5. SECURE PROXY EXECUTION (JSON-RPC 2.0)
     async with httpx.AsyncClient() as client:
         try:
+            # Construct JSON-RPC 2.0 request
+            jsonrpc_request = {
+                "jsonrpc": "2.0",
+                "method": "tools/call",
+                "params": {
+                    "name": req.tool_name,
+                    "arguments": req.args
+                },
+                "id": str(uuid.uuid4())
+            }
+            
             mcp_response = await client.post(
                 customer_config.mcp_upstream_url,
-                json={"tool": req.tool_name, "args": req.args},
+                json=jsonrpc_request,
                 headers={"Authorization": f"Bearer {signed_token}"},
                 timeout=5.0
             )
             mcp_response.raise_for_status()
+            
+            # Parse JSON-RPC 2.0 response
+            response_data = mcp_response.json()
+            
+            # Check for JSON-RPC error
+            if "error" in response_data:
+                error_info = response_data["error"]
+                error_msg = error_info.get("message", "Unknown error")
+                error_code = error_info.get("code", INTERNAL_ERROR)
+                
+                # Map JSON-RPC error codes to HTTP status codes
+                if error_code in [PARSE_ERROR, INVALID_REQUEST]:
+                    status_code = 400
+                elif error_code == METHOD_NOT_FOUND:
+                    status_code = 404
+                elif error_code == INVALID_PARAMS:
+                    status_code = 400
+                elif "Token" in error_msg or "Signature" in error_msg or "Replay" in error_msg:
+                    status_code = 401
+                elif "Scope" in error_msg or "Integrity" in error_msg:
+                    status_code = 403
+                else:
+                    status_code = 500
+                
+                logger.warning(f"MCP server returned error: {error_msg} (code: {error_code})")
+                raise HTTPException(status_code=status_code, detail=error_msg)
+            
+            # Extract result from JSON-RPC response
+            if "result" not in response_data:
+                logger.error(f"Invalid JSON-RPC response: missing 'result' field")
+                raise HTTPException(status_code=502, detail="Invalid response from MCP server")
+            
+            mcp_result = response_data["result"]
+            
         except httpx.RequestError as e:
             logger.error(f"Upstream MCP connection error: {e}")
             raise HTTPException(status_code=502, detail=f"Upstream MCP Unreachable: {e}")
+        except HTTPException:
+            # Re-raise HTTPExceptions (including those from error handling above)
+            raise
 
     # 6. STATE UPDATE (Taints and History)
     pattern_evaluator.add_to_history(req.session_id, req.tool_name, tool_classes)
@@ -259,7 +316,7 @@ async def interceptor_proxy(req: ProxyRequest, x_api_key: str = Header(None)):
                 redis_client.srem(taint_key, rule.tag)
                 logger.info(f"STATE UPDATE: Removed taint '{rule.tag}' from session '{req.session_id}'")
 
-    return mcp_response.json()
+    return mcp_result
 
 if __name__ == "__main__":
     import uvicorn

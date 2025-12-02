@@ -33,6 +33,7 @@ The system is segmented into three distinct trust zones, enforcing security thro
 3.  **Zone C: The Secure Execution Environment (The MCP)**
     - **Component:** `mcp_server.py`
     - **Trust Level:** Verified Execution Only. Trusts nothing but a valid token.
+    - **Protocol:** Implements JSON-RPC 2.0 at root endpoint (`/`) with methods `tools/list` and `tools/call`.
     - **Function:**
       - Verifies the JWS token's cryptographic signature using a public key.
       - Performs replay protection by checking the token's nonce (`jti`) against a Redis cache.
@@ -41,11 +42,13 @@ The system is segmented into three distinct trust zones, enforcing security thro
 
 ## Getting Started: End-to-End Local Setup
 
-These instructions use Docker Compose to run the backend infrastructure (Interceptor, MCP, Redis) and a local Python environment to run the agent.
+These instructions cover running the backend infrastructure (Interceptor, MCP, Redis) using Docker Compose (recommended) or manually via shell scripts, and a local Python environment to run the agent.
 
 ### Prerequisites
 
-- **Docker & Docker Compose:** Required to run the backend services. [Install Docker Desktop](https://www.docker.com/products/docker-desktop/).
+- **Backend Services:** Choose one:
+  - **Docker & Docker Compose:** [Install Docker Desktop](https://www.docker.com/products/docker-desktop/) (recommended)
+  - **Manual Setup:** Redis installed locally + Python 3.10+ (see `START_SERVICES.md`)
 - **Python 3.12:** The agent environment requires a standard Python 3.12 installation.
 
 ### Step 1: Configure Your Environment
@@ -77,13 +80,32 @@ Remove-Item -Recurse -Force temp_env
 
 ### Step 3: Run the Backend Services
 
+**Option A: Using Docker Compose** (Recommended)
+
 With Docker running, use Docker Compose to build and start the Redis, Interceptor, and MCP containers.
 
 ```powershell
 docker-compose up --build
 ```
 
-The services are now running. The Interceptor is available at `http://localhost:8000` and the MCP at `http://localhost:9000`. You can leave this terminal running.
+**Option B: Running Services Separately** (Alternative)
+
+If you prefer not to use Docker, you can run each service separately using the provided shell scripts:
+
+```bash
+# Terminal 1: Start Redis
+./start_redis.sh
+
+# Terminal 2: Start Interceptor
+./start_interceptor.sh
+
+# Terminal 3: Start MCP Server
+./start_mcp.sh
+```
+
+See `START_SERVICES.md` for detailed instructions.
+
+The services are now running. The Interceptor is available at `http://localhost:8000` and the MCP at `http://localhost:9000`. You can leave these terminals running.
 
 ### Step 4: Set Up the Agent Environment
 
@@ -121,7 +143,7 @@ You will see the formatted output for each of the four test scenarios, demonstra
 
 For manual testing and interactive exploration of the security policies, you can use the `conversational_agent.py` script. This provides a professional, chat-like interface to talk directly with the Sentinel-secured agent.
 
-1.  **Ensure your backend is running** (`docker-compose up`).
+1.  **Ensure your backend is running** (`docker-compose up` or use the shell scripts from `START_SERVICES.md`).
 2.  **Activate the agent environment**:
     ```powershell
     .\sentinel_env\Scripts\activate
@@ -141,7 +163,7 @@ For manual testing and interactive exploration of the security policies, you can
 
 This file is the control plane for the entire security system.
 
-- **`customers`:** Defines API keys and maps them to a policy. The `mcp_upstream_url` must use the Docker service name (e.g., `http://mcp_server:9000/execute`).
+- **`customers`:** Defines API keys and maps them to a policy. The `mcp_upstream_url` should point to the MCP server root endpoint (e.g., `http://mcp_server:9000` for Docker or `http://localhost:9000` for local). The Interceptor communicates using JSON-RPC 2.0 protocol.
 - **`policies`:** A list of named policies that can be assigned to customers.
   - **`static_rules`:** A simple map of `tool_name: ALLOW` or `tool_name: DENY`. Acts as a primary access control list.
   - **`taint_rules`:** Defines the dynamic, stateful logic.

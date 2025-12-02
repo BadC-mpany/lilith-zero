@@ -5,3 +5,4 @@ redis
 pyjwt
 cryptography
 pydantic
+pyyaml
