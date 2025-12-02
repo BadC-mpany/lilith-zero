@@ -18,6 +18,13 @@ pub struct CryptoSigner {
 }
 
 impl CryptoSigner {
+    /// Create a new CryptoSigner from a SigningKey
+    /// 
+    /// This is primarily for testing purposes. In production, use `from_pem_file`.
+    pub fn from_signing_key(signing_key: SigningKey) -> Self {
+        Self { signing_key }
+    }
+
     /// Create a new CryptoSigner by loading Ed25519 private key from PEM file
     /// 
     /// The PEM file should contain a PKCS8-encoded Ed25519 private key
