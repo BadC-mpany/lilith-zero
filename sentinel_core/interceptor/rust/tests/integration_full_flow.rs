@@ -11,7 +11,7 @@ use sentinel_interceptor::api::evaluator_adapter::PolicyEvaluatorAdapter;
 use sentinel_interceptor::api::PolicyEvaluator;
 use sentinel_interceptor::core::crypto::CryptoSigner;
 use sentinel_interceptor::core::models::{
-    CustomerConfig, Decision, HistoryEntry, PolicyDefinition, PolicyRule,
+    Decision, HistoryEntry, PolicyDefinition, PolicyRule,
 };
 use sentinel_interceptor::engine::evaluator::PolicyEvaluator as EnginePolicyEvaluator;
 use std::collections::{HashMap, HashSet};
@@ -113,6 +113,7 @@ async fn test_full_request_flow_taint_block() {
         forbidden_tags: Some(vec!["sensitive_data".to_string()]),
         error: Some("Exfiltration blocked".to_string()),
         pattern: None,
+        exceptions: None,
     };
 
     let policy = PolicyDefinition {
@@ -157,6 +158,7 @@ async fn test_full_request_flow_add_taint() {
         forbidden_tags: None,
         error: None,
         pattern: None,
+        exceptions: None,
     };
 
     let policy = PolicyDefinition {
@@ -288,6 +290,7 @@ async fn test_evaluator_adapter_with_history() {
         forbidden_tags: None,
         error: Some("Sequence pattern detected".to_string()),
         pattern: Some(sequence_pattern),
+        exceptions: None,
     };
 
     let policy = PolicyDefinition {
@@ -334,6 +337,7 @@ async fn test_end_to_end_policy_evaluation_flow() {
         forbidden_tags: None,
         error: None,
         pattern: None,
+        exceptions: None,
     };
 
     let check_taint_rule = PolicyRule {
@@ -344,6 +348,7 @@ async fn test_end_to_end_policy_evaluation_flow() {
         forbidden_tags: Some(vec!["sensitive_data".to_string()]),
         error: Some("Exfiltration blocked".to_string()),
         pattern: None,
+        exceptions: None,
     };
 
     let policy = PolicyDefinition {

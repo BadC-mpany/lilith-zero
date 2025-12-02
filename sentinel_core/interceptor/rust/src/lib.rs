@@ -8,4 +8,5 @@ pub mod auth;
 pub mod api;
 pub mod proxy;
 pub mod config;
+pub mod utils;
 

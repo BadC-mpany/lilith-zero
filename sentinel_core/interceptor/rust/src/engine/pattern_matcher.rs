@@ -10,12 +10,32 @@ pub struct PatternMatcher;
 
 impl PatternMatcher {
     /// Evaluate a pattern against session history and current tool
+    /// (backwards compatibility wrapper without tool_args)
     pub fn evaluate_pattern(
         pattern: &Value,
         history: &[HistoryEntry],
         current_tool: &str,
         current_classes: &[String],
         current_taints: &HashSet<String>,
+    ) -> Result<bool, InterceptorError> {
+        Self::evaluate_pattern_with_args(
+            pattern,
+            history,
+            current_tool,
+            current_classes,
+            current_taints,
+            &Value::Null,
+        )
+    }
+
+    /// Evaluate a pattern with tool arguments (for logic patterns with tool_args_match)
+    pub fn evaluate_pattern_with_args(
+        pattern: &Value,
+        history: &[HistoryEntry],
+        current_tool: &str,
+        current_classes: &[String],
+        current_taints: &HashSet<String>,
+        tool_args: &Value,
     ) -> Result<bool, InterceptorError> {
         let pattern_type = pattern
             .get("type")
@@ -37,6 +57,7 @@ impl PatternMatcher {
                 current_tool,
                 current_classes,
                 current_taints,
+                tool_args,
             ),
             _ => Err(InterceptorError::ConfigurationError(
                 format!("Unknown pattern type: {}", pattern_type)
@@ -137,6 +158,7 @@ impl PatternMatcher {
         current_tool: &str,
         current_classes: &[String],
         current_taints: &HashSet<String>,
+        tool_args: &Value,
     ) -> Result<bool, InterceptorError> {
         let condition = pattern
             .get("condition")
@@ -144,7 +166,14 @@ impl PatternMatcher {
                 "Logic pattern missing 'condition' field".to_string()
             ))?;
 
-        Self::evaluate_condition(condition, history, current_tool, current_classes, current_taints)
+        Self::evaluate_condition_with_args(
+            condition,
+            history,
+            current_tool,
+            current_classes,
+            current_taints,
+            tool_args,
+        )
     }
 
     /// Evaluate a condition recursively (handles AND, OR, NOT)

@@ -2,6 +2,7 @@
 
 use crate::core::errors::InterceptorError;
 use crate::core::models::{CustomerConfig, PolicyDefinition};
+use crate::utils::policy_validator::PolicyValidator;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
@@ -69,6 +70,10 @@ impl PolicyLoader {
             policies.insert(policy.name.clone(), policy);
         }
 
+        // Validate all policies before returning
+        let policy_list: Vec<_> = policies.values().cloned().collect();
+        PolicyValidator::validate_policies(&policy_list)?;
+
         Ok(Self { customers, policies })
     }
 
@@ -82,8 +87,9 @@ impl PolicyLoader {
         self.policies.get(policy_name)
     }
 
-    /// Validate that referenced policies exist
+    /// Validate that referenced policies exist and policy references are consistent
     pub fn validate(&self) -> Result<(), InterceptorError> {
+        // Check that customers reference existing policies
         for (api_key, customer) in &self.customers {
             if !self.policies.contains_key(&customer.policy_name) {
                 return Err(InterceptorError::ConfigurationError(
@@ -94,6 +100,17 @@ impl PolicyLoader {
                 ));
             }
         }
+
+        // Structural validation already done in from_file() via PolicyValidator
         Ok(())
+    }
+
+    /// Validate policies against known tool classes from tool registry
+    pub fn validate_tool_classes(
+        &self,
+        known_classes: &std::collections::HashSet<String>,
+    ) -> Result<(), InterceptorError> {
+        let policy_list: Vec<_> = self.policies.values().cloned().collect();
+        PolicyValidator::validate_tool_classes(&policy_list, known_classes)
     }
 }

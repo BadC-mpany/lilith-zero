@@ -60,12 +60,13 @@ impl PolicyEvaluator {
         for rule in &policy.taint_rules {
             // Check pattern-based rules first
             if let Some(pattern) = &rule.pattern {
-                let pattern_matched = PatternMatcher::evaluate_pattern(
+                let pattern_matched = PatternMatcher::evaluate_pattern_with_args(
                     pattern,
                     session_history,
                     tool_name,
                     tool_classes,
                     current_taints,
+                    tool_args,
                 )?;
 
                 if pattern_matched {

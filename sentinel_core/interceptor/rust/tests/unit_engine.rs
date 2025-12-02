@@ -9,5 +9,6 @@ mod engine {
     mod test_redis_store;
     mod test_exceptions;
     mod test_wildcard_matching;
+    mod test_tool_args_integration;
 }
 
