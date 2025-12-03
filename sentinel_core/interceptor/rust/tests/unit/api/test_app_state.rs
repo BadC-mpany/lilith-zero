@@ -4,8 +4,8 @@ use sentinel_interceptor::api::*;
 use std::sync::Arc;
 
 #[test]
-fn test_config_default() {
-    let config = Config::default();
+fn test_config_test_config() {
+    let config = Config::test_config();
     
     assert_eq!(config.request_timeout_secs, 30);
     assert_eq!(config.body_size_limit_bytes, 2 * 1024 * 1024); // 2MB
@@ -13,16 +13,13 @@ fn test_config_default() {
 }
 
 #[test]
-fn test_config_custom() {
-    let config = Config {
-        request_timeout_secs: 60,
-        body_size_limit_bytes: 5 * 1024 * 1024, // 5MB
-        rate_limit_per_minute: 200,
-    };
+fn test_config_fields() {
+    let config = Config::test_config();
     
-    assert_eq!(config.request_timeout_secs, 60);
-    assert_eq!(config.body_size_limit_bytes, 5 * 1024 * 1024);
-    assert_eq!(config.rate_limit_per_minute, 200);
+    assert_eq!(config.bind_address, "0.0.0.0");
+    assert_eq!(config.port, 8000);
+    assert_eq!(config.redis_url, "redis://localhost:6379/0");
+    assert!(config.database_url.is_some());
 }
 
 #[test]
@@ -58,7 +55,7 @@ fn test_config_send_sync() {
 
 #[test]
 fn test_config_clone() {
-    let config1 = Config::default();
+    let config1 = Config::test_config();
     let config2 = config1.clone();
     
     assert_eq!(config1.request_timeout_secs, config2.request_timeout_secs);
@@ -69,7 +66,7 @@ fn test_config_clone() {
 #[test]
 fn test_config_arc_clone() {
     // Verify Config works with Arc (required by AppState)
-    let config = Arc::new(Config::default());
+    let config = Arc::new(Config::test_config());
     let config_clone = Arc::clone(&config);
     
     assert_eq!(config.request_timeout_secs, config_clone.request_timeout_secs);

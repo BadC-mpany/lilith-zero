@@ -25,6 +25,7 @@ struct CustomerEntry {
 }
 
 /// Policy loader - manages customer and policy configurations
+#[derive(Clone)]
 pub struct PolicyLoader {
     /// Map API key -> CustomerConfig
     customers: HashMap<String, CustomerConfig>,

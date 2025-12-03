@@ -148,7 +148,7 @@ fn create_test_app_state(decision: Decision, ping_result: Result<(), String>) ->
         classes: vec!["FILE_OPERATION".to_string()],
     });
 
-    let config = Arc::new(Config::default());
+    let config = Arc::new(Config::test_config());
 
     AppState {
         crypto_signer,

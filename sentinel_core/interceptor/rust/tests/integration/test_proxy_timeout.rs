@@ -4,7 +4,6 @@ use sentinel_interceptor::api::ProxyClient;
 use sentinel_interceptor::proxy::ProxyClientImpl;
 use serde_json::json;
 use std::time::{Duration, Instant};
-use tokio::time::timeout;
 
 async fn create_test_client_with_timeout(timeout_secs: u64) -> ProxyClientImpl {
     ProxyClientImpl::new(timeout_secs).unwrap()

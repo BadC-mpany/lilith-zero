@@ -10,3 +10,6 @@ mod test_proxy_timeout;
 #[path = "integration/test_proxy_load.rs"]
 mod test_proxy_load;
 
+#[path = "integration/test_config.rs"]
+mod test_config;
+

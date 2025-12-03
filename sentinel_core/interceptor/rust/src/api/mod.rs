@@ -102,23 +102,8 @@ pub trait ToolRegistry: Send + Sync {
 }
 
 /// Configuration struct
-/// TODO: Replace with actual Config implementation
-#[derive(Debug, Clone)]
-pub struct Config {
-    pub request_timeout_secs: u64,
-    pub body_size_limit_bytes: usize,
-    pub rate_limit_per_minute: u32,
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            request_timeout_secs: 30,
-            body_size_limit_bytes: 2 * 1024 * 1024, // 2MB
-            rate_limit_per_minute: 100,
-        }
-    }
-}
+// Re-export Config from config module
+pub use crate::config::Config;
 
 /// Create the Axum router with all routes and middleware
 /// 
