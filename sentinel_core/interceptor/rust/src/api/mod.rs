@@ -1,7 +1,10 @@
 // Axum web server layer
 
-use axum::{Router, extract::Request};
+use axum::{Router, extract::Request, error_handling::HandleErrorLayer, http::StatusCode, BoxError};
 use std::sync::Arc;
+use std::time::Duration;
+use tower_http::limit::RequestBodyLimitLayer;
+use tower::ServiceBuilder;
 
 pub mod evaluator_adapter;
 pub mod handlers;
@@ -117,7 +120,7 @@ pub use crate::config::Config;
 /// Note: Panic recovery is handled automatically by Tower.
 /// Note: `/health` and `/metrics` endpoints bypass auth middleware.
 pub fn create_router(
-    app_state: AppState,
+    app_state: &AppState,
     auth_state: Option<Arc<crate::auth::auth_middleware::AuthState>>,
 ) -> Router<AppState> {
     use axum::{middleware::Next, extract::State};
@@ -146,11 +149,34 @@ pub fn create_router(
         ));
     }
 
-    // Middleware layers - TODO: Fix layer error type compatibility with Axum 0.7
-    // These layers need to be applied via ServiceBuilder or with proper error type conversion
-    // .layer(RequestBodyLimitLayer::new(2 * 1024 * 1024))
-    // .layer(TimeoutLayer::new(std::time::Duration::from_secs(30)))
-    // Rate limiting skipped for now - will be added when auth middleware is ready
+    // Apply middleware layers (outermost to innermost):
+    // 1. Body size limit - prevents DoS via large request bodies
+    // 2. Request timeout - prevents resource exhaustion from hanging requests
+    // 3. Auth middleware (already applied via route_layer above)
+    // 
+    // Note: These layers are applied to all routes including health/metrics
+    // Order matters: layers are applied in reverse order (last layer wraps innermost)
+    let body_limit = app_state.config.body_size_limit_bytes;
+    let timeout_secs = app_state.config.request_timeout_secs;
     
-    router.with_state(app_state)
+    // Apply body size limit layer (works directly with Axum 0.7)
+    router = router.layer(RequestBodyLimitLayer::new(body_limit));
+    
+    // Apply timeout layer with HandleErrorLayer to convert timeout errors to HTTP responses
+    // HandleErrorLayer must come BEFORE timeout to catch the timeout error
+    let middleware_stack = ServiceBuilder::new()
+        // Handle errors (convert Timeout error to HTTP Response)
+        .layer(HandleErrorLayer::new(|e: BoxError| async move {
+            let status = if e.is::<tower::timeout::error::Elapsed>() {
+                StatusCode::REQUEST_TIMEOUT
+            } else {
+                StatusCode::INTERNAL_SERVER_ERROR
+            };
+            (status, e.to_string())
+        }))
+        // Apply the timeout
+        .timeout(Duration::from_secs(timeout_secs))
+        .into_inner();
+    
+    router.layer(middleware_stack)
 }

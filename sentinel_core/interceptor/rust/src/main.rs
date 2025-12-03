@@ -1,7 +1,6 @@
 // Main entry point for Sentinel Interceptor
 
-use sentinel_interceptor::api::{create_router, AppState, PolicyCache, RedisStore as ApiRedisStore, ToolRegistry};
-use sentinel_interceptor::core::models::PolicyDefinition;
+use sentinel_interceptor::api::{create_router, AppState, RedisStore as ApiRedisStore, ToolRegistry};
 use sentinel_interceptor::auth::audit_logger::AuditLogger;
 use sentinel_interceptor::auth::auth_middleware::AuthState;
 use sentinel_interceptor::auth::customer_store::{DbCustomerStore, YamlCustomerStore};
@@ -13,26 +12,12 @@ use sentinel_interceptor::loader::policy_loader::PolicyLoader;
 use sentinel_interceptor::loader::tool_registry::ToolRegistry as ToolRegistryImpl;
 use sentinel_interceptor::proxy::ProxyClientImpl;
 use sentinel_interceptor::state::redis_store::RedisStore as RedisStoreImpl;
+use sentinel_interceptor::state::policy_cache::MokaPolicyCache;
 use sentinel_interceptor::api::evaluator_adapter::PolicyEvaluatorAdapter;
 
 use std::sync::Arc;
 use tracing::{error, info};
 use tokio::signal;
-use axum::Router;
-
-/// No-op policy cache implementation for MVP
-struct NoOpPolicyCache;
-
-#[async_trait::async_trait]
-impl PolicyCache for NoOpPolicyCache {
-    async fn get_policy(&self, _policy_name: &str) -> Result<Option<Arc<PolicyDefinition>>, String> {
-        Ok(None)
-    }
-    
-    async fn put_policy(&self, _policy_name: &str, _policy: Arc<PolicyDefinition>) -> Result<(), String> {
-        Ok(())
-    }
-}
 
 /// Adapter to convert RedisStore struct to RedisStore trait
 struct RedisStoreAdapter {
@@ -109,11 +94,13 @@ impl ToolRegistry for ToolRegistryAdapter {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 1. Load and validate configuration first (before any logging)
-    let config = Config::from_env()
-        .map_err(|e| {
+    let config = match Config::from_env() {
+        Ok(c) => c,
+        Err(e) => {
             eprintln!("Configuration error: {}", e);
             std::process::exit(1);
-        })?;
+        }
+    };
     
     // 2. Initialize tracing subscriber with config values
     // Must be done only once - tracing panics if init() is called multiple times
@@ -179,11 +166,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     
     // 6. Initialize customer store (DB or YAML)
+    // Use references to avoid moving db_pool and policy_loader
     let customer_store: Arc<dyn sentinel_interceptor::api::CustomerStore + Send + Sync> = 
-        if let Some(pool) = db_pool {
-            Arc::new(DbCustomerStore::new((*pool).clone()))
-        } else if let Some(loader) = policy_loader {
-            Arc::new(YamlCustomerStore::new((*loader).clone()))
+        if let Some(ref pool) = db_pool {
+            Arc::new(DbCustomerStore::new((**pool).clone()))
+        } else if let Some(ref loader) = policy_loader {
+            Arc::new(YamlCustomerStore::new((**loader).clone()))
         } else {
             return Err("Either DATABASE_URL or POLICIES_YAML_PATH must be set".into());
         };
@@ -192,10 +180,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     // 7. Initialize policy store (DB or YAML)
     let policy_store: Arc<dyn sentinel_interceptor::api::PolicyStore + Send + Sync> = 
-        if let Some(pool) = db_pool {
-            Arc::new(DbPolicyStore::new((*pool).clone()))
-        } else if let Some(loader) = policy_loader {
-            Arc::new(YamlPolicyStore::new((*loader).clone()))
+        if let Some(ref pool) = db_pool {
+            Arc::new(DbPolicyStore::new((**pool).clone()))
+        } else if let Some(ref loader) = policy_loader {
+            Arc::new(YamlPolicyStore::new((**loader).clone()))
         } else {
             return Err("Either DATABASE_URL or POLICIES_YAML_PATH must be set".into());
         };
@@ -250,8 +238,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     info!("Proxy client initialized");
     
-    // 12. Initialize policy cache (no-op for MVP)
-    let policy_cache = Arc::new(NoOpPolicyCache);
+    // 12. Initialize policy cache (Moka-based with 60s TTL, 1000 capacity)
+    let policy_cache = Arc::new(
+        MokaPolicyCache::new(
+            policy_store.clone(),
+            60,  // TTL: 60 seconds
+            1000, // Max capacity: 1000 policies
+        )
+    );
+    
+    info!("Policy cache initialized");
     
     // 13. Initialize audit logger
     let audit_logger = Arc::new(
@@ -281,12 +277,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         config: Arc::new(config.clone()),
     };
     
-    // 16. Create router
-    let router = create_router(app_state, Some(auth_state));
+    // 16. DEBUG: Force a check on AppState traits to identify any non-cloneable fields
+    fn assert_router_state<S: Clone + Send + Sync + 'static>(_: &S) {}
+    assert_router_state(&app_state);
+    
+    // 17. Create router (returns Router<AppState> - still "hungry" for state)
+    // Pass reference to app_state since create_router only needs to read config values
+    let router = create_router(&app_state, Some(auth_state));
     
     info!("Router created");
     
-    // 17. Start HTTP server
+    // 18. Finalize the router by providing state
+    // .with_state() converts Router<AppState> -> Router<()> (complete application)
+    let app = router.with_state(app_state);
+    
+    // 19. Convert to MakeService (now possible because Router<()> implements IntoMakeService)
+    let make_service = app.into_make_service();
+    
+    // 20. Start HTTP server
     let addr = format!("{}:{}", config.bind_address, config.port);
     let listener = tokio::net::TcpListener::bind(&addr)
         .await
@@ -296,19 +304,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         })?;
     
     info!(addr = %addr, "Server listening on {}", addr);
-    
-    // In Axum 0.7, Router<AppState> must be converted to MakeService explicitly
-    // Router implements Service<Request>, but axum::serve requires MakeService
-    // MakeService is a factory that creates a Service for each incoming connection
-    // Router<AppState> -> IntoMakeService<Router<AppState>> conversion
-    // 
-    // Note: Router<AppState> has into_make_service() method available because:
-    // - AppState implements Clone + Send + Sync + 'static (via #[derive(Clone)])
-    // - Router<S> provides into_make_service() when S: Clone + Send + Sync + 'static
-    //
-    // If you need ConnectInfo (e.g., SocketAddr for client IP), use:
-    // router.into_make_service_with_connect_info::<SocketAddr>()
-    let make_service = router.into_make_service();
     
     axum::serve(listener, make_service)
         .with_graceful_shutdown(shutdown_signal())
