@@ -1,6 +1,6 @@
 // Axum web server layer
 
-use axum::Router;
+use axum::{Router, extract::Request};
 use std::sync::Arc;
 
 pub mod evaluator_adapter;
@@ -123,22 +123,49 @@ impl Default for Config {
 /// Create the Axum router with all routes and middleware
 /// 
 /// Middleware stack (outermost to innermost):
+/// - Auth middleware - API key extraction and validation (applied to protected routes only)
 /// - Tracing middleware (tower-http::trace) - request ID generation, structured logging
 /// - Body size limit (tower-http::limit) - 2MB max body size
 /// - Request timeout (tower::timeout) - 30s global timeout
 /// - Rate limiting (tower_governor) - TODO: will be implemented with auth middleware
 /// 
 /// Note: Panic recovery is handled automatically by Tower.
-/// Note: Rate limiting is currently skipped (no-op) until auth middleware is ready.
-pub fn create_router(app_state: AppState) -> Router<AppState> {
-    Router::new()
+/// Note: `/health` and `/metrics` endpoints bypass auth middleware.
+pub fn create_router(
+    app_state: AppState,
+    auth_state: Option<Arc<crate::auth::auth_middleware::AuthState>>,
+) -> Router<AppState> {
+    use axum::{middleware::Next, extract::State};
+    
+    let mut router = Router::new()
         .route("/v1/proxy-execute", axum::routing::post(handlers::proxy_execute_handler))
         .route("/health", axum::routing::get(handlers::health_handler))
-        .route("/metrics", axum::routing::get(handlers::metrics_handler))
-        // Middleware layers - TODO: Fix layer error type compatibility with Axum 0.7
-        // These layers need to be applied via ServiceBuilder or with proper error type conversion
-        // .layer(RequestBodyLimitLayer::new(2 * 1024 * 1024))
-        // .layer(TimeoutLayer::new(std::time::Duration::from_secs(30)))
-        // Rate limiting skipped for now - will be added when auth middleware is ready
-        .with_state(app_state)
+        .route("/metrics", axum::routing::get(handlers::metrics_handler));
+
+    // Apply auth middleware to protected routes only
+    if let Some(auth_state) = auth_state {
+        router = router.route_layer(axum::middleware::from_fn_with_state(
+            auth_state,
+            |state: State<Arc<crate::auth::auth_middleware::AuthState>>,
+             request: Request,
+             next: Next| async move {
+                // Skip auth for health and metrics endpoints
+                let path = request.uri().path();
+                if path == "/health" || path == "/metrics" {
+                    return Ok(next.run(request).await);
+                }
+                
+                // Apply auth middleware to all other routes
+                crate::auth::auth_middleware::auth_middleware(state, request, next).await
+            },
+        ));
+    }
+
+    // Middleware layers - TODO: Fix layer error type compatibility with Axum 0.7
+    // These layers need to be applied via ServiceBuilder or with proper error type conversion
+    // .layer(RequestBodyLimitLayer::new(2 * 1024 * 1024))
+    // .layer(TimeoutLayer::new(std::time::Duration::from_secs(30)))
+    // Rate limiting skipped for now - will be added when auth middleware is ready
+    
+    router.with_state(app_state)
 }

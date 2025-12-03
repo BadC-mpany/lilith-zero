@@ -116,22 +116,32 @@ impl sentinel_interceptor::api::ToolRegistry for MockToolRegistry {
 }
 
 struct MockRedisStore {
-    taints: HashMap<String, HashSet<String>>,
-    history: HashMap<String, Vec<HistoryEntry>>,
+    taints: std::sync::Arc<std::sync::RwLock<HashMap<String, HashSet<String>>>>,
+    history: std::sync::Arc<std::sync::RwLock<HashMap<String, Vec<HistoryEntry>>>>,
+}
+
+impl MockRedisStore {
+    fn new() -> Self {
+        Self {
+            taints: std::sync::Arc::new(std::sync::RwLock::new(HashMap::new())),
+            history: std::sync::Arc::new(std::sync::RwLock::new(HashMap::new())),
+        }
+    }
 }
 
 #[async_trait::async_trait]
 impl sentinel_interceptor::api::RedisStore for MockRedisStore {
     async fn get_session_taints(&self, session_id: &str) -> Result<Vec<String>, String> {
-        Ok(self
-            .taints
+        let taints = self.taints.read().unwrap();
+        Ok(taints
             .get(session_id)
             .map(|s| s.iter().cloned().collect())
             .unwrap_or_default())
     }
 
     async fn add_taint(&self, session_id: &str, tag: &str) -> Result<(), String> {
-        self.taints
+        let mut taints = self.taints.write().unwrap();
+        taints
             .entry(session_id.to_string())
             .or_insert_with(HashSet::new)
             .insert(tag.to_string());
@@ -139,8 +149,9 @@ impl sentinel_interceptor::api::RedisStore for MockRedisStore {
     }
 
     async fn remove_taint(&self, session_id: &str, tag: &str) -> Result<(), String> {
-        if let Some(taints) = self.taints.get_mut(session_id) {
-            taints.remove(tag);
+        let mut taints = self.taints.write().unwrap();
+        if let Some(taints_set) = taints.get_mut(session_id) {
+            taints_set.remove(tag);
         }
         Ok(())
     }
@@ -159,7 +170,8 @@ impl sentinel_interceptor::api::RedisStore for MockRedisStore {
                 .unwrap()
                 .as_secs_f64(),
         };
-        self.history
+        let mut history = self.history.write().unwrap();
+        history
             .entry(session_id.to_string())
             .or_insert_with(Vec::new)
             .push(entry);
@@ -170,8 +182,8 @@ impl sentinel_interceptor::api::RedisStore for MockRedisStore {
         &self,
         session_id: &str,
     ) -> Result<Vec<HistoryEntry>, String> {
-        Ok(self
-            .history
+        let history = self.history.read().unwrap();
+        Ok(history
             .get(session_id)
             .cloned()
             .unwrap_or_default())
@@ -246,10 +258,7 @@ async fn test_full_request_flow_allowed() {
     };
 
     // Setup: Create mocks
-    let redis_store = Arc::new(MockRedisStore {
-        taints: HashMap::new(),
-        history: HashMap::new(),
-    });
+    let redis_store = Arc::new(MockRedisStore::new());
 
     let proxy_client = Arc::new(MockProxyClient {
         response: serde_json::json!({"result": {"content": "file contents"}}),
@@ -312,16 +321,13 @@ async fn test_full_request_flow_static_deny() {
         taint_rules: vec![],
     };
 
-    let customer_config = CustomerConfig {
+    let _customer_config = CustomerConfig {
         owner: "test_owner".to_string(),
         mcp_upstream_url: "http://localhost:8000".to_string(),
         policy_name: "test_policy".to_string(),
     };
 
-    let redis_store = Arc::new(MockRedisStore {
-        taints: HashMap::new(),
-        history: HashMap::new(),
-    });
+    let redis_store = Arc::new(MockRedisStore::new());
 
     let proxy_client = Arc::new(MockProxyClient {
         response: serde_json::json!({}),
@@ -332,7 +338,7 @@ async fn test_full_request_flow_static_deny() {
         tool_classes: HashMap::new(),
     });
 
-    let app_state = create_test_app_state(redis_store, proxy_client, tool_registry);
+    let _app_state = create_test_app_state(redis_store, proxy_client, tool_registry);
 
     // Test policy evaluation directly
     let decision = EnginePolicyEvaluator::evaluate(
@@ -467,10 +473,7 @@ async fn test_crypto_token_minting() {
 #[tokio::test]
 async fn test_evaluator_adapter_integration() {
     // Test that the adapter correctly bridges API trait and engine
-    let redis_store = Arc::new(MockRedisStore {
-        taints: HashMap::new(),
-        history: HashMap::new(),
-    });
+    let redis_store = Arc::new(MockRedisStore::new());
 
     let adapter = PolicyEvaluatorAdapter::new(
         redis_store as Arc<dyn sentinel_interceptor::api::RedisStore + Send + Sync>,

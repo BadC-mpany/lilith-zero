@@ -72,3 +72,7 @@ rand = "0.8"
 name = "crypto_bench"
 harness = false
 
+[[bench]]
+name = "proxy_client_bench"
+harness = false
+
