@@ -1,7 +1,6 @@
 fastapi
 uvicorn
 pydantic-settings
-redis
 pyjwt
 cryptography
 pydantic

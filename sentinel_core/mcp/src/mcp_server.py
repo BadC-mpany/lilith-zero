@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file='.env', extra='ignore')
-    # No redis/key config here, it's handled by dependencies in the verifier
+    # MCP server is stateless - no Redis dependency
 
 
 settings = Settings()
