@@ -3,6 +3,7 @@
 import os
 import yaml
 import logging
+from pathlib import Path
 from typing import Dict, Any, List, Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -11,7 +12,10 @@ logger = logging.getLogger(__name__)
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file='.env', extra='ignore', env_prefix='')
-    tool_registry_path: str = "/app/rule_maker/data/tool_registry.yaml"
+    # Default to local path relative to project root, override with TOOL_REGISTRY_PATH env var
+    # Use resolve() to get absolute path
+    # From sentinel_core/mcp/src/tool_registry_loader.py -> up 4 levels to project root -> rule_maker/data/tool_registry.yaml
+    tool_registry_path: str = str(Path(__file__).resolve().parent.parent.parent.parent / "rule_maker" / "data" / "tool_registry.yaml")
 
     def __init__(self, **kwargs):
         # Override defaults with environment variables if they exist

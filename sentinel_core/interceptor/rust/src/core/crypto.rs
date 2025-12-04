@@ -75,19 +75,49 @@ impl CryptoSigner {
         let pkcs8_key = PrivateKeyInfo::from_der(pem.contents())
             .map_err(|e| CryptoError::KeyLoadError(format!("Failed to parse PKCS8 DER: {}", e)))?;
 
-        // Extract the private key octet string (contains the raw Ed25519 key)
-        // For Ed25519, the private key is 32 bytes
+        // Extract the private key octet string
+        // PKCS8 Ed25519 keys can be:
+        // - 32 bytes: raw Ed25519 private key
+        // - 34 bytes: 0x04 0x20 prefix + 32-byte key (ASN.1 OCTET STRING encoding)
+        // - 64 bytes: 32-byte private key + 32-byte public key (some formats)
         let key_bytes = pkcs8_key.private_key;
         
-        if key_bytes.len() != 32 {
+        let raw_key_bytes: &[u8] = match key_bytes.len() {
+            32 => {
+                // Raw 32-byte key
+                &key_bytes
+            }
+            34 => {
+                // Check for 0x04 0x20 prefix (ASN.1 OCTET STRING with length 32)
+                if key_bytes[0] == 0x04 && key_bytes[1] == 0x20 {
+                    &key_bytes[2..]
+                } else {
+                    // Take last 32 bytes if prefix doesn't match expected format
+                    &key_bytes[key_bytes.len() - 32..]
+                }
+            }
+            64 => {
+                // 32-byte private key + 32-byte public key format
+                // Take first 32 bytes (private key)
+                &key_bytes[..32]
+            }
+            _ => {
+                return Err(CryptoError::KeyLoadError(
+                    format!("Invalid Ed25519 key length: expected 32, 34, or 64 bytes, got {}", key_bytes.len()),
+                ));
+            }
+        };
+
+        // Ensure we have exactly 32 bytes
+        if raw_key_bytes.len() != 32 {
             return Err(CryptoError::KeyLoadError(
-                format!("Invalid Ed25519 key length: expected 32 bytes, got {}", key_bytes.len()),
+                format!("Failed to extract 32-byte Ed25519 key from {} bytes", key_bytes.len()),
             ));
         }
 
         // Create SecretKey from raw bytes (takes [u8; 32] by reference)
         let mut key_array = [0u8; 32];
-        key_array.copy_from_slice(key_bytes);
+        key_array.copy_from_slice(raw_key_bytes);
 
         // Create SigningKey directly from bytes
         let signing_key = SigningKey::from_bytes(&key_array);

@@ -7,10 +7,10 @@ from pydantic import BaseModel
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Dict, Any, Optional
 
-# Use relative imports since all modules are in PYTHONPATH
-from token_verifier import verify_sentinel_token, verify_sentinel_token_mcp, ToolRequest, MCPCallParams
-from tool_executor import execute_tool_logic
-from tool_registry_loader import get_tool_registry_loader
+# Import from src package (when running as python -m uvicorn src.mcp_server:app)
+from src.token_verifier import verify_sentinel_token, verify_sentinel_token_mcp, ToolRequest, MCPCallParams
+from src.tool_executor import execute_tool_logic
+from src.tool_registry_loader import get_tool_registry_loader
 
 # --- LOGGING CONFIGURATION ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -208,7 +208,7 @@ async def mcp_jsonrpc_endpoint(request: Request):
             return create_jsonrpc_error(INVALID_PARAMS, "Invalid params structure", request_id)
         
         # Verify token using direct verification function
-        from token_verifier import verify_token_direct
+        from src.token_verifier import verify_token_direct
         from fastapi import HTTPException
         
         try:

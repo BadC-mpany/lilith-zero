@@ -73,13 +73,17 @@ impl AuditLogger {
                 };
 
                 // Fire-and-forget database insert (errors are logged but don't block)
+                // PostgreSQL INET type: pass None for NULL, or the IP string (PostgreSQL will parse it)
+                // Using Option<&str> allows sqlx to handle NULL properly
+                let ip_opt: Option<&str> = ip.as_deref();
+                
                 if let Err(e) = sqlx::query(
                     "INSERT INTO auth_audit_log (api_key_hash, event_type, ip_address, user_agent, created_at)
-                     VALUES ($1, $2, $3, $4, NOW())"
+                     VALUES ($1, $2, $3::inet, $4, NOW())"
                 )
                 .bind(&hash_str)
                 .bind(event_type)
-                .bind(&ip)
+                .bind(ip_opt)
                 .bind(&ua)
                 .execute(pool.as_ref())
                 .await

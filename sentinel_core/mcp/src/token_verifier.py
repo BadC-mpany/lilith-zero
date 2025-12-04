@@ -12,6 +12,15 @@ from pydantic import BaseModel
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Dict, Any, Optional
 
+import sys
+from pathlib import Path
+# Add shared Python src to path for crypto_utils
+# From sentinel_core/mcp/src/token_verifier.py -> go up 3 levels to sentinel_core -> shared/python/src
+# Use resolve() to get absolute path
+_current_file = Path(__file__).resolve()
+shared_src_path = _current_file.parent.parent.parent / "shared" / "python" / "src"
+if str(shared_src_path) not in sys.path:
+    sys.path.insert(0, str(shared_src_path))
 from crypto_utils import CryptoUtils
 logger = getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -20,7 +29,9 @@ logger.setLevel(logging.INFO)
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file='.env', extra='ignore', env_prefix='')
 
-    mcp_public_key_path: str = "/app/secrets/mcp_public.pem"
+    # Default to Windows/local path, override with MCP_PUBLIC_KEY_PATH env var
+    # Use resolve() to get absolute path
+    mcp_public_key_path: str = str(Path(__file__).resolve().parent.parent / "keys" / "interceptor_public_key.pem")
     redis_host: str = "localhost"  # Default to localhost for non-Docker environments
     redis_port: int = 6379
     redis_db: int = 1

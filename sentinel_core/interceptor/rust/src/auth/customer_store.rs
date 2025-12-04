@@ -80,7 +80,10 @@ impl CustomerStore for DbCustomerStore {
         &self,
         api_key_hash: &str,
     ) -> Result<Option<CustomerConfig>, String> {
-        let hash = ApiKeyHash::from_api_key(api_key_hash);
+        // api_key_hash is already a hash string (64 hex chars), not a plaintext key
+        // Use from_hash_string to avoid double-hashing
+        let hash = ApiKeyHash::from_hash_string(api_key_hash)
+            .map_err(|e| format!("Invalid hash format: {}", e))?;
         self.lookup_customer_by_hash(&hash)
             .await
             .map_err(|e| format!("Database error: {}", e))

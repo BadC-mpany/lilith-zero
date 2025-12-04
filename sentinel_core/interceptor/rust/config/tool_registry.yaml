@@ -1,0 +1,138 @@
+tools:
+  web_search:
+    description: "Searches the web for information using a search query."
+    classes: [CONSEQUENTIAL_WRITE]  # Can exfiltrate data
+    auto_classified: false  # manually reviewed
+    args:
+      query:
+        type: string
+        description: "The search query string"
+        required: true
+    
+  read_file:
+    description: "Reads content from a file at the specified path."
+    classes: [SENSITIVE_READ]  # Assumes files could be sensitive
+    auto_classified: false
+    args:
+      path:
+        type: string
+        description: "The file path to read from"
+        required: true
+    
+  delete_db:
+    description: "Permanently deletes the database. DESTRUCTIVE operation."
+    classes: [HUMAN_VERIFY]  # Requires human approval
+    auto_classified: false
+    args:
+      confirm:
+        type: boolean
+        description: "Confirmation flag to proceed with deletion. Must be True."
+        required: true
+    
+  redact_pii:
+    description: "Removes PII from text input"
+    classes: [SANITIZER]
+    auto_classified: true  # LLM classified this
+    args:
+      text:
+        type: string
+        description: "Text to sanitize"
+        required: true
+
+  get_weather:
+    description: Fetches current weather information for a given location using a
+      public API
+    classes:
+    - SAFE_READ
+    auto_classified: true
+    args:
+      location:
+        type: string
+        description: City name or coordinates
+        required: true
+      units:
+        type: string
+        description: Temperature units (celsius or fahrenheit)
+        required: false
+
+  send_email:
+    description: Sends an email message to a specified recipient with subject and
+      body
+    classes:
+    - CONSEQUENTIAL_WRITE
+    auto_classified: true
+    args:
+      to:
+        type: string
+        description: Recipient email address
+        required: true
+      subject:
+        type: string
+        description: Email subject line
+        required: true
+      body:
+        type: string
+        description: Email body content
+        required: true
+
+  execute_shell_command:
+    description: Executes a shell command on the local system and returns the output
+    classes:
+    - UNSAFE_EXECUTE
+    auto_classified: true
+    args:
+      command:
+        type: string
+        description: The shell command to execute
+        required: true
+      timeout:
+        type: integer
+        description: Maximum execution time in seconds
+        required: false
+
+  read_database:
+    description: Queries the production database and returns customer records including
+      PII
+    classes:
+    - SENSITIVE_READ
+    auto_classified: true
+    args:
+      query:
+        type: string
+        description: SQL query to execute
+        required: true
+      limit:
+        type: integer
+        description: Maximum number of rows to return
+        required: false
+
+  create_temp_note:
+    description: Creates a temporary note in the session workspace for agent reasoning
+    classes:
+    - SAFE_WRITE
+    auto_classified: true
+    args:
+      content:
+        type: string
+        description: Note content
+        required: true
+      title:
+        type: string
+        description: Note title
+        required: false
+        
+  anonymize_text:
+    description: Removes personally identifiable information (PII) from text by replacing
+      with placeholders
+    classes:
+    - SANITIZER
+    auto_classified: true
+    args:
+      text:
+        type: string
+        description: Text containing PII to anonymize
+        required: true
+      pii_types:
+        type: array
+        description: Types of PII to detect (email, phone, ssn, etc)
+        required: false

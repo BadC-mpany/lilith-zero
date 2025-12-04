@@ -21,6 +21,21 @@ impl ApiKeyHash {
         Self(hex::encode(hash_bytes))
     }
 
+    /// Create an ApiKeyHash from an existing hash string (64 hex characters)
+    /// 
+    /// Use this when you already have a hash and don't want to hash again.
+    /// Validates that the string is 64 hex characters.
+    pub fn from_hash_string(hash_str: &str) -> Result<Self, String> {
+        if hash_str.len() != 64 {
+            return Err(format!("Invalid hash length: expected 64, got {}", hash_str.len()));
+        }
+        // Validate hex characters
+        if !hash_str.chars().all(|c| c.is_ascii_hexdigit()) {
+            return Err("Invalid hash format: must be 64 hex characters".to_string());
+        }
+        Ok(Self(hash_str.to_string()))
+    }
+
     /// Get the hash as a string slice
     pub fn as_str(&self) -> &str {
         &self.0
