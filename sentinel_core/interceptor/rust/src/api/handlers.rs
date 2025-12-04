@@ -230,12 +230,39 @@ pub async fn proxy_execute_handler(
 pub async fn health_handler(
     State(app_state): State<AppState>,
 ) -> Result<Json<HealthResponse>, ApiError> {
-    // Check Redis connectivity
-    let redis_status = match app_state.redis_store.ping().await {
-        Ok(_) => "connected".to_string(),
-        Err(e) => {
-            warn!(error = %e, "Redis ping failed");
-            format!("disconnected: {}", e)
+    // Check Redis connectivity with panic recovery
+    // ConnectionManager can panic if the driver task terminates unexpectedly.
+    // We spawn the ping in a separate task to isolate panics and catch them via JoinError.
+    let redis_status = {
+        // Clone the Arc to move into spawned task
+        let redis_store = app_state.redis_store.clone();
+        
+        // Spawn ping in a separate task to catch panics
+        // If the ConnectionManager's driver panics, the task will panic
+        // and we catch it via JoinError instead of crashing the server
+        let ping_task = tokio::spawn(async move {
+            tokio::time::timeout(
+                std::time::Duration::from_secs(3),
+                redis_store.ping()
+            ).await
+        });
+        
+        match ping_task.await {
+            Ok(Ok(Ok(_))) => "connected".to_string(),
+            Ok(Ok(Err(e))) => {
+                warn!(error = %e, "Redis ping failed");
+                format!("disconnected: {}", e)
+            }
+            Ok(Err(_)) => {
+                warn!("Redis ping timed out");
+                "disconnected: timeout".to_string()
+            }
+            Err(join_err) => {
+                // Task panicked - ConnectionManager driver likely terminated
+                // This is the key: we catch the panic here instead of letting it crash the server
+                warn!(error = %join_err, "Redis ping task panicked - connection driver terminated (recovered)");
+                "disconnected: driver panic (recovered)".to_string()
+            }
         }
     };
 

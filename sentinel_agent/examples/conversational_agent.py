@@ -163,10 +163,24 @@ if __name__ == "__main__":
     console.print("[bold green]Verifying backend services are running...[/bold green]")
     try:
         import httpx
-        httpx.get(config.SENTINEL_URL, timeout=2)
-        console.print("[bold green]Sentinel Interceptor is reachable. Starting agent.[/bold green]")
-        time.sleep(1)
-        main(verbose=args.verbose)
-    except (ImportError, httpx.RequestError) as e:
+        # Use longer timeout and check health endpoint
+        health_url = f"{config.SENTINEL_URL}/health"
+        response = httpx.get(health_url, timeout=10.0)
+        if response.status_code == 200:
+            console.print("[bold green]Sentinel Interceptor is reachable. Starting agent.[/bold green]")
+            time.sleep(1)
+            main(verbose=args.verbose)
+        else:
+            console.print(f"[bold red]CRITICAL ERROR: Sentinel Interceptor returned status {response.status_code}[/bold red]")
+            console.print(f"Please ensure services are running. Start with: .\\scripts\\start_all.ps1")
+    except ImportError as e:
+        console.print(f"[bold red]CRITICAL ERROR: Missing dependency: {e}[/bold red]")
+        console.print("Install dependencies with: pip install -r requirements.txt")
+    except httpx.RequestError as e:
         console.print(f"[bold red]CRITICAL ERROR: Could not connect to the Sentinel Interceptor.[/bold red]")
-        console.print(f"Please ensure Docker services are running with 'docker-compose up'. Error: {e}")
+        console.print(f"URL: {config.SENTINEL_URL}")
+        console.print(f"Error: {e}")
+        console.print(f"Please ensure services are running. Start with: .\\scripts\\start_all.ps1")
+    except Exception as e:
+        console.print(f"[bold red]CRITICAL ERROR: Unexpected error: {e}[/bold red]")
+        console.print(f"Error type: {type(e).__name__}")

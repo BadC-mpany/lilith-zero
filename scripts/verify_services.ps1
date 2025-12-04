@@ -41,25 +41,36 @@ try {
 # Check Rust Interceptor
 Write-Host "`n[3] Checking Rust Interceptor..." -ForegroundColor Yellow
 try {
-    $response = Invoke-WebRequest -Uri "http://localhost:8000/health" -TimeoutSec 2 -ErrorAction Stop
-    Write-Host "  [OK] Rust Interceptor is running" -ForegroundColor Green
-    Write-Host "    Response: $($response.Content)" -ForegroundColor Gray
+    $response = Invoke-WebRequest -Uri "http://localhost:8000/health" -TimeoutSec 5 -ErrorAction Stop
+    if ($response.StatusCode -eq 200) {
+        Write-Host "  [OK] Rust Interceptor is running" -ForegroundColor Green
+        Write-Host "    Response: $($response.Content)" -ForegroundColor Gray
+    } else {
+        Write-Host "  [FAIL] Rust Interceptor returned status $($response.StatusCode)" -ForegroundColor Red
+        $allGood = $false
+    }
 } catch {
     Write-Host "  [FAIL] Rust Interceptor not responding on port 8000" -ForegroundColor Red
     Write-Host "    Error: $_" -ForegroundColor Gray
     Write-Host "    Start with: cd sentinel_core\interceptor\rust; cargo run --bin sentinel-interceptor" -ForegroundColor Yellow
+    Write-Host "    Note: First compilation may take 30-60 seconds" -ForegroundColor Gray
     $allGood = $false
 }
 
-# Check MCP Server
+# Check MCP Server (use /health endpoint)
 Write-Host "`n[4] Checking MCP Server..." -ForegroundColor Yellow
 try {
-    $response = Invoke-WebRequest -Uri "http://localhost:9000" -TimeoutSec 2 -ErrorAction Stop
-    Write-Host "  [OK] MCP Server is running" -ForegroundColor Green
+    $response = Invoke-WebRequest -Uri "http://localhost:9000/health" -TimeoutSec 5 -ErrorAction Stop
+    if ($response.StatusCode -eq 200) {
+        Write-Host "  [OK] MCP Server is running" -ForegroundColor Green
+    } else {
+        Write-Host "  [FAIL] MCP Server returned status $($response.StatusCode)" -ForegroundColor Red
+        $allGood = $false
+    }
 } catch {
     Write-Host "  [FAIL] MCP Server not responding on port 9000" -ForegroundColor Red
     Write-Host "    Error: $_" -ForegroundColor Gray
-    Write-Host "    Start with: cd sentinel_core\mcp; python -m uvicorn src.mcp_server:app --port 9000" -ForegroundColor Yellow
+    Write-Host "    Start with: cd sentinel_core\mcp; python -m uvicorn src.mcp_server:app --host 0.0.0.0 --port 9000" -ForegroundColor Yellow
     $allGood = $false
 }
 

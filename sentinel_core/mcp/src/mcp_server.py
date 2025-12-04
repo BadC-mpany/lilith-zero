@@ -158,6 +158,14 @@ def handle_tools_call(
         return create_jsonrpc_error(INTERNAL_ERROR, "Internal error", request_id)
 
 
+# --- Health Check Endpoint ---
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint for service verification."""
+    return {"status": "healthy", "service": "mcp-server"}
+
+
 # --- Main JSON-RPC 2.0 Endpoint ---
 
 @app.post("/")

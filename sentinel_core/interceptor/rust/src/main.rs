@@ -67,14 +67,11 @@ impl ApiRedisStore for RedisStoreAdapter {
     }
     
     async fn ping(&self) -> Result<(), String> {
-        // Use get_taints on a dummy session to verify connection
-        // This is a simple way to test connectivity without exposing internal fields
-        // The dummy session won't exist, but the Redis call will verify connectivity
-        // CRITICAL: Must propagate errors - discarding them makes health checks lie
+        // Use proper Redis PING command for reliable health checks
+        // This avoids issues with broken connections and provides better error handling
         self.inner
-            .get_taints("__ping_test__")
+            .ping()
             .await
-            .map(|_| ())
             .map_err(|e| format!("Redis ping failed: {}", e))
     }
 }
@@ -93,6 +90,39 @@ impl ToolRegistry for ToolRegistryAdapter {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Set up panic hook to catch Redis connection panics
+    std::panic::set_hook(Box::new(|panic_info| {
+        let location = panic_info.location()
+            .map(|l| format!("{}:{}:{}", l.file(), l.line(), l.column()))
+            .unwrap_or_else(|| "unknown".to_string());
+        
+        let message = if let Some(s) = panic_info.payload().downcast_ref::<&str>() {
+            s.to_string()
+        } else if let Some(s) = panic_info.payload().downcast_ref::<String>() {
+            s.clone()
+        } else {
+            "Unknown panic".to_string()
+        };
+        
+        eprintln!("PANIC: {} at {}", message, location);
+        
+        // Check if this is a Redis connection panic
+        if message.contains("Multiplexed connection driver") || message.contains("connection driver") {
+            eprintln!("\nRedis connection panic detected!");
+            eprintln!("This usually means:");
+            eprintln!("  1. Redis connection was lost during runtime");
+            eprintln!("  2. WSL port forwarding connection broke");
+            eprintln!("  3. Redis server restarted or became unavailable");
+            eprintln!("\nThe server will continue running, but Redis operations may fail.");
+            eprintln!("Troubleshooting:");
+            eprintln!("  - Check Redis is running: wsl redis-cli ping");
+            eprintln!("  - Verify port forwarding: netsh interface portproxy show all");
+            eprintln!("  - Restart Redis: wsl redis-cli shutdown && wsl redis-server --daemonize yes");
+            eprintln!("  - Restart WSL if needed: wsl --shutdown (wait 10s)");
+            eprintln!("\nNote: Health endpoint will report Redis as disconnected until reconnected.");
+        }
+    }));
+    
     // 1. Load and validate configuration first (before any logging)
     let config = match Config::from_env() {
         Ok(c) => c,
@@ -114,12 +144,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "Configuration loaded"
     );
     
-    // 3. Initialize Redis store
+    // 3. Initialize Redis store with retry logic
+    info!(redis_url = %config.redis_url, "Connecting to Redis...");
     let redis_store_impl = Arc::new(
         RedisStoreImpl::new(&config.redis_url)
             .await
             .map_err(|e| {
-                error!(error = %e, "Failed to initialize Redis store");
+                error!(error = %e, redis_url = %config.redis_url, "Failed to initialize Redis store");
+                eprintln!("\nRedis connection failed!");
+                eprintln!("Error: {}", e);
+                eprintln!("\nTroubleshooting for WSL Redis:");
+                eprintln!("  1. Check Redis is running: wsl redis-cli ping");
+                eprintln!("  2. Verify port forwarding: netsh interface portproxy show all");
+                eprintln!("  3. If missing, run: .\\scripts\\setup_wsl_redis_forwarding.ps1");
+                eprintln!("  4. Check REDIS_URL in .env file");
+                eprintln!("  5. WSL can be slow - wait 30s after 'wsl --shutdown'");
                 e
             })?
     );

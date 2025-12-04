@@ -5,6 +5,7 @@ use crate::core::models::HistoryEntry;
 use redis::aio::ConnectionManager;
 use redis::{AsyncCommands, Client};
 use std::collections::HashSet;
+use tokio::time::Duration;
 
 /// Redis store for session state management
 pub struct RedisStore {
@@ -13,17 +14,141 @@ pub struct RedisStore {
 
 impl RedisStore {
     /// Create a new RedisStore with connection manager
+    /// Includes retry logic, connection verification, and intelligent error handling
+    /// 
+    /// This method implements a robust connection strategy:
+    /// 1. Pre-tests connection with simple async connection (faster failure detection)
+    /// 2. Creates ConnectionManager with extended timeout for WSL port forwarding
+    /// 3. Retries with exponential backoff (3 attempts)
+    /// 4. Verifies connection with PING after creation
+    /// 5. Provides detailed error messages for troubleshooting
     pub async fn new(redis_url: &str) -> Result<Self, InterceptorError> {
+        use tokio::time::{sleep, Duration};
+        
+        const MAX_RETRIES: u32 = 3;
+        const INITIAL_DELAY_MS: u64 = 1000; // Start with 1 second delay
+        
+        let mut connection_errors = Vec::new();
+        
+        for attempt in 0..MAX_RETRIES {
+            if attempt > 0 {
+                let delay_ms = INITIAL_DELAY_MS * attempt as u64; // Linear backoff: 1s, 2s
+                sleep(Duration::from_millis(delay_ms)).await;
+            }
+            
+            match Self::try_create_connection(redis_url).await {
+                Ok(store) => {
+                    // Verify connection works by pinging
+                    match store.ping().await {
+                        Ok(_) => {
+                            // Success! Log if this was a retry
+                            if attempt > 0 {
+                                tracing::info!(
+                                    "Redis connection succeeded on attempt {}",
+                                    attempt + 1
+                                );
+                            }
+                            return Ok(store);
+                        }
+                        Err(e) => {
+                            let err_msg = format!("Connection created but ping failed: {}", e);
+                            connection_errors.push(err_msg);
+                            continue;
+                        }
+                    }
+                }
+                Err(e) => {
+                    let err_msg = format!("Attempt {} failed: {}", attempt + 1, e);
+                    connection_errors.push(err_msg);
+                    
+                    // Log intermediate failures for debugging
+                    if attempt < MAX_RETRIES - 1 {
+                        tracing::warn!(
+                            attempt = attempt + 1,
+                            max_attempts = MAX_RETRIES,
+                            error = %e,
+                            "Redis connection attempt failed, retrying..."
+                        );
+                    }
+                    continue;
+                }
+            }
+        }
+        
+        // Build comprehensive error message with troubleshooting hints
+        let error_details = connection_errors.join("; ");
+        let troubleshooting = if redis_url.contains("localhost") || redis_url.contains("127.0.0.1") {
+            format!(
+                "\n\nTroubleshooting steps for WSL Redis:\n\
+                1. Check Redis is running in WSL:\n\
+                   - wsl redis-cli ping (should return PONG)\n\
+                2. Verify port forwarding is configured:\n\
+                   - netsh interface portproxy show all (should show 6379)\n\
+                   - If missing, run: .\\scripts\\setup_wsl_redis_forwarding.ps1\n\
+                3. Test TCP connection from Windows:\n\
+                   - Test-NetConnection -ComputerName localhost -Port 6379\n\
+                4. If WSL is slow to start, wait 30 seconds after 'wsl --shutdown'\n\
+                5. Check Redis URL in .env: {}\n\
+                6. Run diagnostics: .\\scripts\\check_redis_availability.ps1",
+                redis_url
+            )
+        } else {
+            format!("\n\nCheck Redis URL: {}", redis_url)
+        };
+        
+        Err(InterceptorError::StateError(
+            format!(
+                "Failed to create Redis connection after {} attempts.\n\
+                Errors: {}\n{}",
+                MAX_RETRIES,
+                error_details,
+                troubleshooting
+            )
+        ))
+    }
+    
+    /// Try to create a Redis connection (internal helper)
+    /// 
+    /// Strategy optimized for WSL Redis with port forwarding:
+    /// 1. Create Redis client (validates URL format)
+    /// 2. Skip pre-test for localhost (WSL port forwarding is slow, pre-test adds unnecessary delay)
+    /// 3. Create ConnectionManager directly with extended timeout (30s for WSL)
+    /// 
+    /// WSL port forwarding can be very slow (10-20+ seconds) especially on first connection.
+    /// The pre-test was causing unnecessary timeouts. We go straight to ConnectionManager
+    /// which handles the connection establishment more efficiently.
+    async fn try_create_connection(redis_url: &str) -> Result<Self, InterceptorError> {
+        // Create Redis client (validates URL format)
         let client = Client::open(redis_url)
             .map_err(|e| InterceptorError::StateError(
-                format!("Failed to create Redis client: {}", e)
+                format!("Invalid Redis URL format '{}': {}", redis_url, e)
             ))?;
 
-        let connection_manager = ConnectionManager::new(client)
-            .await
-            .map_err(|e| InterceptorError::StateError(
-                format!("Failed to create Redis connection manager: {}", e)
-            ))?;
+        // For WSL Redis with port forwarding, connection establishment can be very slow
+        // (10-30 seconds on first connection). We use an extended timeout and skip
+        // the pre-test which was causing premature timeouts.
+        // 
+        // ConnectionManager spawns a background task that handles connection establishment
+        // more efficiently than a simple async connection.
+        let connection_manager = tokio::time::timeout(
+            Duration::from_secs(30), // Extended timeout for WSL port forwarding (can be 10-20s+)
+            ConnectionManager::new(client)
+        )
+        .await
+        .map_err(|_| InterceptorError::StateError(
+            format!(
+                "Redis ConnectionManager creation timed out after 30 seconds. \
+                WSL Redis with port forwarding can be slow on first connection. \
+                Verify: wsl redis-cli ping && netsh interface portproxy show all"
+            )
+        ))?
+        .map_err(|e| InterceptorError::StateError(
+            format!(
+                "Failed to create Redis ConnectionManager: {}. \
+                Check Redis is running: wsl redis-cli ping",
+                e
+            )
+        ))?;
 
         Ok(Self { connection_manager })
     }
@@ -151,6 +276,31 @@ impl RedisStore {
         }
         
         Ok(false)
+    }
+
+    /// Ping Redis to check connectivity
+    /// Uses the actual Redis PING command for reliable health checks
+    /// 
+    /// WARNING: This method can panic if ConnectionManager's driver task has terminated.
+    /// The health handler wraps this in panic recovery. For production use, consider
+    /// using a connection pool (bb8-redis) that handles reconnection automatically.
+    pub async fn ping(&self) -> Result<(), InterceptorError> {
+        let mut conn = self.connection_manager.clone();
+        // Use redis::cmd macro to execute PING command
+        let result: String = redis::cmd("PING")
+            .query_async(&mut conn)
+            .await
+            .map_err(|e| InterceptorError::StateError(
+                format!("Redis ping failed: {}", e)
+            ))?;
+        
+        if result == "PONG" {
+            Ok(())
+        } else {
+            Err(InterceptorError::StateError(
+                format!("Redis ping returned unexpected response: {}", result)
+            ))
+        }
     }
 }
 
