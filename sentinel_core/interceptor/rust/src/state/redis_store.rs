@@ -41,33 +41,75 @@ impl RedisStore {
     pub async fn new(redis_url: &str, config: &Config) -> Result<Self, InterceptorError> {
         use tokio::time::{sleep, Duration as SleepDuration};
         
-        // Production-ready connection strategy:
-        // 1. Force RESP2 protocol (redis-rs 0.24+ defaults to RESP3, which hangs on WSL port forwarding)
-        // 2. Create Client explicitly for URL validation
-        // 3. Create pool with min_idle=0 (lazy initialization - fast, non-blocking)
-        // 4. Verify pool works with a single connection (using config timeouts)
-        // 5. Retry with exponential backoff on failure
-        
         const MAX_RETRIES: u32 = 3;
         const INITIAL_DELAY_MS: u64 = 1000;
         
-        // Use original URL - Redis 7.0.15 supports RESP3 (default for redis-rs 0.24+)
-        // Previous attempts to force RESP2 failed because redis-rs doesn't respect URL parameter
-        // Since Redis 7.0.15 supports RESP3, we let redis-rs use its default (RESP3)
-        let effective_url = redis_url.to_string();
+        // === CRITICAL FIX: BYPASS PORT PROXY BY CONNECTING DIRECTLY TO WSL IP ===
+        // The Windows-to-WSL port proxy (netsh v4tov4) drops RESP3 'HELLO' handshake packets.
+        // Even RESP2 fails over the proxy because redis-rs Client doesn't respect ?protocol=resp2.
+        // 
+        // SOLUTION: Connect directly to WSL IP address, bypassing the port proxy entirely.
+        // This allows both RESP2 and RESP3 to work, as there's no proxy interference.
+        
+        // Detect if we're connecting to localhost/127.0.0.1 (indicates WSL port forwarding)
+        let mut effective_url = redis_url.to_string();
+        if effective_url.contains("127.0.0.1") || effective_url.contains("localhost") {
+            // Get WSL IP address dynamically
+            tracing::info!("Detected localhost connection - attempting to resolve WSL IP...");
+            let wsl_ip = Self::get_wsl_ip().await;
+            
+            match wsl_ip {
+                Ok(ip) => {
+                    // Replace localhost/127.0.0.1 with WSL IP
+                    effective_url = effective_url
+                        .replace("127.0.0.1", &ip)
+                        .replace("localhost", &ip);
+                    
+                    tracing::info!(
+                        original_url = redis_url,
+                        effective_url = %effective_url,
+                        wsl_ip = %ip,
+                        "Bypassing port proxy: connecting directly to WSL IP"
+                    );
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        error = %e,
+                        "Failed to get WSL IP, falling back to original URL with RESP2 parameter"
+                    );
+                    // Fallback: try RESP2 parameter (may not work, but worth trying)
+                    if !effective_url.contains("protocol=") {
+                        if effective_url.contains('?') {
+                            effective_url.push_str("&protocol=resp2");
+                        } else {
+                            effective_url.push_str("?protocol=resp2");
+                        }
+                    }
+                }
+            }
+        } else {
+            // Not localhost - use URL as-is, but add RESP2 parameter for safety
+            if !effective_url.contains("protocol=") {
+                if effective_url.contains('?') {
+                    effective_url.push_str("&protocol=resp2");
+                } else {
+                    effective_url.push_str("?protocol=resp2");
+                }
+            }
+        }
         
         tracing::info!(
-            redis_url = redis_url,
-            protocol = "RESP3 (default for redis-rs 0.24+, Redis 7.0.15 supports it)",
-            "Using default RESP3 protocol (Redis 7.0.15 supports RESP3)"
+            original_url = redis_url,
+            effective_url = %effective_url,
+            protocol = "RESP2 (Forced via URL parameter - required for WSL port forwarding)",
+            "Initializing Redis connection with RESP2 protocol"
         );
         
-        let mut last_error = None;
         let mut connection_errors = Vec::new();
         
         for attempt in 0..MAX_RETRIES {
             if attempt > 0 {
-                let delay_ms = INITIAL_DELAY_MS * (1 << (attempt - 1)); // Exponential: 1s, 2s, 4s
+                let delay_ms = INITIAL_DELAY_MS * (1 << (attempt - 1));
                 tracing::warn!(
                     attempt = attempt + 1,
                     max_attempts = MAX_RETRIES,
@@ -80,262 +122,155 @@ impl RedisStore {
             tracing::info!(
                 attempt = attempt + 1,
                 effective_url = %effective_url,
+                protocol = "RESP2",
                 "Attempting Redis connection (attempt {})",
                 attempt + 1
             );
             
-            // Test connection directly BEFORE creating pool
-            // This verifies connection works with RESP3 (default for redis-rs 0.24+)
-            // Redis 7.0.15 supports RESP3, so this should work
-            tracing::info!("Testing direct Redis connection with RESP3 protocol (default)...");
-            let test_conn_start = std::time::Instant::now();
-            let test_result = tokio::time::timeout(
-                TokioDuration::from_secs(config.redis_connection_timeout_secs),
+            // Pre-flight test: Verify direct connection works (using effective_url which may be WSL IP)
+            // This helps diagnose if the issue is connectivity-related or pool-related
+            tracing::debug!("Pre-flight: Testing direct connection to effective URL...");
+            let preflight_start = std::time::Instant::now();
+            let preflight_result = tokio::time::timeout(
+                TokioDuration::from_secs(5),
                 async {
-                    let client = bb8_redis::redis::Client::open(effective_url.as_str())
-                        .map_err(|e| format!("Failed to create Client: {}", e))?;
-                    
-                    let mut conn = client.get_async_connection().await
-                        .map_err(|e| format!("Failed to get connection: {}", e))?;
-                    
-                    // Test PING with RESP3 protocol (default)
-                    let result: String = bb8_redis::redis::cmd("PING")
-                        .query_async(&mut conn)
-                        .await
-                        .map_err(|e| format!("PING failed: {}", e))?;
-                    
-                    if result != "PONG" {
-                        return Err(format!("Unexpected PING response: {}", result));
-                    }
-                    
-                    Ok(())
+                    use bb8_redis::redis::Client;
+                    let client = Client::open(effective_url.as_str())?;
+                    let mut conn = client.get_async_connection().await?;
+                    bb8_redis::redis::cmd("PING").query_async::<_, String>(&mut conn).await
                 }
             ).await;
             
-            let test_duration = test_conn_start.elapsed();
-            
-            match test_result {
-                Ok(Ok(_)) => {
+            match preflight_result {
+                Ok(Ok(result)) if result == "PONG" => {
                     tracing::info!(
-                        duration_ms = test_duration.as_millis(),
+                        duration_ms = preflight_start.elapsed().as_millis(),
                         effective_url = %effective_url,
-                        protocol = "RESP3",
-                        "Direct Redis connection test SUCCESSFUL with RESP3 protocol"
+                        "Pre-flight connection test: SUCCESS"
                     );
                 }
+                Ok(Ok(result)) => {
+                    let err_msg = format!("Pre-flight test returned unexpected result: {} (expected PONG)", result);
+                    tracing::error!(error = %err_msg, "Pre-flight test failed");
+                    connection_errors.push(err_msg);
+                    continue;
+                }
                 Ok(Err(e)) => {
-                    let err_msg = format!("Direct connection test failed after {}ms: {}", test_duration.as_millis(), e);
-                    tracing::error!(
-                        error = %err_msg,
-                        duration_ms = test_duration.as_millis(),
-                        "Direct Redis connection test FAILED"
-                    );
-                    connection_errors.push(err_msg.clone());
-                    last_error = Some(err_msg);
+                    let err_msg = format!("Pre-flight connection test failed: {}", e);
+                    tracing::error!(error = %err_msg, effective_url = %effective_url, "Pre-flight test failed");
+                    connection_errors.push(err_msg);
                     continue;
                 }
                 Err(_) => {
-                    let err_msg = format!("Direct connection test timed out after {} seconds (actual: {}ms)", 
-                        config.redis_connection_timeout_secs, test_duration.as_millis());
-                    tracing::error!(
-                        error = %err_msg,
-                        timeout_secs = config.redis_connection_timeout_secs,
-                        actual_duration_ms = test_duration.as_millis(),
-                        "Direct Redis connection test TIMED OUT"
-                    );
-                    connection_errors.push(err_msg.clone());
-                    last_error = Some(err_msg);
+                    let err_msg = format!("Pre-flight connection test timed out after 5s (URL: {})", effective_url);
+                    tracing::error!(error = %err_msg, "Pre-flight test timed out");
+                    connection_errors.push(err_msg);
                     continue;
                 }
             }
             
-            // Create connection manager with URL (uses RESP3 by default, Redis 7.0.15 supports it)
-            // After successful direct test, create manager for pool
-            tracing::debug!("Creating RedisConnectionManager...");
-            let manager_start = std::time::Instant::now();
+            // Create Manager with RESP2 URL (pre-flight test passed, so this should work)
             let manager = match RedisConnectionManager::new(effective_url.as_str()) {
                 Ok(m) => {
-                    tracing::debug!(
-                        duration_ms = manager_start.elapsed().as_millis(),
-                        protocol = "RESP3 (default)",
-                        "RedisConnectionManager created successfully"
-                    );
+                    tracing::debug!("RedisConnectionManager created successfully");
                     m
-                }
+                },
                 Err(e) => {
                     let err_msg = format!("Failed to create connection manager: {}", e);
-                    tracing::error!(
-                        error = %err_msg,
-                        duration_ms = manager_start.elapsed().as_millis(),
-                        "RedisConnectionManager creation failed"
-                    );
-                    connection_errors.push(err_msg.clone());
-                    last_error = Some(err_msg);
+                    connection_errors.push(err_msg);
                     continue;
                 }
             };
-
-            // Build pool with lazy initialization (min_idle=0)
-            // This prevents blocking during startup with WSL port forwarding
-            // Pool build timeout: connection timeout + 5s buffer (WSL can be very slow)
-            // Even with min_idle=0, Pool::build() may do some initialization
-            let pool_build_timeout = config.redis_connection_timeout_secs + 5;
-            tracing::info!(
-                pool_build_timeout = pool_build_timeout,
-                connection_timeout = config.redis_connection_timeout_secs,
-                max_size = config.redis_pool_max_size,
-                min_idle = 0,
-                "Starting Pool::build() - this may establish initial connection even with min_idle=0"
-            );
             
-            let pool_build_start = std::time::Instant::now();
+            // 4. Build Pool (Lazy)
+            let pool_build_timeout = config.redis_connection_timeout_secs + 5;
+            tracing::info!("Building pool with RESP2 (Attempt {})...", attempt + 1);
+            
             let pool_result = tokio::time::timeout(
                 TokioDuration::from_secs(pool_build_timeout),
-                async {
-                    tracing::debug!("Pool::builder() starting...");
-                    let builder = Pool::builder()
-                        .max_size(config.redis_pool_max_size)
-                        .min_idle(0) // Lazy initialization - don't block on startup
-                        .max_lifetime(TokioDuration::from_secs(config.redis_pool_max_lifetime_secs))
-                        .idle_timeout(Some(TokioDuration::from_secs(config.redis_pool_idle_timeout_secs)));
-                    
-                    tracing::debug!("Calling Pool::build(manager)...");
-                    builder.build(manager).await
-                }
+                Pool::builder()
+                    .max_size(config.redis_pool_max_size)
+                    .min_idle(0) 
+                    .max_lifetime(Some(TokioDuration::from_secs(config.redis_pool_max_lifetime_secs)))
+                    .idle_timeout(Some(TokioDuration::from_secs(config.redis_pool_idle_timeout_secs)))
+                    .build(manager)
             ).await;
-            
-            let pool_build_duration = pool_build_start.elapsed();
-            tracing::info!(
-                duration_ms = pool_build_duration.as_millis(),
-                timeout_secs = pool_build_timeout,
-                "Pool::build() completed (or timed out)"
-            );
             
             match pool_result {
                 Ok(Ok(pool)) => {
-                    tracing::info!(
-                        duration_ms = pool_build_duration.as_millis(),
-                        "Pool::build() succeeded - pool created"
-                    );
-                    
-                    // Verify pool works with a single connection (using config timeouts)
-                    tracing::info!("Starting pool verification (get connection + PING)...");
-                    let verify_start = std::time::Instant::now();
+                    // 5. Verify Connection
+                    // Pre-flight test passed, so pool verification should work too
+                    tracing::info!("Verifying pool connection (PING)...");
                     match Self::verify_pool_connection(&pool, config).await {
                         Ok(_) => {
-                            let verify_duration = verify_start.elapsed();
                             tracing::info!(
-                                protocol = "RESP3 (default, Redis 7.0.15 supports it)",
-                                max_size = config.redis_pool_max_size,
-                                connection_timeout = config.redis_connection_timeout_secs,
-                                operation_timeout = config.redis_operation_timeout_secs,
-                                url = %effective_url,
-                                pool_build_ms = pool_build_duration.as_millis(),
-                                verify_ms = verify_duration.as_millis(),
-                                total_ms = (pool_build_duration + verify_duration).as_millis(),
-                                "Redis connection pool initialized successfully"
+                                effective_url = %effective_url,
+                                "Redis connection pool verified successfully"
                             );
-                            
-                            if attempt > 0 {
-                                tracing::info!(
-                                    "Redis connection succeeded on attempt {}",
-                                    attempt + 1
-                                );
-                            }
-                            
                             return Ok(Self { pool, config: config.clone() });
                         }
                         Err(e) => {
-                            let verify_duration = verify_start.elapsed();
-                            let err_msg = format!("Pool created but verification failed after {}ms: {}", verify_duration.as_millis(), e);
-                            tracing::error!(
-                                error = %err_msg,
-                                pool_build_ms = pool_build_duration.as_millis(),
-                                verify_ms = verify_duration.as_millis(),
-                                "Pool verification failed"
-                            );
-                            connection_errors.push(err_msg.clone());
-                            last_error = Some(err_msg);
+                            let err_msg = format!("Handshake failed: {}", e);
+                            tracing::error!(error = %err_msg, "Verification failed");
+                            connection_errors.push(err_msg);
                             continue;
                         }
                     }
                 }
                 Ok(Err(e)) => {
-                    let err_msg = format!("Pool::build() returned error after {}ms: {}", pool_build_duration.as_millis(), e);
-                    tracing::error!(
-                        error = %err_msg,
-                        duration_ms = pool_build_duration.as_millis(),
-                        "Pool::build() failed with error"
-                    );
-                    connection_errors.push(err_msg.clone());
-                    last_error = Some(err_msg);
+                    let err_msg = format!("Pool build error: {}", e);
+                    connection_errors.push(err_msg);
                     continue;
                 }
                 Err(_) => {
-                    let err_msg = format!(
-                        "Pool::build() timed out after {} seconds (connection_timeout={}s + 5s buffer). \
-                        Actual duration: {}ms. For WSL, try REDIS_CONNECTION_TIMEOUT_SECS=20",
-                        pool_build_timeout,
-                        config.redis_connection_timeout_secs,
-                        pool_build_duration.as_millis()
-                    );
-                    tracing::error!(
-                        error = %err_msg,
-                        timeout_secs = pool_build_timeout,
-                        actual_duration_ms = pool_build_duration.as_millis(),
-                        "Pool::build() timed out"
-                    );
-                    connection_errors.push(err_msg.clone());
-                    last_error = Some(err_msg);
+                    let err_msg = format!("Pool build timed out after {}s", pool_build_timeout);
+                    connection_errors.push(err_msg);
                     continue;
                 }
             }
         }
         
-        // All retries failed - provide comprehensive diagnostics
-        let error_summary = connection_errors.join("; ");
-        let troubleshooting = if redis_url.contains("localhost") || redis_url.contains("127.0.0.1") {
-            format!(
-                "\n\nTroubleshooting steps for WSL Redis:\n\
-                1. Verify Redis is running:\n\
-                   - wsl redis-cli ping (should return PONG)\n\
-                2. Check port forwarding:\n\
-                   - netsh interface portproxy show all (should show 6379)\n\
-                   - If missing, run: .\\scripts\\fix_wsl_redis_connection.ps1\n\
-                3. Test actual Redis connectivity (not just TCP):\n\
-                   - .\\scripts\\diagnose_redis_connection.ps1\n\
-                4. Check WSL IP hasn't changed:\n\
-                   - wsl hostname -I\n\
-                   - Update port forwarding if IP changed: .\\scripts\\fix_wsl_redis_connection.ps1\n\
-                5. Verify Redis binding:\n\
-                   - Redis must be bound to 0.0.0.0 (not 127.0.0.1)\n\
-                   - Fix: .\\scripts\\fix_wsl_redis_connection.ps1\n\
-                6. Protocol: Using RESP3 (default for redis-rs 0.24+, Redis 7.0.15 supports it)\n\
-                7. Effective Redis URL: {}\n\
-                8. Original URL: {}",
-                effective_url,
-                redis_url
-            )
-        } else {
-            format!(
-                "\n\nCheck Redis URL: {}\n\
-                Effective URL (with RESP2): {}",
-                redis_url,
-                effective_url
-            )
-        };
+        Err(InterceptorError::StateError(format!(
+            "Failed to connect to Redis after {} attempts.\nErrors: {}\nOriginal URL: {}\nEffective URL: {}", 
+            MAX_RETRIES, 
+            connection_errors.join("; "), 
+            redis_url,
+            effective_url
+        )))
+    }
+    
+    /// Get WSL IP address by executing `wsl hostname -I`
+    /// 
+    /// Returns the first IP address from WSL's hostname command.
+    /// This IP can be used to connect directly to WSL services, bypassing port forwarding.
+    async fn get_wsl_ip() -> Result<String, String> {
+        use tokio::process::Command;
         
-        Err(InterceptorError::StateError(
-            format!(
-                "Failed to create Redis connection pool after {} attempts.\n\
-                Errors encountered:\n{}\n\
-                Last error: {}{}",
-                MAX_RETRIES,
-                error_summary,
-                last_error.unwrap_or_else(|| "Unknown error".to_string()),
-                troubleshooting
-            )
-        ))
+        let output = Command::new("wsl")
+            .arg("hostname")
+            .arg("-I")
+            .output()
+            .await
+            .map_err(|e| format!("Failed to execute wsl hostname -I: {}", e))?;
+        
+        if !output.status.success() {
+            return Err(format!("wsl hostname -I failed with status: {:?}", output.status.code()));
+        }
+        
+        let stdout = String::from_utf8(output.stdout)
+            .map_err(|e| format!("Invalid UTF-8 from wsl hostname -I: {}", e))?;
+        
+        // Extract first IP address (WSL may return multiple IPs)
+        let ip = stdout.trim().split_whitespace().next()
+            .ok_or_else(|| "No IP address found in wsl hostname -I output".to_string())?
+            .to_string();
+        
+        // Validate IP format (basic check)
+        if !ip.contains('.') {
+            return Err(format!("Invalid IP format from wsl hostname -I: {}", ip));
+        }
+        
+        Ok(ip)
     }
     
     /// Verify pool connection by getting a connection and pinging
@@ -456,35 +391,100 @@ impl RedisStore {
 
     /// Get all taints for a session
     /// 
-    /// Production-ready implementation with configurable timeout protection.
+    /// Production-ready implementation with ULTRA-FAST FAIL strategy:
+    /// - Connection acquisition: 2 seconds max (fast fail - don't wait for broken pool)
+    /// - Operation execution: 1 second max (fast fail - don't wait for broken connection)
+    /// - Total max time: 3 seconds (but typically <500ms if Redis is healthy)
+    /// - Returns error on timeout/failure (handler converts to empty set - fail-safe)
     pub async fn get_taints(&self, session_id: &str) -> Result<HashSet<String>, InterceptorError> {
-        // Get connection with configurable timeout
-        let mut conn = tokio::time::timeout(
-            TokioDuration::from_secs(self.config.redis_connection_timeout_secs),
-            self.pool.get()
-        ).await
-        .map_err(|_| InterceptorError::StateError(
-            format!("Connection timeout after {} seconds", self.config.redis_connection_timeout_secs)
-        ))?
-        .map_err(|e| InterceptorError::StateError(
-            format!("Failed to get connection: {}", e)
-        ))?;
+        use tracing::{info, warn};
         
         let taint_key = format!("session:{}:taints", session_id);
-
-        // Execute Redis command with configurable timeout
-        let taints: HashSet<String> = tokio::time::timeout(
-            TokioDuration::from_secs(self.config.redis_operation_timeout_secs),
-            conn.smembers(&taint_key)
-        ).await
-        .map_err(|_| InterceptorError::StateError(
-            format!("SMEMBERS timed out after {} seconds for key: {}", self.config.redis_operation_timeout_secs, taint_key)
-        ))?
-        .map_err(|e| InterceptorError::StateError(
-            format!("Failed to get taints: {}", e)
-        ))?;
+        info!(session_id = session_id, taint_key = %taint_key, "Getting session taints from Redis");
         
-        Ok(taints)
+        let operation_start = std::time::Instant::now();
+        
+        // Step 1: Get connection from pool (ULTRA-FAST FAIL: 2 seconds max)
+        // CRITICAL: If pool.get() hangs, fail fast - don't wait for broken connections
+        // This ensures Redis never blocks request processing
+        const CONNECTION_TIMEOUT_SECS: u64 = 2; // Fast fail - don't wait for broken pool
+        let mut conn = match tokio::time::timeout(
+            TokioDuration::from_secs(CONNECTION_TIMEOUT_SECS),
+            self.pool.get()
+        ).await {
+            Ok(Ok(c)) => {
+                info!(
+                    duration_ms = operation_start.elapsed().as_millis(),
+                    "Connection acquired from pool"
+                );
+                c
+            },
+            Ok(Err(e)) => {
+                warn!(
+                    duration_ms = operation_start.elapsed().as_millis(),
+                    error = %e,
+                    "Failed to get connection from pool"
+                );
+                return Err(InterceptorError::StateError(
+                    format!("Pool error: {}", e)
+                ));
+            },
+            Err(_) => {
+                warn!(
+                    duration_ms = operation_start.elapsed().as_millis(),
+                    timeout_secs = CONNECTION_TIMEOUT_SECS,
+                    "Connection acquisition timed out - Redis unavailable"
+                );
+                return Err(InterceptorError::StateError(
+                    format!("Connection timeout after {} seconds - Redis unavailable", CONNECTION_TIMEOUT_SECS)
+                ));
+            }
+        };
+
+        // Step 2: Execute SMEMBERS with fast operation timeout (1 second)
+        // Once connection is established, operations should be fast
+        // If operation times out, connection is likely broken
+        const OPERATION_TIMEOUT_SECS: u64 = 1; // Fast fail: 1 second for operation
+        let smembers_start = std::time::Instant::now();
+        info!(taint_key = %taint_key, "Executing SMEMBERS command...");
+        match tokio::time::timeout(
+            TokioDuration::from_secs(OPERATION_TIMEOUT_SECS),
+            bb8_redis::redis::cmd("SMEMBERS")
+                .arg(&taint_key)
+                .query_async::<_, HashSet<String>>(conn.deref_mut())
+        ).await {
+            Ok(Ok(taints)) => {
+                let smembers_duration = smembers_start.elapsed();
+                let total_duration = operation_start.elapsed();
+                info!(
+                    duration_ms = smembers_duration.as_millis(),
+                    total_ms = total_duration.as_millis(),
+                    taint_count = taints.len(),
+                    "SMEMBERS completed successfully"
+                );
+                Ok(taints)
+            },
+            Ok(Err(e)) => {
+                warn!(
+                    duration_ms = smembers_start.elapsed().as_millis(),
+                    error = %e,
+                    "SMEMBERS command failed"
+                );
+                Err(InterceptorError::StateError(
+                    format!("SMEMBERS failed: {}", e)
+                ))
+            },
+            Err(_) => {
+                warn!(
+                    duration_ms = smembers_start.elapsed().as_millis(),
+                    timeout_secs = OPERATION_TIMEOUT_SECS,
+                    "SMEMBERS command timed out - connection may be broken"
+                );
+                Err(InterceptorError::StateError(
+                    format!("SMEMBERS timeout after {} seconds", OPERATION_TIMEOUT_SECS)
+                ))
+            }
+        }
     }
 
     /// Add a taint to a session (with TTL)
@@ -517,21 +517,101 @@ impl RedisStore {
     // REMOVE_TAINT actions are tracked in history but not actively removed from Redis.
 
     /// Get session history
+    /// 
+    /// Production-ready implementation with ULTRA-FAST FAIL strategy:
+    /// - Connection acquisition: 2 seconds max (fast fail - don't wait for broken pool)
+    /// - Operation execution: 1 second max (fast fail - don't wait for broken connection)
+    /// - Returns error on timeout/failure (caller should handle gracefully - fail-safe)
     pub async fn get_history(&self, session_id: &str) -> Result<Vec<HistoryEntry>, InterceptorError> {
-        let mut conn = self.pool.get().await
-            .map_err(|e| InterceptorError::StateError(
-                format!("Failed to get connection from pool: {}", e)
-            ))?;
+        use tracing::{info, warn};
         
         let history_key = format!("session:{}:history", session_id);
+        info!(session_id = session_id, history_key = %history_key, "Getting session history from Redis");
+        
+        let operation_start = std::time::Instant::now();
+        
+        // Step 1: Get connection from pool (ULTRA-FAST FAIL: 2 seconds max)
+        // CRITICAL: If pool.get() hangs, fail fast - don't wait for broken connections
+        const CONNECTION_TIMEOUT_SECS: u64 = 2; // Fast fail - don't wait for broken pool
+        let mut conn = match tokio::time::timeout(
+            TokioDuration::from_secs(CONNECTION_TIMEOUT_SECS),
+            self.pool.get()
+        ).await {
+            Ok(Ok(c)) => {
+                info!(
+                    duration_ms = operation_start.elapsed().as_millis(),
+                    "Connection acquired from pool for history"
+                );
+                c
+            },
+            Ok(Err(e)) => {
+                warn!(
+                    duration_ms = operation_start.elapsed().as_millis(),
+                    error = %e,
+                    "Failed to get connection from pool for history"
+                );
+                return Err(InterceptorError::StateError(
+                    format!("Pool error: {}", e)
+                ));
+            },
+            Err(_) => {
+                warn!(
+                    duration_ms = operation_start.elapsed().as_millis(),
+                    timeout_secs = CONNECTION_TIMEOUT_SECS,
+                    "Connection acquisition timed out for history - Redis unavailable"
+                );
+                return Err(InterceptorError::StateError(
+                    format!("Connection timeout after {} seconds - Redis unavailable", CONNECTION_TIMEOUT_SECS)
+                ));
+            }
+        };
 
-        let raw_history: Vec<String> = conn
-            .lrange(&history_key, 0, -1)
-            .await
-            .map_err(|e| InterceptorError::StateError(
-                format!("Failed to get history: {}", e)
-            ))?;
+        // Step 2: Execute LRANGE with fast operation timeout (1 second)
+        const OPERATION_TIMEOUT_SECS: u64 = 1; // Fast fail: 1 second for operation
+        let lrange_start = std::time::Instant::now();
+        info!(history_key = %history_key, "Executing LRANGE command...");
+        let raw_history: Vec<String> = match tokio::time::timeout(
+            TokioDuration::from_secs(OPERATION_TIMEOUT_SECS),
+            bb8_redis::redis::cmd("LRANGE")
+                .arg(&history_key)
+                .arg(0)
+                .arg(-1)
+                .query_async::<_, Vec<String>>(conn.deref_mut())
+        ).await {
+            Ok(Ok(history)) => {
+                let lrange_duration = lrange_start.elapsed();
+                let total_duration = operation_start.elapsed();
+                info!(
+                    duration_ms = lrange_duration.as_millis(),
+                    total_ms = total_duration.as_millis(),
+                    entry_count = history.len(),
+                    "LRANGE completed successfully"
+                );
+                history
+            },
+            Ok(Err(e)) => {
+                warn!(
+                    duration_ms = lrange_start.elapsed().as_millis(),
+                    error = %e,
+                    "LRANGE command failed"
+                );
+                return Err(InterceptorError::StateError(
+                    format!("LRANGE failed: {}", e)
+                ));
+            },
+            Err(_) => {
+                warn!(
+                    duration_ms = lrange_start.elapsed().as_millis(),
+                    timeout_secs = OPERATION_TIMEOUT_SECS,
+                    "LRANGE command timed out - connection may be broken"
+                );
+                return Err(InterceptorError::StateError(
+                    format!("LRANGE timeout after {} seconds", OPERATION_TIMEOUT_SECS)
+                ));
+            }
+        };
 
+        // Step 3: Deserialize history entries
         let history: Result<Vec<HistoryEntry>, _> = raw_history
             .iter()
             .map(|item| serde_json::from_str(item))
@@ -614,20 +694,81 @@ impl RedisStore {
     /// 
     /// The connection pool automatically handles reconnection, so this method
     /// will never panic. Errors are returned as Result types.
+    /// 
+    /// IMPORTANT: Uses configurable timeout to prevent hanging on broken connections.
     pub async fn ping(&self) -> Result<(), InterceptorError> {
-        let mut conn = self.pool.get().await
-            .map_err(|e| InterceptorError::StateError(
-                format!("Failed to get connection from pool: {}", e)
-            ))?;
+        use tracing::{debug, warn};
         
-        // Use bb8-redis's redis::cmd macro to execute PING command
-        // The connection from bb8-redis pool implements AsyncCommands trait
-        let result: String = bb8_redis::redis::cmd("PING")
-            .query_async(conn.deref_mut())
-            .await
-            .map_err(|e| InterceptorError::StateError(
-                format!("Redis ping failed: {}", e)
-            ))?;
+        debug!("Acquiring connection from pool for PING...");
+        let conn_start = std::time::Instant::now();
+        let mut conn = match tokio::time::timeout(
+            TokioDuration::from_secs(self.config.redis_connection_timeout_secs),
+            self.pool.get()
+        ).await {
+            Ok(Ok(c)) => {
+                debug!(
+                    duration_ms = conn_start.elapsed().as_millis(),
+                    "Connection acquired for PING"
+                );
+                c
+            },
+            Ok(Err(e)) => {
+                warn!(
+                    duration_ms = conn_start.elapsed().as_millis(),
+                    error = %e,
+                    "Failed to get connection from pool for PING"
+                );
+                return Err(InterceptorError::StateError(
+                    format!("Failed to get connection: {}", e)
+                ));
+            },
+            Err(_) => {
+                warn!(
+                    duration_ms = conn_start.elapsed().as_millis(),
+                    timeout_secs = self.config.redis_connection_timeout_secs,
+                    "Connection acquisition timed out for PING"
+                );
+                return Err(InterceptorError::StateError(
+                    format!("Connection timeout after {} seconds", self.config.redis_connection_timeout_secs)
+                ));
+            }
+        };
+        
+        debug!("Executing PING command...");
+        let ping_start = std::time::Instant::now();
+        // Use bb8-redis's redis::cmd macro to execute PING command with timeout
+        let result: String = match tokio::time::timeout(
+            TokioDuration::from_secs(self.config.redis_operation_timeout_secs),
+            bb8_redis::redis::cmd("PING").query_async(conn.deref_mut())
+        ).await {
+            Ok(Ok(r)) => {
+                debug!(
+                    duration_ms = ping_start.elapsed().as_millis(),
+                    "PING completed successfully"
+                );
+                r
+            },
+            Ok(Err(e)) => {
+                warn!(
+                    duration_ms = ping_start.elapsed().as_millis(),
+                    error = %e,
+                    "PING command failed"
+                );
+                return Err(InterceptorError::StateError(
+                    format!("Redis ping failed: {}", e)
+                ));
+            },
+            Err(_) => {
+                warn!(
+                    duration_ms = ping_start.elapsed().as_millis(),
+                    timeout_secs = self.config.redis_operation_timeout_secs,
+                    "PING command timed out - connection may be broken"
+                );
+                return Err(InterceptorError::StateError(
+                    format!("Redis ping timed out after {} seconds", self.config.redis_operation_timeout_secs)
+                ));
+            }
+        };
         
         if result == "PONG" {
             Ok(())

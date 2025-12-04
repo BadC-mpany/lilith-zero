@@ -13,7 +13,10 @@ from src.tool_executor import execute_tool_logic
 from src.tool_registry_loader import get_tool_registry_loader
 
 # --- LOGGING CONFIGURATION ---
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logging.basicConfig(
+    level=logging.DEBUG,  # Changed to DEBUG for detailed diagnostics
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
 # --- CONFIGURATION CLASS ---
@@ -145,8 +148,12 @@ def handle_tools_call(
         
         # Execute tool
         try:
+            logger.debug(f"Calling execute_tool_logic for '{tool_name}' with args: {tool_args}")
             result = execute_tool_logic(tool_name, tool_args)
-            return create_jsonrpc_success(result, request_id)
+            logger.info(f"Tool '{tool_name}' executed successfully, result: {result}")
+            response = create_jsonrpc_success(result, request_id)
+            logger.debug(f"Returning JSON-RPC success response for request_id: {request_id}")
+            return response
         except Exception as e:
             logger.error(f"Error executing tool '{tool_name}': {e}", exc_info=True)
             # Don't expose internal error details to client
@@ -221,9 +228,13 @@ async def mcp_jsonrpc_endpoint(request: Request):
         
         try:
             token = auth_header.replace("Bearer ", "")
+            logger.debug(f"Verifying token for tool: {mcp_params.name}")
             verify_token_direct(token, mcp_params.name, mcp_params.arguments)
+            logger.debug("Token verified, proceeding with tool execution")
             # Token verified, proceed with tool execution
-            return handle_tools_call(params, request_id)
+            response = handle_tools_call(params, request_id)
+            logger.debug(f"Tool execution handler returned response for request_id: {request_id}")
+            return response
         except HTTPException as http_e:
             # HTTPException from verify_token_direct - convert to JSON-RPC error
             # Map HTTP status codes to JSON-RPC error codes

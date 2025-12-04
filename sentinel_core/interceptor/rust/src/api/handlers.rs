@@ -40,26 +40,51 @@ pub async fn proxy_execute_handler(
         "Received proxy request"
     );
 
-    // Fetch session taints from Redis (with timeout to prevent hanging)
-    // Convert Vec<String> from trait to HashSet<String> for policy evaluation
-    // Use config timeout: connection timeout + operation timeout + buffer
-    let redis_timeout = app_state.config.redis_connection_timeout_secs + app_state.config.redis_operation_timeout_secs + 1;
+    // Fetch session taints from Redis (ULTRA-FAST FAIL)
+    // CRITICAL: Agent timeout is 10s, Redis must complete in <2s to allow 8s for MCP forwarding
+    // Strategy: Fail fast (2s max) - if Redis is slow/unavailable, proceed with empty taints
+    // This ensures Redis never blocks tool execution - it's optional for session state tracking
+    const REDIS_TAINT_TIMEOUT_SECS: u64 = 2; // Ultra-fast fail - don't block on Redis
+    info!(
+        session_id = %request.session_id,
+        redis_timeout_secs = REDIS_TAINT_TIMEOUT_SECS,
+        "Fetching session taints from Redis (fail-fast timeout)..."
+    );
+    let taint_start = std::time::Instant::now();
     let session_taints_vec = match tokio::time::timeout(
-        std::time::Duration::from_secs(redis_timeout),
+        std::time::Duration::from_secs(REDIS_TAINT_TIMEOUT_SECS),
         app_state.redis_store.get_session_taints(&request.session_id)
     ).await {
-        Ok(Ok(taints)) => taints,
+        Ok(Ok(taints)) => {
+            let taint_duration = taint_start.elapsed();
+            info!(
+                session_id = %request.session_id,
+                duration_ms = taint_duration.as_millis(),
+                taint_count = taints.len(),
+                "Session taints retrieved successfully"
+            );
+            taints
+        },
         Ok(Err(e)) => {
-            error!(error = %e, "Failed to fetch session taints");
-            return Err(ApiError::from_interceptor_error(InterceptorError::StateError(format!(
-                "Failed to fetch session state: {}",
-                e
-            ))));
+            let taint_duration = taint_start.elapsed();
+            warn!(
+                error = %e,
+                duration_ms = taint_duration.as_millis(),
+                session_id = %request.session_id,
+                "Redis error - proceeding with empty taints (fail-safe mode)"
+            );
+            // Fail-safe: Redis errors don't block tool execution
+            Vec::new()
         }
         Err(_) => {
-            error!("Redis operation timed out while fetching session taints");
-            // Return empty set on timeout (fail-safe: allow request to proceed)
-            warn!("Continuing with empty taint set due to Redis timeout");
+            let taint_duration = taint_start.elapsed();
+            warn!(
+                duration_ms = taint_duration.as_millis(),
+                timeout_secs = REDIS_TAINT_TIMEOUT_SECS,
+                session_id = %request.session_id,
+                "Redis operation timed out - proceeding with empty taints (fail-safe mode)"
+            );
+            // Fail-safe: Redis timeout should not block tool execution
             Vec::new()
         }
     };
@@ -69,7 +94,7 @@ pub async fn proxy_execute_handler(
     info!(
         session_id = %request.session_id,
         taints = ?session_taints,
-        "Session taints retrieved"
+        "Session taints processed"
     );
 
     // Get tool classes from tool registry

@@ -77,15 +77,15 @@ impl Config {
             redis_url: redis_url.clone(),
             redis_pool_max_size: Self::parse_u32_or_default("REDIS_POOL_MAX_SIZE", 10)?,
             redis_pool_min_idle: Self::parse_u32_or_default("REDIS_POOL_MIN_IDLE", 0)?, // Lazy initialization - set to 0 for production
-            redis_pool_max_lifetime_secs: Self::parse_u64_or_default("REDIS_POOL_MAX_LIFETIME_SECS", 1800)?,
-            redis_pool_idle_timeout_secs: Self::parse_u64_or_default("REDIS_POOL_IDLE_TIMEOUT_SECS", 300)?,
+            redis_pool_max_lifetime_secs: Self::detect_redis_pool_max_lifetime(&redis_url)?,
+            redis_pool_idle_timeout_secs: Self::detect_redis_pool_idle_timeout(&redis_url)?,
             redis_connection_timeout_secs: Self::detect_redis_connection_timeout(&redis_url)?,
-            redis_operation_timeout_secs: Self::parse_u64_or_default("REDIS_OPERATION_TIMEOUT_SECS", 2)?,
+            redis_operation_timeout_secs: Self::detect_redis_operation_timeout(&redis_url)?,
             database_url: Self::get_optional_env("DATABASE_URL")?,
             interceptor_private_key_path: Self::get_required_path("INTERCEPTOR_PRIVATE_KEY_PATH")?,
             policies_yaml_path: Self::get_optional_path("POLICIES_YAML_PATH")?,
             tool_registry_yaml_path: Self::get_required_path("TOOL_REGISTRY_YAML_PATH")?,
-            mcp_proxy_timeout_secs: Self::parse_u64_or_default("MCP_PROXY_TIMEOUT_SECS", 5)?,
+            mcp_proxy_timeout_secs: Self::parse_u64_or_default("MCP_PROXY_TIMEOUT_SECS", 30)?, // Increased from 5 to 30 seconds for tool execution
             request_timeout_secs: Self::parse_u64_or_default("REQUEST_TIMEOUT_SECS", 30)?,
             body_size_limit_bytes: Self::parse_usize_or_default("BODY_SIZE_LIMIT_BYTES", 2 * 1024 * 1024)?,
             rate_limit_per_minute: Self::parse_u32_or_default("RATE_LIMIT_PER_MINUTE", 100)?,
@@ -221,7 +221,7 @@ impl Config {
     /// Auto-detects WSL/localhost scenarios and uses longer timeouts.
     /// Can be overridden with REDIS_CONNECTION_TIMEOUT_SECS environment variable.
     /// 
-    /// - WSL/localhost (127.0.0.1 or localhost): 15 seconds (WSL port forwarding can be very slow on first connection)
+    /// - WSL/localhost (127.0.0.1, localhost, or WSL IP 172.x.x.x): 15 seconds (WSL can be slow)
     /// - Native Redis: 5 seconds (direct connection, but still allow some buffer)
     fn detect_redis_connection_timeout(redis_url: &str) -> Result<u64, InterceptorError> {
         // Check if explicitly set
@@ -229,10 +229,71 @@ impl Config {
             return Self::parse_u64(&val, "REDIS_CONNECTION_TIMEOUT_SECS");
         }
         
-        // Auto-detect: WSL/localhost needs much longer timeout due to port forwarding overhead
-        // First connection through WSL port forwarding can take 10-15 seconds
-        let is_localhost = redis_url.contains("localhost") || redis_url.contains("127.0.0.1");
-        Ok(if is_localhost { 15 } else { 5 })
+        // Auto-detect: WSL connections (localhost, 127.0.0.1, or WSL IP range 172.x.x.x) need longer timeout
+        let is_wsl = redis_url.contains("localhost") 
+            || redis_url.contains("127.0.0.1")
+            || redis_url.contains("172."); // WSL2 typically uses 172.x.x.x IP range
+        Ok(if is_wsl { 15 } else { 5 })
+    }
+    
+    /// Detect Redis operation timeout based on environment
+    /// 
+    /// Auto-detects WSL scenarios and uses longer timeouts for operations.
+    /// Can be overridden with REDIS_OPERATION_TIMEOUT_SECS environment variable.
+    /// 
+    /// - WSL connections: 5 seconds (WSL network bridge can add latency)
+    /// - Native Redis: 2 seconds (direct connection, fast)
+    fn detect_redis_operation_timeout(redis_url: &str) -> Result<u64, InterceptorError> {
+        // Check if explicitly set
+        if let Ok(val) = env::var("REDIS_OPERATION_TIMEOUT_SECS") {
+            return Self::parse_u64(&val, "REDIS_OPERATION_TIMEOUT_SECS");
+        }
+        
+        // Auto-detect: WSL connections need longer operation timeout due to network bridge latency
+        let is_wsl = redis_url.contains("localhost") 
+            || redis_url.contains("127.0.0.1")
+            || redis_url.contains("172."); // WSL2 typically uses 172.x.x.x IP range
+        Ok(if is_wsl { 5 } else { 2 })
+    }
+    
+    /// Detect Redis pool max lifetime based on environment
+    /// 
+    /// WSL connections benefit from shorter connection lifetimes to avoid stale connections.
+    /// Can be overridden with REDIS_POOL_MAX_LIFETIME_SECS environment variable.
+    /// 
+    /// - WSL connections: 300 seconds (5 minutes) - shorter to avoid stale connections
+    /// - Native Redis: 1800 seconds (30 minutes) - standard lifetime
+    fn detect_redis_pool_max_lifetime(redis_url: &str) -> Result<u64, InterceptorError> {
+        // Check if explicitly set
+        if let Ok(val) = env::var("REDIS_POOL_MAX_LIFETIME_SECS") {
+            return Self::parse_u64(&val, "REDIS_POOL_MAX_LIFETIME_SECS");
+        }
+        
+        // Auto-detect: WSL connections need shorter lifetime to avoid stale connections
+        let is_wsl = redis_url.contains("localhost") 
+            || redis_url.contains("127.0.0.1")
+            || redis_url.contains("172."); // WSL2 typically uses 172.x.x.x IP range
+        Ok(if is_wsl { 300 } else { 1800 }) // 5 minutes for WSL, 30 minutes for native
+    }
+    
+    /// Detect Redis pool idle timeout based on environment
+    /// 
+    /// WSL connections benefit from shorter idle timeouts to avoid stale connections.
+    /// Can be overridden with REDIS_POOL_IDLE_TIMEOUT_SECS environment variable.
+    /// 
+    /// - WSL connections: 60 seconds (1 minute) - shorter to avoid stale idle connections
+    /// - Native Redis: 300 seconds (5 minutes) - standard idle timeout
+    fn detect_redis_pool_idle_timeout(redis_url: &str) -> Result<u64, InterceptorError> {
+        // Check if explicitly set
+        if let Ok(val) = env::var("REDIS_POOL_IDLE_TIMEOUT_SECS") {
+            return Self::parse_u64(&val, "REDIS_POOL_IDLE_TIMEOUT_SECS");
+        }
+        
+        // Auto-detect: WSL connections need shorter idle timeout to avoid stale connections
+        let is_wsl = redis_url.contains("localhost") 
+            || redis_url.contains("127.0.0.1")
+            || redis_url.contains("172."); // WSL2 typically uses 172.x.x.x IP range
+        Ok(if is_wsl { 60 } else { 300 }) // 1 minute for WSL, 5 minutes for native
     }
     
     /// Parse u64 from environment variable (no default)

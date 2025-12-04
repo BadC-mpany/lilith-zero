@@ -22,17 +22,30 @@ if ($forwarding) {
     Write-Host "  Active forwarding:" -ForegroundColor White
     Write-Host "    $forwarding" -ForegroundColor Gray
     
-    if ($forwarding -match "(\d+\.\d+\.\d+\.\d+)\s+6379") {
-        $forwarded_ip = $matches[1]
+    # Parse port forwarding format: listenaddress listenport connectaddress connectport
+    # Example: "127.0.0.1       6379        172.27.192.10   6379"
+    # We need the connectaddress (3rd field), not listenaddress (1st field)
+    if ($forwarding -match "(\d+\.\d+\.\d+\.\d+)\s+6379\s+(\d+\.\d+\.\d+\.\d+)\s+6379") {
+        $listen_ip = $matches[1]
+        $forwarded_ip = $matches[2]  # This is the connectaddress (where it forwards TO)
+        Write-Host "  Listen address: $listen_ip:6379" -ForegroundColor Gray
+        Write-Host "  Forward to: $forwarded_ip:6379" -ForegroundColor Gray
+        
         if ($forwarded_ip -eq $wsl_ip) {
             Write-Host "  [OK] Forwarding IP matches current WSL IP" -ForegroundColor Green
         } else {
             Write-Host "  [ISSUE] Forwarding points to old IP: $forwarded_ip" -ForegroundColor Red
             Write-Host "          Current WSL IP: $wsl_ip" -ForegroundColor Yellow
         }
+    } elseif ($forwarding -match "(\d+\.\d+\.\d+\.\d+)\s+6379") {
+        # Fallback: if format doesn't match expected, just extract first IP (old behavior)
+        $forwarded_ip = $matches[1]
+        Write-Host "  [WARN] Could not parse forwarding format correctly" -ForegroundColor Yellow
+        Write-Host "  Extracted IP: $forwarded_ip" -ForegroundColor Gray
     }
 } else {
     Write-Host "  [FAIL] No port forwarding configured for port 6379" -ForegroundColor Red
+    $forwarded_ip = $null
 }
 
 # Test 3: Redis Direct Connection (from WSL)
@@ -109,7 +122,7 @@ if (-not ($forwarded_ping -match "PONG")) {
     Write-Host "[ISSUE] Port forwarding not working correctly" -ForegroundColor Red
     $all_ok = $false
 }
-if ($forwarding -and $forwarded_ip -ne $wsl_ip) {
+if ($forwarding -and $forwarded_ip -and $forwarded_ip -ne $wsl_ip) {
     Write-Host "[ISSUE] Port forwarding IP mismatch" -ForegroundColor Red
     $all_ok = $false
 }
