@@ -269,7 +269,7 @@ async fn test_full_request_flow_allowed() {
     let app_state = create_test_app_state(redis_store, proxy_client, tool_registry);
 
     // Create router
-    let _app = create_router(app_state.clone(), None);
+    let _app = create_router(&app_state, None);
 
     // Create request
     let request_body = serde_json::json!({

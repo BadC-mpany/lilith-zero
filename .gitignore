@@ -83,3 +83,9 @@ $RECYCLE.BIN/
 .cursor/*
 redis/*
 tests_grego/*
+Cargo.lock
+Cargo.toml
+entinel_coreinterceptorrust
+target/debug/*
+target/CACHEDIR.TAG
+target/.rustc_info.json

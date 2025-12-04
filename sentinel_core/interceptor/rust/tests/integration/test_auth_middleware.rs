@@ -192,7 +192,7 @@ policies:
     });
 
     let app_state = create_test_app_state();
-    let _app = create_router(app_state, Some(auth_state));
+    let _app = create_router(&app_state, Some(auth_state));
 
     // Request without API key
     let _request = Request::builder()
@@ -245,7 +245,7 @@ policies:
     });
 
     let app_state = create_test_app_state();
-    let _app = create_router(app_state, Some(auth_state));
+    let _app = create_router(&app_state, Some(auth_state));
 
     // Request with invalid API key
     let _request = Request::builder()
@@ -293,7 +293,7 @@ policies:
     });
 
     let app_state = create_test_app_state();
-    let _app = create_router(app_state, Some(auth_state));
+    let _app = create_router(&app_state, Some(auth_state));
 
     // Health endpoint should bypass auth
     let _request = Request::builder()
