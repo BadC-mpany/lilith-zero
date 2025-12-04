@@ -38,18 +38,27 @@ impl ApiPolicyEvaluator for PolicyEvaluatorAdapter {
         // Fetch session history from Redis (fail-safe: use empty history on timeout/error)
         // CRITICAL: Redis timeout should not block policy evaluation
         // If Redis is unavailable, proceed with empty history (fail-safe mode)
-        let history = match self
-            .redis_store
-            .get_session_history(session_id)
-            .await
-        {
-            Ok(h) => h,
-            Err(e) => {
+        // Use 2-second timeout to match handler timeout for fast-fail
+        use tokio::time::{timeout, Duration};
+        let history = match timeout(
+            Duration::from_secs(2),
+            self.redis_store.get_session_history(session_id)
+        ).await {
+            Ok(Ok(h)) => h,
+            Ok(Err(e)) => {
                 // Log warning but proceed with empty history (fail-safe)
                 tracing::warn!(
                     error = %e,
                     session_id = session_id,
                     "Failed to fetch session history - proceeding with empty history (fail-safe mode)"
+                );
+                Vec::new() // Fail-safe: empty history allows policy evaluation to proceed
+            }
+            Err(_) => {
+                // Timeout - proceed with empty history (fail-safe)
+                tracing::warn!(
+                    session_id = session_id,
+                    "Session history fetch timed out after 2 seconds - proceeding with empty history (fail-safe mode)"
                 );
                 Vec::new() // Fail-safe: empty history allows policy evaluation to proceed
             }

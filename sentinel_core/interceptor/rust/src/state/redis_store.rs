@@ -186,11 +186,19 @@ impl RedisStore {
             let pool_build_timeout = config.redis_connection_timeout_secs + 5;
             tracing::info!("Building pool with RESP2 (Attempt {})...", attempt + 1);
             
+            // Determine min_idle based on WSL detection
+            let min_idle = if effective_url.contains("172.") { 2 } else { 0 };
+            tracing::info!(
+                min_idle = min_idle,
+                effective_url = %effective_url,
+                "Setting pool min_idle for connection reuse"
+            );
+            
             let pool_result = tokio::time::timeout(
                 TokioDuration::from_secs(pool_build_timeout),
                 Pool::builder()
                     .max_size(config.redis_pool_max_size)
-                    .min_idle(0) 
+                    .min_idle(min_idle) // Keep connections alive for WSL to avoid slow connection creation
                     .max_lifetime(Some(TokioDuration::from_secs(config.redis_pool_max_lifetime_secs)))
                     .idle_timeout(Some(TokioDuration::from_secs(config.redis_pool_idle_timeout_secs)))
                     .build(manager)
@@ -271,6 +279,26 @@ impl RedisStore {
         }
         
         Ok(ip)
+    }
+
+    /// Ping connection to ensure it's alive before use
+    /// 
+    /// This is a lightweight health check that verifies the connection is responsive
+    /// before executing operations. Prevents using stale/broken connections.
+    async fn ping_connection(
+        conn: &mut bb8_redis::bb8::PooledConnection<'_, RedisConnectionManager>
+    ) -> Result<(), InterceptorError> {
+        use tracing::debug;
+        debug!("Pinging connection to verify health...");
+        match tokio::time::timeout(
+            TokioDuration::from_secs(1), // Fast ping timeout
+            bb8_redis::redis::cmd("PING").query_async::<_, String>(conn.deref_mut())
+        ).await {
+            Ok(Ok(result)) if result == "PONG" => Ok(()),
+            Ok(Ok(_)) => Err(InterceptorError::StateError("Unexpected PING response".to_string())),
+            Ok(Err(e)) => Err(InterceptorError::StateError(format!("PING failed: {}", e))),
+            Err(_) => Err(InterceptorError::StateError("PING timeout".to_string())),
+        }
     }
     
     /// Verify pool connection by getting a connection and pinging
@@ -404,12 +432,13 @@ impl RedisStore {
         
         let operation_start = std::time::Instant::now();
         
-        // Step 1: Get connection from pool (ULTRA-FAST FAIL: 2 seconds max)
-        // CRITICAL: If pool.get() hangs, fail fast - don't wait for broken connections
+        // Step 1: Get connection from pool (fast-fail timeout for read operations)
+        // CRITICAL: Read operations must complete quickly (<2s) to match handler timeout
+        // Use shorter timeout (2s) for read operations instead of full connection timeout (15s)
         // This ensures Redis never blocks request processing
-        const CONNECTION_TIMEOUT_SECS: u64 = 2; // Fast fail - don't wait for broken pool
+        const READ_OPERATION_CONNECTION_TIMEOUT_SECS: u64 = 2; // Fast-fail for read operations
         let mut conn = match tokio::time::timeout(
-            TokioDuration::from_secs(CONNECTION_TIMEOUT_SECS),
+            TokioDuration::from_secs(READ_OPERATION_CONNECTION_TIMEOUT_SECS),
             self.pool.get()
         ).await {
             Ok(Ok(c)) => {
@@ -432,16 +461,17 @@ impl RedisStore {
             Err(_) => {
                 warn!(
                     duration_ms = operation_start.elapsed().as_millis(),
-                    timeout_secs = CONNECTION_TIMEOUT_SECS,
+                    timeout_secs = READ_OPERATION_CONNECTION_TIMEOUT_SECS,
                     "Connection acquisition timed out - Redis unavailable"
                 );
                 return Err(InterceptorError::StateError(
-                    format!("Connection timeout after {} seconds - Redis unavailable", CONNECTION_TIMEOUT_SECS)
+                    format!("Connection timeout after {} seconds - Redis unavailable", READ_OPERATION_CONNECTION_TIMEOUT_SECS)
                 ));
             }
         };
 
         // Step 2: Execute SMEMBERS with fast operation timeout (1 second)
+        // Note: No ping check for read operations - connection was just acquired, ping adds unnecessary overhead
         // Once connection is established, operations should be fast
         // If operation times out, connection is likely broken
         const OPERATION_TIMEOUT_SECS: u64 = 1; // Fast fail: 1 second for operation
@@ -489,10 +519,21 @@ impl RedisStore {
 
     /// Add a taint to a session (with TTL)
     pub async fn add_taint(&self, session_id: &str, tag: &str) -> Result<(), InterceptorError> {
-        let mut conn = self.pool.get().await
-            .map_err(|e| InterceptorError::StateError(
+        let mut conn = match tokio::time::timeout(
+            TokioDuration::from_secs(self.config.redis_connection_timeout_secs),
+            self.pool.get()
+        ).await {
+            Ok(Ok(c)) => c,
+            Ok(Err(e)) => return Err(InterceptorError::StateError(
                 format!("Failed to get connection from pool: {}", e)
-            ))?;
+            )),
+            Err(_) => return Err(InterceptorError::StateError(
+                format!("Connection timeout after {} seconds", self.config.redis_connection_timeout_secs)
+            )),
+        };
+
+        // Health check: ping connection before use
+        Self::ping_connection(&mut conn).await?;
         
         let taint_key = format!("session:{}:taints", session_id);
 
@@ -530,11 +571,12 @@ impl RedisStore {
         
         let operation_start = std::time::Instant::now();
         
-        // Step 1: Get connection from pool (ULTRA-FAST FAIL: 2 seconds max)
-        // CRITICAL: If pool.get() hangs, fail fast - don't wait for broken connections
-        const CONNECTION_TIMEOUT_SECS: u64 = 2; // Fast fail - don't wait for broken pool
+        // Step 1: Get connection from pool (fast-fail timeout for read operations)
+        // CRITICAL: Read operations must complete quickly (<2s) to match handler timeout
+        // Use shorter timeout (2s) for read operations instead of full connection timeout (15s)
+        const READ_OPERATION_CONNECTION_TIMEOUT_SECS: u64 = 2; // Fast-fail for read operations
         let mut conn = match tokio::time::timeout(
-            TokioDuration::from_secs(CONNECTION_TIMEOUT_SECS),
+            TokioDuration::from_secs(READ_OPERATION_CONNECTION_TIMEOUT_SECS),
             self.pool.get()
         ).await {
             Ok(Ok(c)) => {
@@ -557,16 +599,17 @@ impl RedisStore {
             Err(_) => {
                 warn!(
                     duration_ms = operation_start.elapsed().as_millis(),
-                    timeout_secs = CONNECTION_TIMEOUT_SECS,
+                    timeout_secs = READ_OPERATION_CONNECTION_TIMEOUT_SECS,
                     "Connection acquisition timed out for history - Redis unavailable"
                 );
                 return Err(InterceptorError::StateError(
-                    format!("Connection timeout after {} seconds - Redis unavailable", CONNECTION_TIMEOUT_SECS)
+                    format!("Connection timeout after {} seconds - Redis unavailable", READ_OPERATION_CONNECTION_TIMEOUT_SECS)
                 ));
             }
         };
 
         // Step 2: Execute LRANGE with fast operation timeout (1 second)
+        // Note: No ping check for read operations - connection was just acquired, ping adds unnecessary overhead
         const OPERATION_TIMEOUT_SECS: u64 = 1; // Fast fail: 1 second for operation
         let lrange_start = std::time::Instant::now();
         info!(history_key = %history_key, "Executing LRANGE command...");
@@ -630,10 +673,21 @@ impl RedisStore {
         classes: &[String],
         timestamp: f64,
     ) -> Result<(), InterceptorError> {
-        let mut conn = self.pool.get().await
-            .map_err(|e| InterceptorError::StateError(
+        let mut conn = match tokio::time::timeout(
+            TokioDuration::from_secs(self.config.redis_connection_timeout_secs),
+            self.pool.get()
+        ).await {
+            Ok(Ok(c)) => c,
+            Ok(Err(e)) => return Err(InterceptorError::StateError(
                 format!("Failed to get connection from pool: {}", e)
-            ))?;
+            )),
+            Err(_) => return Err(InterceptorError::StateError(
+                format!("Connection timeout after {} seconds", self.config.redis_connection_timeout_secs)
+            )),
+        };
+
+        // Health check: ping connection before use
+        Self::ping_connection(&mut conn).await?;
         
         let history_key = format!("session:{}:history", session_id);
 

@@ -51,7 +51,15 @@ try {
         try {
             $healthData = $response.Content | ConvertFrom-Json
             if ($healthData.redis) {
-                Write-Host "    Redis: $($healthData.redis)" -ForegroundColor Gray
+                $redisStatus = $healthData.redis
+                # Only show warning if Redis is actually disconnected, not just slow
+                if ($redisStatus -like "disconnected*") {
+                    Write-Host "    Redis: $redisStatus" -ForegroundColor Yellow
+                } elseif ($redisStatus -like "slow*") {
+                    Write-Host "    Redis: $redisStatus (OK for health check)" -ForegroundColor Gray
+                } else {
+                    Write-Host "    Redis: $redisStatus" -ForegroundColor Gray
+                }
             }
         } catch {
             # Ignore JSON parsing errors
@@ -68,19 +76,22 @@ try {
 }
 
 # Check MCP Server (use /health endpoint)
+# Note: MCP server is optional - agent can start even if MCP is temporarily unavailable
 try {
-    $response = Invoke-WebRequest -Uri "http://localhost:9000/health" -TimeoutSec 5 -ErrorAction Stop
+    $response = Invoke-WebRequest -Uri "http://localhost:9000/health" -TimeoutSec 10 -ErrorAction Stop
     if ($response.StatusCode -eq 200) {
         Write-Host "  [OK] MCP Server is running" -ForegroundColor Green
     } else {
-        Write-Host "  [FAIL] MCP Server returned status $($response.StatusCode)" -ForegroundColor Red
-        $servicesReady = $false
+        Write-Host "  [WARN] MCP Server returned status $($response.StatusCode)" -ForegroundColor Yellow
+        Write-Host "    Agent will start but tool calls may fail" -ForegroundColor Gray
+        # Don't block - agent can still start
     }
 } catch {
-    Write-Host "  [FAIL] MCP Server not responding" -ForegroundColor Red
+    Write-Host "  [WARN] MCP Server not responding (may still be starting)" -ForegroundColor Yellow
     Write-Host "    Error: $_" -ForegroundColor Gray
-    Write-Host "    Start services first: .\scripts\start_all.ps1" -ForegroundColor Yellow
-    $servicesReady = $false
+    Write-Host "    Agent will start but tool calls may fail" -ForegroundColor Gray
+    Write-Host "    If this persists, start services: .\scripts\start_all.ps1" -ForegroundColor Yellow
+    # Don't block - agent can still start, MCP might be starting up
 }
 
 if (-not $servicesReady) {
