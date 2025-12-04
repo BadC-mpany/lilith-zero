@@ -40,18 +40,31 @@ pub async fn proxy_execute_handler(
         "Received proxy request"
     );
 
-    // Fetch session taints from Redis
-    let session_taints = app_state
-        .redis_store
-        .get_session_taints(&request.session_id)
-        .await
-        .map_err(|e| {
+    // Fetch session taints from Redis (with timeout to prevent hanging)
+    // Convert Vec<String> from trait to HashSet<String> for policy evaluation
+    // Use config timeout: connection timeout + operation timeout + buffer
+    let redis_timeout = app_state.config.redis_connection_timeout_secs + app_state.config.redis_operation_timeout_secs + 1;
+    let session_taints_vec = match tokio::time::timeout(
+        std::time::Duration::from_secs(redis_timeout),
+        app_state.redis_store.get_session_taints(&request.session_id)
+    ).await {
+        Ok(Ok(taints)) => taints,
+        Ok(Err(e)) => {
             error!(error = %e, "Failed to fetch session taints");
-            ApiError::from_interceptor_error(InterceptorError::StateError(format!(
+            return Err(ApiError::from_interceptor_error(InterceptorError::StateError(format!(
                 "Failed to fetch session state: {}",
                 e
-            )))
-        })?;
+            ))));
+        }
+        Err(_) => {
+            error!("Redis operation timed out while fetching session taints");
+            // Return empty set on timeout (fail-safe: allow request to proceed)
+            warn!("Continuing with empty taint set due to Redis timeout");
+            Vec::new()
+        }
+    };
+    
+    let session_taints: std::collections::HashSet<String> = session_taints_vec.into_iter().collect();
 
     info!(
         session_id = %request.session_id,
@@ -79,13 +92,15 @@ pub async fn proxy_execute_handler(
     );
 
     // Evaluate policy
+    // Convert HashSet to Vec for evaluator (trait expects &[String])
+    let session_taints_vec: Vec<String> = session_taints.into_iter().collect();
     let decision = app_state
         .evaluator
         .evaluate(
             &policy,
             &request.tool_name,
             &tool_classes,
-            &session_taints,
+            &session_taints_vec,
             &request.session_id,
         )
         .await
@@ -230,39 +245,41 @@ pub async fn proxy_execute_handler(
 pub async fn health_handler(
     State(app_state): State<AppState>,
 ) -> Result<Json<HealthResponse>, ApiError> {
-    // Check Redis connectivity with panic recovery
-    // ConnectionManager can panic if the driver task terminates unexpectedly.
-    // We spawn the ping in a separate task to isolate panics and catch them via JoinError.
-    let redis_status = {
-        // Clone the Arc to move into spawned task
-        let redis_store = app_state.redis_store.clone();
-        
-        // Spawn ping in a separate task to catch panics
-        // If the ConnectionManager's driver panics, the task will panic
-        // and we catch it via JoinError instead of crashing the server
-        let ping_task = tokio::spawn(async move {
-            tokio::time::timeout(
-                std::time::Duration::from_secs(3),
-                redis_store.ping()
-            ).await
-        });
-        
-        match ping_task.await {
-            Ok(Ok(Ok(_))) => "connected".to_string(),
-            Ok(Ok(Err(e))) => {
+    // Check Redis connectivity with non-blocking approach
+    // Health endpoint should be fast - use spawn to avoid blocking
+    // bb8-redis pool handles reconnection automatically, so no panic recovery needed
+    let redis_store = app_state.redis_store.clone();
+    let redis_check_task = tokio::spawn(async move {
+        match tokio::time::timeout(
+            std::time::Duration::from_secs(1), // Shorter timeout for health check (1s instead of 3s)
+            redis_store.ping()
+        ).await {
+            Ok(Ok(_)) => "connected".to_string(),
+            Ok(Err(e)) => {
                 warn!(error = %e, "Redis ping failed");
                 format!("disconnected: {}", e)
             }
-            Ok(Err(_)) => {
+            Err(_) => {
                 warn!("Redis ping timed out");
                 "disconnected: timeout".to_string()
             }
-            Err(join_err) => {
-                // Task panicked - ConnectionManager driver likely terminated
-                // This is the key: we catch the panic here instead of letting it crash the server
-                warn!(error = %join_err, "Redis ping task panicked - connection driver terminated (recovered)");
-                "disconnected: driver panic (recovered)".to_string()
-            }
+        }
+    });
+    
+    // Wait for Redis check with a maximum timeout
+    // If Redis check takes too long, return "checking..." to keep health endpoint fast
+    let redis_status = match tokio::time::timeout(
+        std::time::Duration::from_secs(2), // Maximum 2 seconds total for health check
+        redis_check_task
+    ).await {
+        Ok(Ok(status)) => status,
+        Ok(Err(_)) => {
+            warn!("Redis check task failed");
+            "disconnected: task error".to_string()
+        }
+        Err(_) => {
+            warn!("Redis check timed out - health endpoint returning immediately");
+            "checking...".to_string() // Return immediately if Redis check is slow
         }
     };
 

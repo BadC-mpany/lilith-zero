@@ -18,6 +18,16 @@ pub struct Config {
     // Redis configuration
     pub redis_url: String,
     
+    // Redis connection pool configuration
+    pub redis_pool_max_size: u32,
+    pub redis_pool_min_idle: u32,
+    pub redis_pool_max_lifetime_secs: u64,
+    pub redis_pool_idle_timeout_secs: u64,
+    
+    // Redis timeout configuration (configurable, auto-detects WSL/localhost)
+    pub redis_connection_timeout_secs: u64,  // Connection establishment timeout
+    pub redis_operation_timeout_secs: u64,   // Individual operation timeout
+    
     // Database configuration (optional)
     pub database_url: Option<String>,
     
@@ -58,10 +68,19 @@ impl Config {
         }
         
         // Load and validate all fields
+        // Note: redis_url must be loaded first for timeout detection
+        let redis_url = Self::get_env_or_default("REDIS_URL", "redis://localhost:6379/0")?;
+        
         let config = Self {
             bind_address: Self::get_env_or_default("BIND_ADDRESS", "0.0.0.0")?,
             port: Self::parse_port()?,
-            redis_url: Self::get_env_or_default("REDIS_URL", "redis://localhost:6379/0")?,
+            redis_url: redis_url.clone(),
+            redis_pool_max_size: Self::parse_u32_or_default("REDIS_POOL_MAX_SIZE", 10)?,
+            redis_pool_min_idle: Self::parse_u32_or_default("REDIS_POOL_MIN_IDLE", 0)?, // Lazy initialization - set to 0 for production
+            redis_pool_max_lifetime_secs: Self::parse_u64_or_default("REDIS_POOL_MAX_LIFETIME_SECS", 1800)?,
+            redis_pool_idle_timeout_secs: Self::parse_u64_or_default("REDIS_POOL_IDLE_TIMEOUT_SECS", 300)?,
+            redis_connection_timeout_secs: Self::detect_redis_connection_timeout(&redis_url)?,
+            redis_operation_timeout_secs: Self::parse_u64_or_default("REDIS_OPERATION_TIMEOUT_SECS", 2)?,
             database_url: Self::get_optional_env("DATABASE_URL")?,
             interceptor_private_key_path: Self::get_required_path("INTERCEPTOR_PRIVATE_KEY_PATH")?,
             policies_yaml_path: Self::get_optional_path("POLICIES_YAML_PATH")?,
@@ -197,6 +216,41 @@ impl Config {
         }
     }
     
+    /// Detect Redis connection timeout based on environment
+    /// 
+    /// Auto-detects WSL/localhost scenarios and uses longer timeouts.
+    /// Can be overridden with REDIS_CONNECTION_TIMEOUT_SECS environment variable.
+    /// 
+    /// - WSL/localhost (127.0.0.1 or localhost): 15 seconds (WSL port forwarding can be very slow on first connection)
+    /// - Native Redis: 5 seconds (direct connection, but still allow some buffer)
+    fn detect_redis_connection_timeout(redis_url: &str) -> Result<u64, InterceptorError> {
+        // Check if explicitly set
+        if let Ok(val) = env::var("REDIS_CONNECTION_TIMEOUT_SECS") {
+            return Self::parse_u64(&val, "REDIS_CONNECTION_TIMEOUT_SECS");
+        }
+        
+        // Auto-detect: WSL/localhost needs much longer timeout due to port forwarding overhead
+        // First connection through WSL port forwarding can take 10-15 seconds
+        let is_localhost = redis_url.contains("localhost") || redis_url.contains("127.0.0.1");
+        Ok(if is_localhost { 15 } else { 5 })
+    }
+    
+    /// Parse u64 from environment variable (no default)
+    fn parse_u64(key: &str, env_key: &str) -> Result<u64, InterceptorError> {
+        let parsed = key.parse::<u64>()
+            .map_err(|e| InterceptorError::ConfigurationError(
+                format!("Invalid {} value '{}': {}", env_key, key, e)
+            ))?;
+        
+        if parsed == 0 {
+            return Err(InterceptorError::ConfigurationError(
+                format!("{} must be greater than 0", env_key)
+            ));
+        }
+        
+        Ok(parsed)
+    }
+    
     /// Validate all configuration values
     fn validate(&self) -> Result<(), InterceptorError> {
         // Validate port range (u16 max is 65535, so only check for 0)
@@ -306,6 +360,12 @@ impl Config {
             bind_address: "0.0.0.0".to_string(),
             port: 8000,
             redis_url: "redis://localhost:6379/0".to_string(),
+            redis_pool_max_size: 10,
+            redis_pool_min_idle: 0, // Lazy initialization for tests
+            redis_pool_max_lifetime_secs: 1800,
+            redis_pool_idle_timeout_secs: 300,
+            redis_connection_timeout_secs: 15, // Test default (localhost/WSL)
+            redis_operation_timeout_secs: 2,
             database_url: Some("postgresql://localhost/test".to_string()),
             interceptor_private_key_path: PathBuf::from("/tmp/test_key.pem"),
             policies_yaml_path: None,

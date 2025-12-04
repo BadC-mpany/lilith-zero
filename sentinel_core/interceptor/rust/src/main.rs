@@ -144,10 +144,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "Configuration loaded"
     );
     
-    // 3. Initialize Redis store with retry logic
-    info!(redis_url = %config.redis_url, "Connecting to Redis...");
+    // 3. Initialize Redis store with connection pool
+    info!(
+        redis_url = %config.redis_url,
+        max_size = config.redis_pool_max_size,
+        min_idle = config.redis_pool_min_idle,
+        "Connecting to Redis..."
+    );
     let redis_store_impl = Arc::new(
-        RedisStoreImpl::new(&config.redis_url)
+        RedisStoreImpl::new(&config.redis_url, &config)
             .await
             .map_err(|e| {
                 error!(error = %e, redis_url = %config.redis_url, "Failed to initialize Redis store");

@@ -44,9 +44,18 @@ $servicesReady = $true
 
 # Check Rust Interceptor
 try {
-    $response = Invoke-WebRequest -Uri "http://localhost:8000/health" -TimeoutSec 5 -ErrorAction Stop
+    $response = Invoke-WebRequest -Uri "http://localhost:8000/health" -TimeoutSec 10 -ErrorAction Stop
     if ($response.StatusCode -eq 200) {
         Write-Host "  [OK] Rust Interceptor is running" -ForegroundColor Green
+        # Parse response to show Redis status if available
+        try {
+            $healthData = $response.Content | ConvertFrom-Json
+            if ($healthData.redis) {
+                Write-Host "    Redis: $($healthData.redis)" -ForegroundColor Gray
+            }
+        } catch {
+            # Ignore JSON parsing errors
+        }
     } else {
         Write-Host "  [FAIL] Rust Interceptor returned status $($response.StatusCode)" -ForegroundColor Red
         $servicesReady = $false
