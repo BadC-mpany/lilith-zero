@@ -18,7 +18,7 @@ impl PolicyEvaluator {
     ///    a. Pattern-based rules (sequence, logic)
     ///    b. Simple taint rules (ADD_TAINT, CHECK_TAINT, REMOVE_TAINT)
     /// 3. Aggregate decision with side effects
-    pub fn evaluate(
+    pub async fn evaluate(
         policy: &PolicyDefinition,
         tool_name: &str,
         tool_classes: &[String],
@@ -33,10 +33,11 @@ impl PolicyEvaluator {
             current_taints,
             &Value::Null,
         )
+        .await
     }
 
     /// Evaluate policy with tool arguments (for exception matching)
-    pub fn evaluate_with_args(
+    pub async fn evaluate_with_args(
         policy: &PolicyDefinition,
         tool_name: &str,
         tool_classes: &[String],
@@ -67,7 +68,8 @@ impl PolicyEvaluator {
                     tool_classes,
                     current_taints,
                     tool_args,
-                )?;
+                )
+                .await?;
 
                 if pattern_matched {
                     match rule.action.as_str() {
@@ -99,7 +101,9 @@ impl PolicyEvaluator {
                                                 tool_classes,
                                                 current_taints,
                                                 tool_args,
-                                            )? {
+                                            )
+                                            .await?
+                                            {
                                                 // Exception applies, skip this block
                                                 continue;
                                             }
@@ -145,7 +149,7 @@ impl PolicyEvaluator {
     }
 
     /// Check if any exception applies to the current context
-    fn check_exceptions(
+    async fn check_exceptions(
         exceptions: &[crate::core::models::RuleException],
         session_history: &[HistoryEntry],
         tool_name: &str,
@@ -162,7 +166,9 @@ impl PolicyEvaluator {
                 tool_classes,
                 current_taints,
                 tool_args,
-            )? {
+            )
+            .await?
+            {
                 return Ok(true);
             }
         }

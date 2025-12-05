@@ -4,8 +4,8 @@ use sentinel_interceptor::core::models::{Decision, PolicyDefinition, PolicyRule}
 use sentinel_interceptor::engine::evaluator::PolicyEvaluator;
 use std::collections::{HashMap, HashSet};
 
-#[test]
-fn test_static_rule_allow_no_taints() {
+#[tokio::test]
+async fn test_static_rule_allow_no_taints() {
     let mut static_rules = HashMap::new();
     static_rules.insert("read_file".to_string(), "ALLOW".to_string());
 
@@ -22,13 +22,14 @@ fn test_static_rule_allow_no_taints() {
         &[],
         &HashSet::new(),
     )
+    .await
     .unwrap();
 
     assert!(matches!(result, Decision::Allowed));
 }
 
-#[test]
-fn test_static_rule_deny() {
+#[tokio::test]
+async fn test_static_rule_deny() {
     let mut static_rules = HashMap::new();
     static_rules.insert("delete_db".to_string(), "DENY".to_string());
 
@@ -45,6 +46,7 @@ fn test_static_rule_deny() {
         &[],
         &HashSet::new(),
     )
+    .await
     .unwrap();
 
     match result {
@@ -56,8 +58,8 @@ fn test_static_rule_deny() {
     }
 }
 
-#[test]
-fn test_implicit_deny() {
+#[tokio::test]
+async fn test_implicit_deny() {
     let static_rules = HashMap::new();
 
     let policy = PolicyDefinition {
@@ -73,13 +75,14 @@ fn test_implicit_deny() {
         &[],
         &HashSet::new(),
     )
+    .await
     .unwrap();
 
     assert!(matches!(result, Decision::Denied { .. }));
 }
 
-#[test]
-fn test_add_taint_by_tool_name() {
+#[tokio::test]
+async fn test_add_taint_by_tool_name() {
     let mut static_rules = HashMap::new();
     static_rules.insert("read_file".to_string(), "ALLOW".to_string());
 
@@ -107,6 +110,7 @@ fn test_add_taint_by_tool_name() {
         &[],
         &HashSet::new(),
     )
+    .await
     .unwrap();
 
     match result {
@@ -122,8 +126,8 @@ fn test_add_taint_by_tool_name() {
     }
 }
 
-#[test]
-fn test_add_taint_by_tool_class() {
+#[tokio::test]
+async fn test_add_taint_by_tool_class() {
     let mut static_rules = HashMap::new();
     static_rules.insert("read_file".to_string(), "ALLOW".to_string());
 
@@ -151,6 +155,7 @@ fn test_add_taint_by_tool_class() {
         &[],
         &HashSet::new(),
     )
+    .await
     .unwrap();
 
     match result {
@@ -161,8 +166,8 @@ fn test_add_taint_by_tool_class() {
     }
 }
 
-#[test]
-fn test_check_taint_blocks_when_tainted() {
+#[tokio::test]
+async fn test_check_taint_blocks_when_tainted() {
     let mut static_rules = HashMap::new();
     static_rules.insert("web_search".to_string(), "ALLOW".to_string());
 
@@ -193,6 +198,7 @@ fn test_check_taint_blocks_when_tainted() {
         &[],
         &current_taints,
     )
+    .await
     .unwrap();
 
     match result {
@@ -203,8 +209,8 @@ fn test_check_taint_blocks_when_tainted() {
     }
 }
 
-#[test]
-fn test_check_taint_allows_when_not_tainted() {
+#[tokio::test]
+async fn test_check_taint_allows_when_not_tainted() {
     let mut static_rules = HashMap::new();
     static_rules.insert("web_search".to_string(), "ALLOW".to_string());
 
@@ -234,13 +240,14 @@ fn test_check_taint_allows_when_not_tainted() {
         &[],
         &current_taints,
     )
+    .await
     .unwrap();
 
     assert!(matches!(result, Decision::Allowed));
 }
 
-#[test]
-fn test_remove_taint_tracked() {
+#[tokio::test]
+async fn test_remove_taint_tracked() {
     // Note: Redis is append-only. REMOVE_TAINT is tracked for future implementation
     // (e.g., separate sanitization log, or computed state from history)
     let mut static_rules = HashMap::new();
@@ -273,6 +280,7 @@ fn test_remove_taint_tracked() {
         &[],
         &current_taints,
     )
+    .await
     .unwrap();
 
     match result {
@@ -287,8 +295,8 @@ fn test_remove_taint_tracked() {
     }
 }
 
-#[test]
-fn test_multiple_taint_rules() {
+#[tokio::test]
+async fn test_multiple_taint_rules() {
     let mut static_rules = HashMap::new();
     static_rules.insert("read_file".to_string(), "ALLOW".to_string());
 
@@ -327,6 +335,7 @@ fn test_multiple_taint_rules() {
         &[],
         &HashSet::new(),
     )
+    .await
     .unwrap();
 
     match result {
@@ -338,4 +347,3 @@ fn test_multiple_taint_rules() {
         _ => panic!("Expected AllowedWithSideEffects decision"),
     }
 }
-

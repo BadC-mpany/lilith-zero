@@ -76,9 +76,12 @@ impl Config {
     pub fn from_env() -> Result<Self, InterceptorError> {
         // Load .env file if present (development)
         // Skip in test environment to avoid interfering with test environment variables
+        // Also skip if DISABLE_DOTENV is set (for integration tests)
         #[cfg(not(test))]
         {
-            dotenv::dotenv().ok(); // Ignore errors (file may not exist)
+            if env::var("DISABLE_DOTENV").is_err() {
+                dotenv::dotenv().ok(); // Ignore errors (file may not exist)
+            }
         }
         
         // Load and validate all fields
@@ -486,7 +489,15 @@ mod tests {
     use super::*;
     use std::fs;
     use std::path::Path;
+    use std::sync::Mutex;
     use tempfile::TempDir;
+
+    // Mutex to serialize tests that modify environment variables
+    static ENV_MUTEX: Mutex<()> = Mutex::new(());
+
+    fn acquire_env_lock() -> std::sync::MutexGuard<'static, ()> {
+        ENV_MUTEX.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
 
     fn setup_test_env() -> TempDir {
         let temp_dir = TempDir::new().unwrap();
@@ -501,6 +512,7 @@ mod tests {
 
     #[test]
     fn test_get_env_or_default() {
+        let _guard = acquire_env_lock();
         env::set_var("TEST_VAR", "test_value");
         let result = Config::get_env_or_default("TEST_VAR", "default").unwrap();
         assert_eq!(result, "test_value");
@@ -509,6 +521,7 @@ mod tests {
 
     #[test]
     fn test_get_env_or_default_missing() {
+        let _guard = acquire_env_lock();
         env::remove_var("TEST_VAR_MISSING");
         let result = Config::get_env_or_default("TEST_VAR_MISSING", "default").unwrap();
         assert_eq!(result, "default");
@@ -516,7 +529,8 @@ mod tests {
 
     #[test]
     fn test_parse_port_valid() {
-        // Clear PORT first to avoid interference from other tests
+        let _guard = acquire_env_lock();
+        // Clear PORT first to avoid interference from .env file
         env::remove_var("PORT");
         env::set_var("PORT", "8080");
         let port = Config::parse_port().unwrap();
@@ -526,6 +540,7 @@ mod tests {
 
     #[test]
     fn test_parse_port_default() {
+        let _guard = acquire_env_lock();
         env::remove_var("PORT");
         let port = Config::parse_port().unwrap();
         assert_eq!(port, 8000);
@@ -533,6 +548,7 @@ mod tests {
 
     #[test]
     fn test_parse_port_invalid() {
+        let _guard = acquire_env_lock();
         env::set_var("PORT", "99999");
         let result = Config::parse_port();
         assert!(result.is_err());

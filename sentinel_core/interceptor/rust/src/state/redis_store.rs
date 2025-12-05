@@ -3,6 +3,7 @@
 use crate::core::errors::InterceptorError;
 use crate::core::models::HistoryEntry;
 use crate::config::{Config, RedisMode};
+use crate::state::session_history::SessionHistory;
 use bb8_redis::{bb8::Pool, RedisConnectionManager};
 use bb8_redis::redis::AsyncCommands;
 use std::collections::HashSet;
@@ -782,115 +783,12 @@ impl RedisStore {
     // Note: Redis is append-only. Taints are removed via TTL expiration only.
     // REMOVE_TAINT actions are tracked in history but not actively removed from Redis.
 
-    /// Get session history
-    /// 
-    /// Production-ready implementation with ULTRA-FAST FAIL strategy:
-    /// - Connection acquisition: 2 seconds max (fast fail - don't wait for broken pool)
-    /// - Operation execution: 1 second max (fast fail - don't wait for broken connection)
-    /// - Returns error on timeout/failure (caller should handle gracefully - fail-safe)
+    /// Get session history - delegates to SessionHistory module
     pub async fn get_history(&self, session_id: &str) -> Result<Vec<HistoryEntry>, InterceptorError> {
-        use tracing::{info, warn};
-        
-        let history_key = format!("session:{}:history", session_id);
-        info!(session_id = session_id, history_key = %history_key, "Getting session history from Redis");
-        
-        let operation_start = std::time::Instant::now();
-        
-        // Step 1: Get connection from pool (fast-fail timeout for read operations)
-        // CRITICAL: Read operations must complete quickly (<2s) to match handler timeout
-        // Use shorter timeout (2s) for read operations instead of full connection timeout (15s)
-        const READ_OPERATION_CONNECTION_TIMEOUT_SECS: u64 = 2; // Fast-fail for read operations
-        let mut conn = match tokio::time::timeout(
-            TokioDuration::from_secs(READ_OPERATION_CONNECTION_TIMEOUT_SECS),
-            self.pool.get()
-        ).await {
-            Ok(Ok(c)) => {
-                info!(
-                    duration_ms = operation_start.elapsed().as_millis(),
-                    "Connection acquired from pool for history"
-                );
-                c
-            },
-            Ok(Err(e)) => {
-                warn!(
-                    duration_ms = operation_start.elapsed().as_millis(),
-                    error = %e,
-                    "Failed to get connection from pool for history"
-                );
-                return Err(InterceptorError::StateError(
-                    format!("Pool error: {}", e)
-                ));
-            },
-            Err(_) => {
-                warn!(
-                    duration_ms = operation_start.elapsed().as_millis(),
-                    timeout_secs = READ_OPERATION_CONNECTION_TIMEOUT_SECS,
-                    "Connection acquisition timed out for history - Redis unavailable"
-                );
-                return Err(InterceptorError::StateError(
-                    format!("Connection timeout after {} seconds - Redis unavailable", READ_OPERATION_CONNECTION_TIMEOUT_SECS)
-                ));
-            }
-        };
-
-        // Step 2: Execute LRANGE with fast operation timeout (1 second)
-        // Note: No ping check for read operations - connection was just acquired, ping adds unnecessary overhead
-        const OPERATION_TIMEOUT_SECS: u64 = 1; // Fast fail: 1 second for operation
-        let lrange_start = std::time::Instant::now();
-        info!(history_key = %history_key, "Executing LRANGE command...");
-        let raw_history: Vec<String> = match tokio::time::timeout(
-            TokioDuration::from_secs(OPERATION_TIMEOUT_SECS),
-            bb8_redis::redis::cmd("LRANGE")
-                .arg(&history_key)
-                .arg(0)
-                .arg(-1)
-                .query_async::<_, Vec<String>>(conn.deref_mut())
-        ).await {
-            Ok(Ok(history)) => {
-                let lrange_duration = lrange_start.elapsed();
-                let total_duration = operation_start.elapsed();
-                info!(
-                    duration_ms = lrange_duration.as_millis(),
-                    total_ms = total_duration.as_millis(),
-                    entry_count = history.len(),
-                    "LRANGE completed successfully"
-                );
-                history
-            },
-            Ok(Err(e)) => {
-                warn!(
-                    duration_ms = lrange_start.elapsed().as_millis(),
-                    error = %e,
-                    "LRANGE command failed"
-                );
-                return Err(InterceptorError::StateError(
-                    format!("LRANGE failed: {}", e)
-                ));
-            },
-            Err(_) => {
-                warn!(
-                    duration_ms = lrange_start.elapsed().as_millis(),
-                    timeout_secs = OPERATION_TIMEOUT_SECS,
-                    "LRANGE command timed out - connection may be broken"
-                );
-                return Err(InterceptorError::StateError(
-                    format!("LRANGE timeout after {} seconds", OPERATION_TIMEOUT_SECS)
-                ));
-            }
-        };
-
-        // Step 3: Deserialize history entries
-        let history: Result<Vec<HistoryEntry>, _> = raw_history
-            .iter()
-            .map(|item| serde_json::from_str(item))
-            .collect();
-
-        history.map_err(|e| InterceptorError::StateError(
-            format!("Failed to deserialize history: {}", e)
-        ))
+        SessionHistory::get_history(&self.pool, session_id).await
     }
 
-    /// Add entry to session history (with LRU trimming and TTL)
+    /// Add entry to session history - delegates to SessionHistory module
     pub async fn add_history_entry(
         &self,
         session_id: &str,
@@ -898,57 +796,14 @@ impl RedisStore {
         classes: &[String],
         timestamp: f64,
     ) -> Result<(), InterceptorError> {
-        let mut conn = match tokio::time::timeout(
-            TokioDuration::from_secs(self.config.redis_connection_timeout_secs),
-            self.pool.get()
-        ).await {
-            Ok(Ok(c)) => c,
-            Ok(Err(e)) => return Err(InterceptorError::StateError(
-                format!("Failed to get connection from pool: {}", e)
-            )),
-            Err(_) => return Err(InterceptorError::StateError(
-                format!("Connection timeout after {} seconds", self.config.redis_connection_timeout_secs)
-            )),
-        };
-
-        // Health check: ping connection before use
-        Self::ping_connection(&mut conn).await?;
-        
-        let history_key = format!("session:{}:history", session_id);
-
-        let entry = HistoryEntry {
-            tool: tool.to_string(),
-            classes: classes.to_vec(),
+        SessionHistory::add_history_entry(
+            &self.pool,
+            session_id,
+            tool,
+            classes,
             timestamp,
-        };
-
-        let entry_json = serde_json::to_string(&entry)
-            .map_err(|e| InterceptorError::StateError(
-                format!("Failed to serialize history entry: {}", e)
-            ))?;
-
-        // Append to list
-        conn.rpush::<_, _, ()>(&history_key, entry_json)
-            .await
-            .map_err(|e| InterceptorError::StateError(
-                format!("Failed to add history entry: {}", e)
-            ))?;
-
-        // Set TTL (1 hour)
-        conn.expire::<_, ()>(&history_key, 3600)
-            .await
-            .map_err(|e| InterceptorError::StateError(
-                format!("Failed to set history TTL: {}", e)
-            ))?;
-
-        // Trim to last 1000 entries (LRU)
-        conn.ltrim::<_, ()>(&history_key, -1000, -1)
-            .await
-            .map_err(|e| InterceptorError::StateError(
-                format!("Failed to trim history: {}", e)
-            ))?;
-
-        Ok(())
+            self.config.redis_connection_timeout_secs,
+        ).await
     }
 
     /// Check if session has any of the forbidden taints

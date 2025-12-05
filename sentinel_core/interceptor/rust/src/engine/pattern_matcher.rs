@@ -11,7 +11,7 @@ pub struct PatternMatcher;
 impl PatternMatcher {
     /// Evaluate a pattern against session history and current tool
     /// (backwards compatibility wrapper without tool_args)
-    pub fn evaluate_pattern(
+    pub async fn evaluate_pattern(
         pattern: &Value,
         history: &[HistoryEntry],
         current_tool: &str,
@@ -26,10 +26,11 @@ impl PatternMatcher {
             current_taints,
             &Value::Null,
         )
+        .await
     }
 
     /// Evaluate a pattern with tool arguments (for logic patterns with tool_args_match)
-    pub fn evaluate_pattern_with_args(
+    pub async fn evaluate_pattern_with_args(
         pattern: &Value,
         history: &[HistoryEntry],
         current_tool: &str,
@@ -50,7 +51,8 @@ impl PatternMatcher {
                 history,
                 current_tool,
                 current_classes,
-            ),
+            )
+            .await,
             "logic" => Self::evaluate_logic_pattern(
                 pattern,
                 history,
@@ -58,7 +60,8 @@ impl PatternMatcher {
                 current_classes,
                 current_taints,
                 tool_args,
-            ),
+            )
+            .await,
             _ => Err(InterceptorError::ConfigurationError(
                 format!("Unknown pattern type: {}", pattern_type)
             )),
@@ -66,7 +69,7 @@ impl PatternMatcher {
     }
 
     /// Evaluate sequence pattern: detect ordered sequences of tool executions
-    fn evaluate_sequence_pattern(
+    async fn evaluate_sequence_pattern(
         pattern: &Value,
         history: &[HistoryEntry],
         current_tool: &str,
@@ -96,11 +99,11 @@ impl PatternMatcher {
             timestamp: 0.0, // Not needed for pattern matching
         });
 
-        Self::sequence_matches(&full_sequence, steps, max_distance)
+        Self::sequence_matches(&full_sequence, steps, max_distance).await
     }
 
     /// Check if sequence matches the pattern steps
-    fn sequence_matches(
+    async fn sequence_matches(
         full_sequence: &[HistoryEntry],
         steps: &[Value],
         max_distance: Option<usize>,
@@ -117,7 +120,7 @@ impl PatternMatcher {
                 break;
             }
 
-            if Self::entry_matches_step(entry, &steps[step_idx])? {
+            if Self::entry_matches_step(entry, &steps[step_idx]).await? {
                 if step_idx == 0 {
                     start_idx = i;
                 }
@@ -137,7 +140,7 @@ impl PatternMatcher {
     }
 
     /// Check if a history entry matches a pattern step
-    fn entry_matches_step(entry: &HistoryEntry, step: &Value) -> Result<bool, InterceptorError> {
+    async fn entry_matches_step(entry: &HistoryEntry, step: &Value) -> Result<bool, InterceptorError> {
         // Match by exact tool name
         if let Some(tool_name) = step.get("tool").and_then(|v| v.as_str()) {
             return Ok(entry.tool == tool_name);
@@ -152,7 +155,7 @@ impl PatternMatcher {
     }
 
     /// Evaluate logic pattern: boolean logic over session state
-    fn evaluate_logic_pattern(
+    async fn evaluate_logic_pattern(
         pattern: &Value,
         history: &[HistoryEntry],
         current_tool: &str,
@@ -174,11 +177,12 @@ impl PatternMatcher {
             current_taints,
             tool_args,
         )
+        .await
     }
 
     /// Evaluate a condition recursively (handles AND, OR, NOT)
     /// Made public to support rule exceptions
-    pub fn evaluate_condition(
+    pub async fn evaluate_condition(
         condition: &Value,
         history: &[HistoryEntry],
         current_tool: &str,
@@ -193,10 +197,11 @@ impl PatternMatcher {
             current_taints,
             &Value::Null,
         )
+        .await
     }
 
     /// Evaluate condition with optional tool arguments (for exceptions)
-    pub fn evaluate_condition_with_args(
+    pub async fn evaluate_condition_with_args(
         condition: &Value,
         history: &[HistoryEntry],
         current_tool: &str,
@@ -207,7 +212,16 @@ impl PatternMatcher {
         // Handle AND operator
         if let Some(and_array) = condition.get("AND").and_then(|v| v.as_array()) {
             for item in and_array {
-                if !Self::evaluate_condition_with_args(item, history, current_tool, current_classes, current_taints, tool_args)? {
+                if !Box::pin(Self::evaluate_condition_with_args(
+                    item,
+                    history,
+                    current_tool,
+                    current_classes,
+                    current_taints,
+                    tool_args,
+                ))
+                .await?
+                {
                     return Ok(false);
                 }
             }
@@ -217,7 +231,16 @@ impl PatternMatcher {
         // Handle OR operator
         if let Some(or_array) = condition.get("OR").and_then(|v| v.as_array()) {
             for item in or_array {
-                if Self::evaluate_condition_with_args(item, history, current_tool, current_classes, current_taints, tool_args)? {
+                if Box::pin(Self::evaluate_condition_with_args(
+                    item,
+                    history,
+                    current_tool,
+                    current_classes,
+                    current_taints,
+                    tool_args,
+                ))
+                .await?
+                {
                     return Ok(true);
                 }
             }
@@ -226,15 +249,23 @@ impl PatternMatcher {
 
         // Handle NOT operator
         if let Some(not_value) = condition.get("NOT") {
-            return Ok(!Self::evaluate_condition_with_args(not_value, history, current_tool, current_classes, current_taints, tool_args)?);
+            return Ok(!Box::pin(Self::evaluate_condition_with_args(
+                not_value,
+                history,
+                current_tool,
+                current_classes,
+                current_taints,
+                tool_args,
+            ))
+            .await?);
         }
 
         // Handle atomic conditions
-        Self::evaluate_atomic_condition(condition, history, current_tool, current_classes, current_taints, tool_args)
+        Self::evaluate_atomic_condition(condition, history, current_tool, current_classes, current_taints, tool_args).await
     }
 
     /// Evaluate atomic condition (leaf node in logic tree)
-    fn evaluate_atomic_condition(
+    async fn evaluate_atomic_condition(
         condition: &Value,
         history: &[HistoryEntry],
         current_tool: &str,

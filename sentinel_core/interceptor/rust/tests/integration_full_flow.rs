@@ -88,6 +88,7 @@ async fn test_full_request_flow_static_deny() {
         &[],
         &HashSet::new(),
     )
+    .await
     .unwrap();
 
     match decision {
@@ -134,6 +135,7 @@ async fn test_full_request_flow_taint_block() {
         &[],
         &taints,
     )
+    .await
     .unwrap();
 
     match decision {
@@ -175,6 +177,7 @@ async fn test_full_request_flow_add_taint() {
         &[],
         &HashSet::new(),
     )
+    .await
     .unwrap();
 
     match decision {
@@ -365,6 +368,7 @@ async fn test_end_to_end_policy_evaluation_flow() {
         &[],
         &HashSet::new(),
     )
+    .await
     .unwrap();
 
     match decision1 {
@@ -385,6 +389,7 @@ async fn test_end_to_end_policy_evaluation_flow() {
         &[],
         &taints,
     )
+    .await
     .unwrap();
 
     match decision2 {
@@ -394,4 +399,3 @@ async fn test_end_to_end_policy_evaluation_flow() {
         _ => panic!("Expected Denied for web_search with taint"),
     }
 }
-

@@ -1,0 +1,73 @@
+sequenceDiagram
+    participant SDK as Python SDK<br/>(SentinelSecureTool)
+    participant Interceptor as Rust Interceptor<br/>(Axum Server)
+    participant Auth as Auth Middleware
+    participant Redis as Redis Store
+    participant Engine as Policy Engine
+    participant Crypto as Crypto Signer
+    participant Proxy as Proxy Client<br/>(JSON-RPC 2.0)
+    participant MCP as MCP Server<br/>(FastAPI)
+
+    SDK->>Interceptor: POST /v1/proxy-execute<br/>{session_id, tool_name, args}<br/>Header: X-API-Key
+    
+    Note over Interceptor: Middleware Stack<br/>(Tower Pattern)
+    
+    Interceptor->>Auth: Extract X-API-Key header
+    
+    Auth->>Auth: Hash API key (SHA-256)
+    Auth->>Auth: Lookup customer (DB or YAML)
+    Auth->>Auth: Load policy (DB or YAML)
+    Auth->>Auth: Log auth event (async)
+    Auth->>Interceptor: Set extensions:<br/>CustomerConfig, PolicyDefinition
+    
+    Interceptor->>Redis: get_session_taints(session_id)
+    Redis-->>Interceptor: Vec<String> taints
+    
+    Interceptor->>Interceptor: Get tool classes<br/>from ToolRegistry
+    
+    Interceptor->>Redis: get_session_history(session_id)
+    Redis-->>Interceptor: Vec<HistoryEntry>
+    
+    Interceptor->>Engine: evaluate(policy, tool_name,<br/>tool_classes, history, taints)
+    
+    alt Static Rule: DENY
+        Engine-->>Interceptor: Decision::Denied
+        Interceptor-->>SDK: 403 Forbidden
+    else Pattern Match: BLOCK
+        Engine-->>Interceptor: Decision::Denied
+        Interceptor-->>SDK: 403 Forbidden
+    else Taint Check: BLOCK
+        Engine-->>Interceptor: Decision::Denied
+        Interceptor-->>SDK: 403 Forbidden
+    else Allowed
+        Engine-->>Interceptor: Decision::Allowed<br/>or AllowedWithSideEffects
+        
+        Interceptor->>Crypto: mint_token(session_id,<br/>tool_name, args)
+        Note over Crypto: 1. Canonicalize args (RFC 8785 JCS)<br/>2. Compute p_hash (SHA-256)<br/>3. Sign JWT (Ed25519)
+        Crypto-->>Interceptor: JWT token
+        
+        Interceptor->>Proxy: forward_request(url, tool_name,<br/>args, session_id, callback, token)
+        
+        Note over Proxy: JSON-RPC 2.0 Request<br/>{jsonrpc: "2.0",<br/>method: "tools/call",<br/>params: {...},<br/>id: UUID}
+        
+        Proxy->>MCP: POST /<br/>Authorization: Bearer {token}<br/>Content-Type: application/json
+        
+        MCP->>MCP: Verify JWT token<br/>(Ed25519 signature,<br/>p_hash integrity,<br/>scope, expiry)
+        
+        alt Token Invalid
+            MCP-->>Proxy: JSON-RPC Error<br/>{code: -32603,<br/>message: "Auth failed"}
+            Proxy-->>Interceptor: Error
+            Interceptor-->>SDK: 401/403 Error
+        else Token Valid
+            MCP->>MCP: Execute tool logic
+            MCP-->>Proxy: JSON-RPC Success<br/>{jsonrpc: "2.0",<br/>result: {...},<br/>id: UUID}
+            Proxy-->>Interceptor: serde_json::Value result
+            
+            Note over Interceptor: Fire-and-forget<br/>background task
+            
+            Interceptor->>Redis: add_to_history(...)<br/>(async, non-blocking)
+            Interceptor->>Redis: add_taint(...)<br/>(if side effects)<br/>(async, non-blocking)
+            
+            Interceptor-->>SDK: 200 OK<br/>{result: {...}}
+        end
+    end

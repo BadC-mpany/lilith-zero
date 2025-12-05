@@ -5,8 +5,8 @@ use sentinel_interceptor::engine::evaluator::PolicyEvaluator;
 use serde_json::json;
 use std::collections::{HashMap, HashSet};
 
-#[test]
-fn test_exception_with_session_has_tool() {
+#[tokio::test]
+async fn test_exception_with_session_has_tool() {
     let mut static_rules = HashMap::new();
     static_rules.insert("send_email".to_string(), "ALLOW".to_string());
     static_rules.insert("anonymize_text".to_string(), "ALLOW".to_string());
@@ -53,14 +53,15 @@ fn test_exception_with_session_has_tool() {
         &current_taints,
         &json!({"to": "user@example.com"}),
     )
+    .await
     .unwrap();
 
     // Should be ALLOWED due to exception
     assert!(matches!(result, Decision::Allowed));
 }
 
-#[test]
-fn test_exception_with_tool_args_match_wildcard() {
+#[tokio::test]
+async fn test_exception_with_tool_args_match_wildcard() {
     let mut static_rules = HashMap::new();
     static_rules.insert("send_email".to_string(), "ALLOW".to_string());
 
@@ -109,6 +110,7 @@ fn test_exception_with_tool_args_match_wildcard() {
         &current_taints,
         &json!({"to": "internal_team@company.com"}),
     )
+    .await
     .unwrap();
 
     assert!(matches!(result, Decision::Allowed));
@@ -122,6 +124,7 @@ fn test_exception_with_tool_args_match_wildcard() {
         &current_taints,
         &json!({"to": "external@example.com"}),
     )
+    .await
     .unwrap();
 
     match result {
@@ -132,8 +135,8 @@ fn test_exception_with_tool_args_match_wildcard() {
     }
 }
 
-#[test]
-fn test_exception_with_and_condition() {
+#[tokio::test]
+async fn test_exception_with_and_condition() {
     let mut static_rules = HashMap::new();
     static_rules.insert("web_search".to_string(), "ALLOW".to_string());
     static_rules.insert("anonymize_text".to_string(), "ALLOW".to_string());
@@ -182,14 +185,15 @@ fn test_exception_with_and_condition() {
         &current_taints,
         &json!({}),
     )
+    .await
     .unwrap();
 
     // Both conditions satisfied, exception applies
     assert!(matches!(result, Decision::Allowed));
 }
 
-#[test]
-fn test_no_exception_applies() {
+#[tokio::test]
+async fn test_no_exception_applies() {
     let mut static_rules = HashMap::new();
     static_rules.insert("web_search".to_string(), "ALLOW".to_string());
 
@@ -231,6 +235,7 @@ fn test_no_exception_applies() {
         &current_taints,
         &json!({}),
     )
+    .await
     .unwrap();
 
     // No exception applies, should be denied
@@ -242,8 +247,8 @@ fn test_no_exception_applies() {
     }
 }
 
-#[test]
-fn test_multiple_exceptions_first_matches() {
+#[tokio::test]
+async fn test_multiple_exceptions_first_matches() {
     let mut static_rules = HashMap::new();
     static_rules.insert("send_email".to_string(), "ALLOW".to_string());
     static_rules.insert("anonymize_text".to_string(), "ALLOW".to_string());
@@ -296,14 +301,15 @@ fn test_multiple_exceptions_first_matches() {
         &current_taints,
         &json!({}),
     )
+    .await
     .unwrap();
 
     // First exception matches, should be allowed
     assert!(matches!(result, Decision::Allowed));
 }
 
-#[test]
-fn test_exception_with_exact_arg_match() {
+#[tokio::test]
+async fn test_exception_with_exact_arg_match() {
     let mut static_rules = HashMap::new();
     static_rules.insert("send_email".to_string(), "ALLOW".to_string());
 
@@ -343,6 +349,7 @@ fn test_exception_with_exact_arg_match() {
         &current_taints,
         &json!({"priority": "low", "to": "user@example.com"}),
     )
+    .await
     .unwrap();
 
     assert!(matches!(result, Decision::Allowed));
@@ -356,8 +363,8 @@ fn test_exception_with_exact_arg_match() {
         &current_taints,
         &json!({"priority": "high"}),
     )
+    .await
     .unwrap();
 
     assert!(matches!(result, Decision::Denied { .. }));
 }
-

@@ -1,4 +1,4 @@
-// Adapter to bridge API trait (async, String errors) and engine implementation (sync, InterceptorError)
+// Adapter to bridge API trait (async, String errors) and engine implementation (async, InterceptorError)
 
 use crate::api::{PolicyEvaluator as ApiPolicyEvaluator, RedisStore};
 use crate::core::models::{Decision, PolicyDefinition};
@@ -7,13 +7,12 @@ use std::collections::HashSet;
 use std::sync::Arc;
 use tracing;
 
-/// Adapter that bridges the async API trait with the sync engine implementation
+/// Adapter that bridges the async API trait with the async engine implementation
 /// 
 /// This adapter:
 /// - Fetches session history from Redis
 /// - Converts Vec<String> taints to HashSet<String>
 /// - Maps InterceptorError to String for trait compatibility
-/// - Handles the async/sync boundary
 pub struct PolicyEvaluatorAdapter {
     redis_store: Arc<dyn RedisStore + Send + Sync>,
 }
@@ -67,7 +66,7 @@ impl ApiPolicyEvaluator for PolicyEvaluatorAdapter {
         // Convert Vec<String> to HashSet<String> for engine
         let taints_set: HashSet<String> = session_taints.iter().cloned().collect();
 
-        // Call engine (sync) - engine handles the actual policy evaluation
+        // Call async engine - engine handles the actual policy evaluation
         EnginePolicyEvaluator::evaluate(
             policy,
             tool_name,
@@ -75,7 +74,7 @@ impl ApiPolicyEvaluator for PolicyEvaluatorAdapter {
             &history,
             &taints_set,
         )
+        .await
         .map_err(|e| e.to_string())
     }
 }
-

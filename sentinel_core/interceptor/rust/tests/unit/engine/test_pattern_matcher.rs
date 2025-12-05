@@ -5,8 +5,8 @@ use sentinel_interceptor::engine::pattern_matcher::PatternMatcher;
 use serde_json::json;
 use std::collections::HashSet;
 
-#[test]
-fn test_sequence_pattern_simple() {
+#[tokio::test]
+async fn test_sequence_pattern_simple() {
     let history = vec![HistoryEntry {
         tool: "read_file".to_string(),
         classes: vec!["SENSITIVE_READ".to_string()],
@@ -30,13 +30,14 @@ fn test_sequence_pattern_simple() {
         &["CONSEQUENTIAL_WRITE".to_string()],
         &current_taints,
     )
+    .await
     .unwrap();
 
     assert!(result, "Sequence pattern should match");
 }
 
-#[test]
-fn test_sequence_pattern_no_match() {
+#[tokio::test]
+async fn test_sequence_pattern_no_match() {
     let history = vec![HistoryEntry {
         tool: "read_file".to_string(),
         classes: vec!["SENSITIVE_READ".to_string()],
@@ -60,13 +61,14 @@ fn test_sequence_pattern_no_match() {
         &["CONSEQUENTIAL_WRITE".to_string()],
         &current_taints,
     )
+    .await
     .unwrap();
 
     assert!(!result, "Sequence pattern should not match");
 }
 
-#[test]
-fn test_sequence_pattern_by_tool_name() {
+#[tokio::test]
+async fn test_sequence_pattern_by_tool_name() {
     let history = vec![HistoryEntry {
         tool: "read_file".to_string(),
         classes: vec!["SENSITIVE_READ".to_string()],
@@ -90,13 +92,14 @@ fn test_sequence_pattern_by_tool_name() {
         &["CONSEQUENTIAL_WRITE".to_string()],
         &current_taints,
     )
+    .await
     .unwrap();
 
     assert!(result, "Sequence pattern by tool name should match");
 }
 
-#[test]
-fn test_sequence_pattern_max_distance() {
+#[tokio::test]
+async fn test_sequence_pattern_max_distance() {
     let history = vec![
         HistoryEntry {
             tool: "read_file".to_string(),
@@ -133,13 +136,14 @@ fn test_sequence_pattern_max_distance() {
         &["CONSEQUENTIAL_WRITE".to_string()],
         &current_taints,
     )
+    .await
     .unwrap();
 
     assert!(!result, "Sequence pattern should not match due to max_distance");
 }
 
-#[test]
-fn test_logic_pattern_and() {
+#[tokio::test]
+async fn test_logic_pattern_and() {
     let history = vec![HistoryEntry {
         tool: "read_file".to_string(),
         classes: vec!["SENSITIVE_READ".to_string()],
@@ -164,13 +168,14 @@ fn test_logic_pattern_and() {
         &["HUMAN_VERIFY".to_string()],
         &current_taints,
     )
+    .await
     .unwrap();
 
     assert!(result, "Logic pattern with AND should match");
 }
 
-#[test]
-fn test_logic_pattern_and_fails() {
+#[tokio::test]
+async fn test_logic_pattern_and_fails() {
     let history = vec![HistoryEntry {
         tool: "read_file".to_string(),
         classes: vec!["SENSITIVE_READ".to_string()],
@@ -195,13 +200,14 @@ fn test_logic_pattern_and_fails() {
         &["HUMAN_VERIFY".to_string()],
         &current_taints,
     )
+    .await
     .unwrap();
 
     assert!(!result, "Logic pattern with AND should fail");
 }
 
-#[test]
-fn test_logic_pattern_or() {
+#[tokio::test]
+async fn test_logic_pattern_or() {
     let history = vec![];
 
     let pattern = json!({
@@ -222,13 +228,14 @@ fn test_logic_pattern_or() {
         &["HUMAN_VERIFY".to_string()],
         &current_taints,
     )
+    .await
     .unwrap();
 
     assert!(result, "Logic pattern with OR should match");
 }
 
-#[test]
-fn test_logic_pattern_not() {
+#[tokio::test]
+async fn test_logic_pattern_not() {
     let history = vec![];
 
     let pattern = json!({
@@ -248,13 +255,14 @@ fn test_logic_pattern_not() {
         &["CONSEQUENTIAL_WRITE".to_string()],
         &current_taints,
     )
+    .await
     .unwrap();
 
     assert!(result, "Logic pattern with NOT should match (no sensitive read in history)");
 }
 
-#[test]
-fn test_logic_pattern_current_tool() {
+#[tokio::test]
+async fn test_logic_pattern_current_tool() {
     let history = vec![];
 
     let pattern = json!({
@@ -272,13 +280,14 @@ fn test_logic_pattern_current_tool() {
         &["CONSEQUENTIAL_WRITE".to_string()],
         &current_taints,
     )
+    .await
     .unwrap();
 
     assert!(result, "Logic pattern matching current_tool should match");
 }
 
-#[test]
-fn test_logic_pattern_session_has_taint() {
+#[tokio::test]
+async fn test_logic_pattern_session_has_taint() {
     let history = vec![];
 
     let pattern = json!({
@@ -298,13 +307,14 @@ fn test_logic_pattern_session_has_taint() {
         &["CONSEQUENTIAL_WRITE".to_string()],
         &current_taints,
     )
+    .await
     .unwrap();
 
     assert!(result, "Logic pattern matching session_has_taint should match");
 }
 
-#[test]
-fn test_logic_pattern_complex_nested() {
+#[tokio::test]
+async fn test_logic_pattern_complex_nested() {
     let history = vec![HistoryEntry {
         tool: "read_file".to_string(),
         classes: vec!["SENSITIVE_READ".to_string()],
@@ -334,8 +344,8 @@ fn test_logic_pattern_complex_nested() {
         &["HUMAN_VERIFY".to_string()],
         &current_taints,
     )
+    .await
     .unwrap();
 
     assert!(result, "Complex nested logic pattern should match");
 }
-

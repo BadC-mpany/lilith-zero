@@ -6,8 +6,8 @@ use sentinel_interceptor::core::models::Decision;
 use serde_json::json;
 use std::collections::{HashMap, HashSet};
 
-#[test]
-fn test_tool_args_in_logic_pattern_blocks_matching_args() {
+#[tokio::test]
+async fn test_tool_args_in_logic_pattern_blocks_matching_args() {
     let mut static_rules = HashMap::new();
     static_rules.insert("send_email".to_string(), "ALLOW".to_string());
 
@@ -44,6 +44,7 @@ fn test_tool_args_in_logic_pattern_blocks_matching_args() {
         &current_taints,
         &tool_args,
     )
+    .await
     .unwrap();
 
     match result {
@@ -63,6 +64,7 @@ fn test_tool_args_in_logic_pattern_blocks_matching_args() {
         &current_taints,
         &tool_args,
     )
+    .await
     .unwrap();
 
     match result {
@@ -71,8 +73,8 @@ fn test_tool_args_in_logic_pattern_blocks_matching_args() {
     }
 }
 
-#[test]
-fn test_tool_args_in_logic_pattern_with_complex_condition() {
+#[tokio::test]
+async fn test_tool_args_in_logic_pattern_with_complex_condition() {
     let mut static_rules = HashMap::new();
     static_rules.insert("send_email".to_string(), "ALLOW".to_string());
     static_rules.insert("read_file".to_string(), "ALLOW".to_string());
@@ -134,6 +136,7 @@ fn test_tool_args_in_logic_pattern_with_complex_condition() {
         &current_taints,
         &tool_args,
     )
+    .await
     .unwrap();
 
     match result {
@@ -153,6 +156,7 @@ fn test_tool_args_in_logic_pattern_with_complex_condition() {
         &current_taints,
         &tool_args,
     )
+    .await
     .unwrap();
 
     match result {
@@ -171,6 +175,7 @@ fn test_tool_args_in_logic_pattern_with_complex_condition() {
         &no_taints,
         &tool_args,
     )
+    .await
     .unwrap();
 
     match result {
@@ -179,8 +184,8 @@ fn test_tool_args_in_logic_pattern_with_complex_condition() {
     }
 }
 
-#[test]
-fn test_tool_args_in_exception_allows_bypass() {
+#[tokio::test]
+async fn test_tool_args_in_exception_allows_bypass() {
     use sentinel_interceptor::core::models::RuleException;
 
     let mut static_rules = HashMap::new();
@@ -220,6 +225,7 @@ fn test_tool_args_in_exception_allows_bypass() {
         &current_taints,
         &tool_args,
     )
+    .await
     .unwrap();
 
     match result {
@@ -237,6 +243,7 @@ fn test_tool_args_in_exception_allows_bypass() {
         &current_taints,
         &tool_args,
     )
+    .await
     .unwrap();
 
     match result {
@@ -246,4 +253,3 @@ fn test_tool_args_in_exception_allows_bypass() {
         _ => panic!("Expected Denied, got: {:?}", result),
     }
 }
-
