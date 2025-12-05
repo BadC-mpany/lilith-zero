@@ -5,6 +5,19 @@ use serde::{Deserialize, Serialize};
 use std::env;
 use std::path::PathBuf;
 
+/// Redis connection mode
+/// 
+/// Determines how the interceptor connects to Redis:
+/// - Docker: Use Docker Redis (default, recommended for local dev)
+/// - Wsl: Use WSL Redis (for existing WSL setups)
+/// - Auto: Try Docker first, fallback to WSL if unavailable
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum RedisMode {
+    Docker,
+    Wsl,
+    Auto,
+}
+
 /// Application configuration loaded from environment variables
 /// 
 /// Supports both database-backed and YAML-based operation modes.
@@ -17,6 +30,7 @@ pub struct Config {
     
     // Redis configuration
     pub redis_url: String,
+    pub redis_mode: RedisMode,  // Docker, Wsl, or Auto
     
     // Redis connection pool configuration
     pub redis_pool_max_size: u32,
@@ -68,19 +82,21 @@ impl Config {
         }
         
         // Load and validate all fields
-        // Note: redis_url must be loaded first for timeout detection
+        // Note: redis_url and redis_mode must be loaded first for timeout detection
         let redis_url = Self::get_env_or_default("REDIS_URL", "redis://localhost:6379/0")?;
+        let redis_mode = Self::parse_redis_mode()?;
         
         let config = Self {
             bind_address: Self::get_env_or_default("BIND_ADDRESS", "0.0.0.0")?,
             port: Self::parse_port()?,
             redis_url: redis_url.clone(),
+            redis_mode: redis_mode.clone(),
             redis_pool_max_size: Self::parse_u32_or_default("REDIS_POOL_MAX_SIZE", 10)?,
             redis_pool_min_idle: Self::parse_u32_or_default("REDIS_POOL_MIN_IDLE", 0)?, // Lazy initialization - set to 0 for production
-            redis_pool_max_lifetime_secs: Self::detect_redis_pool_max_lifetime(&redis_url)?,
-            redis_pool_idle_timeout_secs: Self::detect_redis_pool_idle_timeout(&redis_url)?,
-            redis_connection_timeout_secs: Self::detect_redis_connection_timeout(&redis_url)?,
-            redis_operation_timeout_secs: Self::detect_redis_operation_timeout(&redis_url)?,
+            redis_pool_max_lifetime_secs: Self::detect_redis_pool_max_lifetime(&redis_mode)?,
+            redis_pool_idle_timeout_secs: Self::detect_redis_pool_idle_timeout(&redis_mode)?,
+            redis_connection_timeout_secs: Self::detect_redis_connection_timeout(&redis_mode)?,
+            redis_operation_timeout_secs: Self::detect_redis_operation_timeout(&redis_mode)?,
             database_url: Self::get_optional_env("DATABASE_URL")?,
             interceptor_private_key_path: Self::get_required_path("INTERCEPTOR_PRIVATE_KEY_PATH")?,
             policies_yaml_path: Self::get_optional_path("POLICIES_YAML_PATH")?,
@@ -133,6 +149,25 @@ impl Config {
         match env::var(key) {
             Ok(value) if !value.is_empty() => Ok(Some(PathBuf::from(value))),
             _ => Ok(None),
+        }
+    }
+    
+    /// Parse Redis mode from REDIS_MODE environment variable
+    /// 
+    /// Valid values: "docker", "wsl", "auto"
+    /// Default: "docker" if not specified
+    fn parse_redis_mode() -> Result<RedisMode, InterceptorError> {
+        let mode_str = env::var("REDIS_MODE")
+            .unwrap_or_else(|_| "docker".to_string())
+            .to_lowercase();
+        
+        match mode_str.as_str() {
+            "docker" => Ok(RedisMode::Docker),
+            "wsl" => Ok(RedisMode::Wsl),
+            "auto" => Ok(RedisMode::Auto),
+            _ => Err(InterceptorError::ConfigurationError(
+                format!("Invalid REDIS_MODE '{}': must be 'docker', 'wsl', or 'auto'", mode_str)
+            )),
         }
     }
     
@@ -216,84 +251,88 @@ impl Config {
         }
     }
     
-    /// Detect Redis connection timeout based on environment
+    /// Detect Redis connection timeout based on Redis mode
     /// 
-    /// Auto-detects WSL/localhost scenarios and uses longer timeouts.
+    /// Uses Redis mode to determine appropriate timeout.
     /// Can be overridden with REDIS_CONNECTION_TIMEOUT_SECS environment variable.
     /// 
-    /// - WSL/localhost (127.0.0.1, localhost, or WSL IP 172.x.x.x): 15 seconds (WSL can be slow)
-    /// - Native Redis: 5 seconds (direct connection, but still allow some buffer)
-    fn detect_redis_connection_timeout(redis_url: &str) -> Result<u64, InterceptorError> {
+    /// - Docker: 5 seconds (Docker Redis is fast)
+    /// - WSL: 15 seconds (WSL can be slow)
+    /// - Auto: 5 seconds (defaults to Docker timeout)
+    fn detect_redis_connection_timeout(redis_mode: &RedisMode) -> Result<u64, InterceptorError> {
         // Check if explicitly set
         if let Ok(val) = env::var("REDIS_CONNECTION_TIMEOUT_SECS") {
             return Self::parse_u64(&val, "REDIS_CONNECTION_TIMEOUT_SECS");
         }
         
-        // Auto-detect: WSL connections (localhost, 127.0.0.1, or WSL IP range 172.x.x.x) need longer timeout
-        let is_wsl = redis_url.contains("localhost") 
-            || redis_url.contains("127.0.0.1")
-            || redis_url.contains("172."); // WSL2 typically uses 172.x.x.x IP range
-        Ok(if is_wsl { 15 } else { 5 })
+        match redis_mode {
+            RedisMode::Docker => Ok(5),  // Docker is fast
+            RedisMode::Wsl => Ok(15),     // WSL needs longer timeout
+            RedisMode::Auto => Ok(5),     // Default to Docker timeout
+        }
     }
     
-    /// Detect Redis operation timeout based on environment
+    /// Detect Redis operation timeout based on Redis mode
     /// 
-    /// Auto-detects WSL scenarios and uses longer timeouts for operations.
+    /// Uses Redis mode to determine appropriate operation timeout.
     /// Can be overridden with REDIS_OPERATION_TIMEOUT_SECS environment variable.
     /// 
-    /// - WSL connections: 5 seconds (WSL network bridge can add latency)
-    /// - Native Redis: 2 seconds (direct connection, fast)
-    fn detect_redis_operation_timeout(redis_url: &str) -> Result<u64, InterceptorError> {
+    /// - Docker: 2 seconds (Docker Redis is fast)
+    /// - WSL: 5 seconds (WSL network bridge can add latency)
+    /// - Auto: 2 seconds (defaults to Docker timeout)
+    fn detect_redis_operation_timeout(redis_mode: &RedisMode) -> Result<u64, InterceptorError> {
         // Check if explicitly set
         if let Ok(val) = env::var("REDIS_OPERATION_TIMEOUT_SECS") {
             return Self::parse_u64(&val, "REDIS_OPERATION_TIMEOUT_SECS");
         }
         
-        // Auto-detect: WSL connections need longer operation timeout due to network bridge latency
-        let is_wsl = redis_url.contains("localhost") 
-            || redis_url.contains("127.0.0.1")
-            || redis_url.contains("172."); // WSL2 typically uses 172.x.x.x IP range
-        Ok(if is_wsl { 5 } else { 2 })
+        match redis_mode {
+            RedisMode::Docker => Ok(2),  // Docker is fast
+            RedisMode::Wsl => Ok(5),     // WSL needs longer timeout
+            RedisMode::Auto => Ok(2),    // Default to Docker timeout
+        }
     }
     
-    /// Detect Redis pool max lifetime based on environment
+    /// Detect Redis pool max lifetime based on Redis mode
     /// 
-    /// WSL connections benefit from shorter connection lifetimes to avoid stale connections.
+    /// Uses Redis mode to determine appropriate connection lifetime.
     /// Can be overridden with REDIS_POOL_MAX_LIFETIME_SECS environment variable.
     /// 
-    /// - WSL connections: 300 seconds (5 minutes) - shorter to avoid stale connections
-    /// - Native Redis: 1800 seconds (30 minutes) - standard lifetime
-    fn detect_redis_pool_max_lifetime(redis_url: &str) -> Result<u64, InterceptorError> {
+    /// - Docker: 1800 seconds (30 minutes) - standard lifetime
+    /// - WSL: 300 seconds (5 minutes) - shorter to avoid stale connections
+    /// - Auto: 1800 seconds (defaults to Docker lifetime)
+    fn detect_redis_pool_max_lifetime(redis_mode: &RedisMode) -> Result<u64, InterceptorError> {
         // Check if explicitly set
         if let Ok(val) = env::var("REDIS_POOL_MAX_LIFETIME_SECS") {
             return Self::parse_u64(&val, "REDIS_POOL_MAX_LIFETIME_SECS");
         }
         
-        // Auto-detect: WSL connections need shorter lifetime to avoid stale connections
-        let is_wsl = redis_url.contains("localhost") 
-            || redis_url.contains("127.0.0.1")
-            || redis_url.contains("172."); // WSL2 typically uses 172.x.x.x IP range
-        Ok(if is_wsl { 300 } else { 1800 }) // 5 minutes for WSL, 30 minutes for native
+        match redis_mode {
+            RedisMode::Docker => Ok(1800), // 30 minutes for Docker
+            RedisMode::Wsl => Ok(300),      // 5 minutes for WSL
+            RedisMode::Auto => Ok(1800),    // Default to Docker lifetime
+        }
     }
     
-    /// Detect Redis pool idle timeout based on environment
+    /// Detect Redis pool idle timeout based on Redis mode
     /// 
-    /// WSL connections benefit from shorter idle timeouts to avoid stale connections.
+    /// Uses Redis mode to determine appropriate idle timeout.
     /// Can be overridden with REDIS_POOL_IDLE_TIMEOUT_SECS environment variable.
     /// 
-    /// - WSL connections: 60 seconds (1 minute) - shorter to avoid stale idle connections
-    /// - Native Redis: 300 seconds (5 minutes) - standard idle timeout
-    fn detect_redis_pool_idle_timeout(redis_url: &str) -> Result<u64, InterceptorError> {
+    /// - Docker: 300 seconds (5 minutes) - standard idle timeout
+    /// - WSL: 60 seconds (1 minute) - shorter to avoid stale idle connections
+    /// - Auto: 300 seconds (defaults to Docker timeout)
+    fn detect_redis_pool_idle_timeout(redis_mode: &RedisMode) -> Result<u64, InterceptorError> {
         // Check if explicitly set
         if let Ok(val) = env::var("REDIS_POOL_IDLE_TIMEOUT_SECS") {
             return Self::parse_u64(&val, "REDIS_POOL_IDLE_TIMEOUT_SECS");
         }
         
-        // Auto-detect: WSL connections need shorter idle timeout to avoid stale connections
-        let is_wsl = redis_url.contains("localhost") 
-            || redis_url.contains("127.0.0.1")
-            || redis_url.contains("172."); // WSL2 typically uses 172.x.x.x IP range
-        Ok(if is_wsl { 60 } else { 300 }) // 1 minute for WSL, 5 minutes for native
+        match redis_mode {
+            RedisMode::Docker => Ok(300), // 5 minutes for Docker
+            RedisMode::Wsl => Ok(60),      // 1 minute for WSL
+            RedisMode::Auto => Ok(300),    // Default to Docker timeout
+        }
     }
     
     /// Parse u64 from environment variable (no default)
@@ -421,11 +460,12 @@ impl Config {
             bind_address: "0.0.0.0".to_string(),
             port: 8000,
             redis_url: "redis://localhost:6379/0".to_string(),
+            redis_mode: RedisMode::Docker, // Test default
             redis_pool_max_size: 10,
             redis_pool_min_idle: 0, // Lazy initialization for tests
             redis_pool_max_lifetime_secs: 1800,
             redis_pool_idle_timeout_secs: 300,
-            redis_connection_timeout_secs: 15, // Test default (localhost/WSL)
+            redis_connection_timeout_secs: 5, // Test default (Docker)
             redis_operation_timeout_secs: 2,
             database_url: Some("postgresql://localhost/test".to_string()),
             interceptor_private_key_path: PathBuf::from("/tmp/test_key.pem"),

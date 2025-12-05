@@ -5,7 +5,7 @@ use sentinel_interceptor::auth::audit_logger::AuditLogger;
 use sentinel_interceptor::auth::auth_middleware::AuthState;
 use sentinel_interceptor::auth::customer_store::{DbCustomerStore, YamlCustomerStore};
 use sentinel_interceptor::auth::policy_store::{DbPolicyStore, YamlPolicyStore};
-use sentinel_interceptor::config::Config;
+use sentinel_interceptor::config::{Config, RedisMode};
 use sentinel_interceptor::core::crypto::CryptoSigner;
 use sentinel_interceptor::core::models::HistoryEntry;
 use sentinel_interceptor::loader::policy_loader::PolicyLoader;
@@ -111,14 +111,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             eprintln!("\nRedis connection panic detected!");
             eprintln!("This usually means:");
             eprintln!("  1. Redis connection was lost during runtime");
-            eprintln!("  2. WSL port forwarding connection broke");
-            eprintln!("  3. Redis server restarted or became unavailable");
+            eprintln!("  2. Redis server restarted or became unavailable");
+            eprintln!("  3. (WSL mode) WSL port forwarding connection broke");
             eprintln!("\nThe server will continue running, but Redis operations may fail.");
             eprintln!("Troubleshooting:");
-            eprintln!("  - Check Redis is running: wsl redis-cli ping");
-            eprintln!("  - Verify port forwarding: netsh interface portproxy show all");
-            eprintln!("  - Restart Redis: wsl redis-cli shutdown && wsl redis-server --daemonize yes");
-            eprintln!("  - Restart WSL if needed: wsl --shutdown (wait 10s)");
+            eprintln!("  Docker mode:");
+            eprintln!("    - Check Docker is running: docker ps");
+            eprintln!("    - Check Redis container: docker ps --filter name=sentinel-redis-local");
+            eprintln!("    - Restart Redis: .\\scripts\\start_redis_docker.ps1");
+            eprintln!("  WSL mode:");
+            eprintln!("    - Check Redis is running: wsl redis-cli ping");
+            eprintln!("    - Verify port forwarding: netsh interface portproxy show all");
+            eprintln!("    - Restart Redis: wsl redis-cli shutdown && wsl redis-server --daemonize yes");
+            eprintln!("    - Restart WSL if needed: wsl --shutdown (wait 10s)");
             eprintln!("\nNote: Health endpoint will report Redis as disconnected until reconnected.");
         }
     }));
@@ -147,6 +152,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 3. Initialize Redis store with connection pool
     info!(
         redis_url = %config.redis_url,
+        redis_mode = ?config.redis_mode,
         max_size = config.redis_pool_max_size,
         min_idle = config.redis_pool_min_idle,
         "Connecting to Redis..."
@@ -155,15 +161,34 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         RedisStoreImpl::new(&config.redis_url, &config)
             .await
             .map_err(|e| {
-                error!(error = %e, redis_url = %config.redis_url, "Failed to initialize Redis store");
+                error!(error = %e, redis_url = %config.redis_url, redis_mode = ?config.redis_mode, "Failed to initialize Redis store");
                 eprintln!("\nRedis connection failed!");
                 eprintln!("Error: {}", e);
-                eprintln!("\nTroubleshooting for WSL Redis:");
-                eprintln!("  1. Check Redis is running: wsl redis-cli ping");
-                eprintln!("  2. Verify port forwarding: netsh interface portproxy show all");
-                eprintln!("  3. If missing, run: .\\scripts\\setup_wsl_redis_forwarding.ps1");
-                eprintln!("  4. Check REDIS_URL in .env file");
-                eprintln!("  5. WSL can be slow - wait 30s after 'wsl --shutdown'");
+                eprintln!("\nTroubleshooting:");
+                match config.redis_mode {
+                    RedisMode::Docker => {
+                        eprintln!("  Docker mode:");
+                        eprintln!("    1. Check Docker is running: docker ps");
+                        eprintln!("    2. Check Redis container: docker ps --filter name=sentinel-redis-local");
+                        eprintln!("    3. Start Redis: .\\scripts\\start_redis_docker.ps1");
+                        eprintln!("    4. Check REDIS_URL in .env file");
+                    }
+                    RedisMode::Wsl => {
+                        eprintln!("  WSL mode:");
+                        eprintln!("    1. Check Redis is running: wsl redis-cli ping");
+                        eprintln!("    2. Verify port forwarding: netsh interface portproxy show all");
+                        eprintln!("    3. If missing, run: .\\scripts\\setup_wsl_redis_forwarding.ps1");
+                        eprintln!("    4. Check REDIS_URL in .env file");
+                        eprintln!("    5. WSL can be slow - wait 30s after 'wsl --shutdown'");
+                    }
+                    RedisMode::Auto => {
+                        eprintln!("  Auto mode:");
+                        eprintln!("    - Tried Docker first, then WSL");
+                        eprintln!("    - Check Docker: docker ps --filter name=sentinel-redis-local");
+                        eprintln!("    - Check WSL: wsl redis-cli ping");
+                        eprintln!("    - Start one: .\\scripts\\start_redis_docker.ps1 or wsl redis-server --daemonize yes");
+                    }
+                }
                 e
             })?
     );

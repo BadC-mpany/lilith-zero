@@ -2,7 +2,7 @@
 
 use crate::core::errors::InterceptorError;
 use crate::core::models::HistoryEntry;
-use crate::config::Config;
+use crate::config::{Config, RedisMode};
 use bb8_redis::{bb8::Pool, RedisConnectionManager};
 use bb8_redis::redis::AsyncCommands;
 use std::collections::HashSet;
@@ -39,12 +39,216 @@ impl RedisStore {
     /// # Returns
     /// * `Result<Self, InterceptorError>` - RedisStore instance or error
     pub async fn new(redis_url: &str, config: &Config) -> Result<Self, InterceptorError> {
+        // Determine actual connection mode (handle Auto mode)
+        let actual_mode = match &config.redis_mode {
+            RedisMode::Auto => {
+                tracing::info!("Auto mode: Checking Docker Redis availability...");
+                if Self::check_docker_redis_available().await {
+                    tracing::info!("Docker Redis detected - using Docker mode");
+                    RedisMode::Docker
+                } else {
+                    tracing::info!("Docker Redis not available - using WSL mode");
+                    RedisMode::Wsl
+                }
+            }
+            mode => mode.clone(),
+        };
+        
+        tracing::info!(
+            redis_mode = ?actual_mode,
+            original_url = redis_url,
+            "Initializing Redis connection"
+        );
+        
+        // Route to appropriate connection logic based on mode
+        match actual_mode {
+            RedisMode::Docker => {
+                Self::new_docker(redis_url, config).await
+            }
+            RedisMode::Wsl => {
+                Self::new_wsl(redis_url, config).await
+            }
+            RedisMode::Auto => {
+                // Should never reach here (handled above), but include for completeness
+                unreachable!("Auto mode should be resolved before reaching connection logic")
+            }
+        }
+    }
+    
+    /// Create RedisStore for Docker Redis
+    /// 
+    /// Docker mode uses simplified connection logic:
+    /// - No WSL IP resolution needed
+    /// - No RESP2 forcing (Docker Redis supports RESP3)
+    /// - Standard timeouts (5s connection, 2s operation)
+    /// - min_idle=0 (Docker is fast)
+    async fn new_docker(redis_url: &str, config: &Config) -> Result<Self, InterceptorError> {
         use tokio::time::{sleep, Duration as SleepDuration};
         
         const MAX_RETRIES: u32 = 3;
         const INITIAL_DELAY_MS: u64 = 1000;
         
-        // === CRITICAL FIX: BYPASS PORT PROXY BY CONNECTING DIRECTLY TO WSL IP ===
+        // Use Redis URL as-is (no WSL IP resolution, no RESP2 forcing)
+        let effective_url = redis_url.to_string();
+        
+        tracing::info!(
+            original_url = redis_url,
+            effective_url = %effective_url,
+            mode = "Docker",
+            "Connecting to Docker Redis"
+        );
+        
+        let mut connection_errors = Vec::new();
+        
+        for attempt in 0..MAX_RETRIES {
+            if attempt > 0 {
+                let delay_ms = INITIAL_DELAY_MS * (1 << (attempt - 1));
+                tracing::warn!(
+                    attempt = attempt + 1,
+                    max_attempts = MAX_RETRIES,
+                    delay_ms = delay_ms,
+                    "Retrying Docker Redis connection..."
+                );
+                sleep(SleepDuration::from_millis(delay_ms)).await;
+            }
+            
+            tracing::info!(
+                attempt = attempt + 1,
+                effective_url = %effective_url,
+                "Attempting Docker Redis connection (attempt {})",
+                attempt + 1
+            );
+            
+            // Pre-flight test
+            let preflight_start = std::time::Instant::now();
+            let preflight_result = tokio::time::timeout(
+                TokioDuration::from_secs(5),
+                async {
+                    use bb8_redis::redis::Client;
+                    let client = Client::open(effective_url.as_str())?;
+                    let mut conn = client.get_async_connection().await?;
+                    bb8_redis::redis::cmd("PING").query_async::<_, String>(&mut conn).await
+                }
+            ).await;
+            
+            match preflight_result {
+                Ok(Ok(result)) if result == "PONG" => {
+                    tracing::info!(
+                        duration_ms = preflight_start.elapsed().as_millis(),
+                        effective_url = %effective_url,
+                        "Pre-flight connection test: SUCCESS"
+                    );
+                }
+                Ok(Ok(result)) => {
+                    let err_msg = format!("Pre-flight test returned unexpected result: {} (expected PONG)", result);
+                    tracing::error!(error = %err_msg, "Pre-flight test failed");
+                    connection_errors.push(err_msg);
+                    continue;
+                }
+                Ok(Err(e)) => {
+                    let err_msg = format!("Pre-flight connection test failed: {}", e);
+                    tracing::error!(error = %err_msg, effective_url = %effective_url, "Pre-flight test failed");
+                    connection_errors.push(err_msg);
+                    continue;
+                }
+                Err(_) => {
+                    let err_msg = format!("Pre-flight connection test timed out after 5s (URL: {})", effective_url);
+                    tracing::error!(error = %err_msg, "Pre-flight test timed out");
+                    connection_errors.push(err_msg);
+                    continue;
+                }
+            }
+            
+            // Create Manager
+            let manager = match RedisConnectionManager::new(effective_url.as_str()) {
+                Ok(m) => {
+                    tracing::debug!("RedisConnectionManager created successfully");
+                    m
+                },
+                Err(e) => {
+                    let err_msg = format!("Failed to create connection manager: {}", e);
+                    connection_errors.push(err_msg);
+                    continue;
+                }
+            };
+            
+            // Build Pool
+            let pool_build_timeout = config.redis_connection_timeout_secs + 5;
+            tracing::info!("Building pool (Attempt {})...", attempt + 1);
+            
+            // Docker: min_idle=0 (Docker is fast, no need to keep connections alive)
+            let min_idle = 0;
+            tracing::info!(
+                min_idle = min_idle,
+                effective_url = %effective_url,
+                "Setting pool min_idle for Docker"
+            );
+            
+            let pool_result = tokio::time::timeout(
+                TokioDuration::from_secs(pool_build_timeout),
+                Pool::builder()
+                    .max_size(config.redis_pool_max_size)
+                    .min_idle(min_idle)
+                    .max_lifetime(Some(TokioDuration::from_secs(config.redis_pool_max_lifetime_secs)))
+                    .idle_timeout(Some(TokioDuration::from_secs(config.redis_pool_idle_timeout_secs)))
+                    .build(manager)
+            ).await;
+            
+            match pool_result {
+                Ok(Ok(pool)) => {
+                    tracing::info!("Verifying pool connection (PING)...");
+                    match Self::verify_pool_connection(&pool, config).await {
+                        Ok(_) => {
+                            tracing::info!(
+                                effective_url = %effective_url,
+                                mode = "Docker",
+                                "Redis connection pool verified successfully"
+                            );
+                            return Ok(Self { pool, config: config.clone() });
+                        }
+                        Err(e) => {
+                            let err_msg = format!("Handshake failed: {}", e);
+                            tracing::error!(error = %err_msg, "Verification failed");
+                            connection_errors.push(err_msg);
+                            continue;
+                        }
+                    }
+                }
+                Ok(Err(e)) => {
+                    let err_msg = format!("Pool build error: {}", e);
+                    connection_errors.push(err_msg);
+                    continue;
+                }
+                Err(_) => {
+                    let err_msg = format!("Pool build timed out after {}s", pool_build_timeout);
+                    connection_errors.push(err_msg);
+                    continue;
+                }
+            }
+        }
+        
+        Err(InterceptorError::StateError(format!(
+            "Failed to connect to Docker Redis after {} attempts.\nErrors: {}\nURL: {}", 
+            MAX_RETRIES, 
+            connection_errors.join("; "), 
+            redis_url
+        )))
+    }
+    
+    /// Create RedisStore for WSL Redis
+    /// 
+    /// WSL mode uses existing WSL-specific connection logic:
+    /// - WSL IP resolution (bypass port proxy)
+    /// - RESP2 protocol forcing
+    /// - Extended timeouts (15s connection, 5s operation)
+    /// - min_idle=2 for connection reuse
+    async fn new_wsl(redis_url: &str, config: &Config) -> Result<Self, InterceptorError> {
+        use tokio::time::{sleep, Duration as SleepDuration};
+        
+        const MAX_RETRIES: u32 = 3;
+        const INITIAL_DELAY_MS: u64 = 1000;
+        
+        // === WSL-SPECIFIC: BYPASS PORT PROXY BY CONNECTING DIRECTLY TO WSL IP ===
         // The Windows-to-WSL port proxy (netsh v4tov4) drops RESP3 'HELLO' handshake packets.
         // Even RESP2 fails over the proxy because redis-rs Client doesn't respect ?protocol=resp2.
         // 
@@ -102,6 +306,7 @@ impl RedisStore {
             original_url = redis_url,
             effective_url = %effective_url,
             protocol = "RESP2 (Forced via URL parameter - required for WSL port forwarding)",
+            mode = "WSL",
             "Initializing Redis connection with RESP2 protocol"
         );
         
@@ -114,7 +319,7 @@ impl RedisStore {
                     attempt = attempt + 1,
                     max_attempts = MAX_RETRIES,
                     delay_ms = delay_ms,
-                    "Retrying Redis connection..."
+                    "Retrying WSL Redis connection..."
                 );
                 sleep(SleepDuration::from_millis(delay_ms)).await;
             }
@@ -123,13 +328,11 @@ impl RedisStore {
                 attempt = attempt + 1,
                 effective_url = %effective_url,
                 protocol = "RESP2",
-                "Attempting Redis connection (attempt {})",
+                "Attempting WSL Redis connection (attempt {})",
                 attempt + 1
             );
             
             // Pre-flight test: Verify direct connection works (using effective_url which may be WSL IP)
-            // This helps diagnose if the issue is connectivity-related or pool-related
-            tracing::debug!("Pre-flight: Testing direct connection to effective URL...");
             let preflight_start = std::time::Instant::now();
             let preflight_result = tokio::time::timeout(
                 TokioDuration::from_secs(5),
@@ -169,7 +372,7 @@ impl RedisStore {
                 }
             }
             
-            // Create Manager with RESP2 URL (pre-flight test passed, so this should work)
+            // Create Manager with RESP2 URL
             let manager = match RedisConnectionManager::new(effective_url.as_str()) {
                 Ok(m) => {
                     tracing::debug!("RedisConnectionManager created successfully");
@@ -182,23 +385,23 @@ impl RedisStore {
                 }
             };
             
-            // 4. Build Pool (Lazy)
+            // Build Pool
             let pool_build_timeout = config.redis_connection_timeout_secs + 5;
             tracing::info!("Building pool with RESP2 (Attempt {})...", attempt + 1);
             
-            // Determine min_idle based on WSL detection
+            // WSL: min_idle=2 for connection reuse (WSL connections are slow to create)
             let min_idle = if effective_url.contains("172.") { 2 } else { 0 };
             tracing::info!(
                 min_idle = min_idle,
                 effective_url = %effective_url,
-                "Setting pool min_idle for connection reuse"
+                "Setting pool min_idle for WSL connection reuse"
             );
             
             let pool_result = tokio::time::timeout(
                 TokioDuration::from_secs(pool_build_timeout),
                 Pool::builder()
                     .max_size(config.redis_pool_max_size)
-                    .min_idle(min_idle) // Keep connections alive for WSL to avoid slow connection creation
+                    .min_idle(min_idle)
                     .max_lifetime(Some(TokioDuration::from_secs(config.redis_pool_max_lifetime_secs)))
                     .idle_timeout(Some(TokioDuration::from_secs(config.redis_pool_idle_timeout_secs)))
                     .build(manager)
@@ -206,13 +409,12 @@ impl RedisStore {
             
             match pool_result {
                 Ok(Ok(pool)) => {
-                    // 5. Verify Connection
-                    // Pre-flight test passed, so pool verification should work too
                     tracing::info!("Verifying pool connection (PING)...");
                     match Self::verify_pool_connection(&pool, config).await {
                         Ok(_) => {
                             tracing::info!(
                                 effective_url = %effective_url,
+                                mode = "WSL",
                                 "Redis connection pool verified successfully"
                             );
                             return Ok(Self { pool, config: config.clone() });
@@ -239,12 +441,35 @@ impl RedisStore {
         }
         
         Err(InterceptorError::StateError(format!(
-            "Failed to connect to Redis after {} attempts.\nErrors: {}\nOriginal URL: {}\nEffective URL: {}", 
+            "Failed to connect to WSL Redis after {} attempts.\nErrors: {}\nOriginal URL: {}\nEffective URL: {}", 
             MAX_RETRIES, 
             connection_errors.join("; "), 
             redis_url,
             effective_url
         )))
+    }
+    
+    /// Check if Docker Redis container is available
+    /// 
+    /// Checks if the Docker container "sentinel-redis-local" is running.
+    /// Returns true if the container exists and is running, false otherwise.
+    async fn check_docker_redis_available() -> bool {
+        // Use tokio::task::spawn_blocking to run blocking command
+        tokio::task::spawn_blocking(|| {
+            let output = std::process::Command::new("docker")
+                .args(&["ps", "--filter", "name=sentinel-redis-local", "--format", "{{.Names}}"])
+                .output();
+            
+            match output {
+                Ok(output) if output.status.success() => {
+                    let stdout = String::from_utf8_lossy(&output.stdout);
+                    stdout.trim() == "sentinel-redis-local"
+                }
+                _ => false,
+            }
+        })
+        .await
+        .unwrap_or(false)
     }
     
     /// Get WSL IP address by executing `wsl hostname -I`

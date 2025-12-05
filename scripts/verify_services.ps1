@@ -22,20 +22,63 @@ try {
     $allGood = $false
 }
 
-# Check Redis/Memurai (WSL)
-Write-Host "`n[2] Checking Redis/Memurai..." -ForegroundColor Yellow
-try {
-    $wslTest = wsl redis-cli ping 2>&1
-    if ($wslTest -eq "PONG") {
-        Write-Host "  [OK] Redis is running in WSL" -ForegroundColor Green
-    } else {
-        Write-Host "  [FAIL] Redis not responding in WSL" -ForegroundColor Red
-        Write-Host "    Response: $wslTest" -ForegroundColor Gray
+# Check Redis (Docker or WSL based on REDIS_MODE)
+Write-Host "`n[2] Checking Redis..." -ForegroundColor Yellow
+$redisMode = $env:REDIS_MODE
+if (-not $redisMode) {
+    $redisMode = "docker"  # Default to Docker
+}
+
+if ($redisMode -eq "docker" -or $redisMode -eq "auto") {
+    # Check Docker Redis
+    try {
+        $dockerContainer = docker ps --filter "name=sentinel-redis-local" --format "{{.Names}}" 2>&1
+        if ($dockerContainer -eq "sentinel-redis-local") {
+            $pingResult = docker exec sentinel-redis-local redis-cli ping 2>&1
+            if ($pingResult -eq "PONG") {
+                Write-Host "  [OK] Redis is running in Docker" -ForegroundColor Green
+            } else {
+                Write-Host "  [FAIL] Docker Redis not responding" -ForegroundColor Red
+                Write-Host "    Response: $pingResult" -ForegroundColor Gray
+                $allGood = $false
+            }
+        } else {
+            if ($redisMode -eq "auto") {
+                Write-Host "  [WARN] Docker Redis not running, checking WSL..." -ForegroundColor Yellow
+                $redisMode = "wsl"  # Fallback to WSL check
+            } else {
+                Write-Host "  [FAIL] Docker Redis container not running" -ForegroundColor Red
+                Write-Host "    Start with: .\scripts\start_redis_docker.ps1" -ForegroundColor Yellow
+                $allGood = $false
+            }
+        }
+    } catch {
+        if ($redisMode -eq "auto") {
+            Write-Host "  [WARN] Docker check failed, checking WSL..." -ForegroundColor Yellow
+            $redisMode = "wsl"  # Fallback to WSL check
+        } else {
+            Write-Host "  [FAIL] Docker Redis check failed: $_" -ForegroundColor Red
+            $allGood = $false
+        }
+    }
+}
+
+if ($redisMode -eq "wsl") {
+    # Check WSL Redis
+    try {
+        $wslTest = wsl redis-cli ping 2>&1
+        if ($wslTest -eq "PONG") {
+            Write-Host "  [OK] Redis is running in WSL" -ForegroundColor Green
+        } else {
+            Write-Host "  [FAIL] Redis not responding in WSL" -ForegroundColor Red
+            Write-Host "    Response: $wslTest" -ForegroundColor Gray
+            Write-Host "    Start with: wsl redis-server --daemonize yes" -ForegroundColor Yellow
+            $allGood = $false
+        }
+    } catch {
+        Write-Host "  [FAIL] WSL Redis check failed: $_" -ForegroundColor Red
         $allGood = $false
     }
-} catch {
-    Write-Host "  [FAIL] Redis check failed: $_" -ForegroundColor Red
-    $allGood = $false
 }
 
 # Check Rust Interceptor

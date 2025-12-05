@@ -11,31 +11,48 @@ Write-Host "=== Starting Sentinel Services ===" -ForegroundColor Cyan
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $projectRoot = Split-Path -Parent $scriptDir
 
-# Check WSL health first
-Write-Host "`n[0] Checking WSL health..." -ForegroundColor Yellow
-$wslCheck = & "$scriptDir\wsl_health_check.ps1" -AutoRecover 2>&1
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "  [WARN] WSL health check failed" -ForegroundColor Yellow
-    Write-Host "    Run: .\scripts\configure_wsl_resources.ps1 to fix permanently" -ForegroundColor Gray
+# Detect Redis mode from environment variable
+$redisMode = $env:REDIS_MODE
+if (-not $redisMode) {
+    $redisMode = "docker"  # Default to Docker
+    Write-Host "`n[0] Redis Mode: $redisMode (default)" -ForegroundColor Cyan
 } else {
-    Write-Host "  [OK] WSL and Redis are healthy" -ForegroundColor Green
+    Write-Host "`n[0] Redis Mode: $redisMode" -ForegroundColor Cyan
 }
 
-# AUTOMATIC REDIS FIX - CRITICAL: Fix Redis connection BEFORE starting interceptor
-Write-Host "`n[0.5] Auto-fixing Redis connection..." -ForegroundColor Yellow
-$redisFix = & "$scriptDir\auto_fix_redis.ps1" 2>&1
-if ($LASTEXITCODE -eq 0) {
-    Write-Host "  [OK] Redis connection fixed and verified" -ForegroundColor Green
-} else {
-    Write-Host "  [FAIL] Redis auto-fix failed" -ForegroundColor Red
-    Write-Host "  Attempting manual fix..." -ForegroundColor Yellow
-    # Try without admin (port forwarding might already be set)
-    $redisFix2 = & "$scriptDir\auto_fix_redis.ps1" -SkipPortForwarding 2>&1
+# Start Redis based on mode
+Write-Host "`n[0.5] Starting Redis ($redisMode mode)..." -ForegroundColor Yellow
+if ($redisMode -eq "docker" -or $redisMode -eq "auto") {
+    # Docker mode: Start Docker Redis
+    & "$scriptDir\start_redis_docker.ps1"
+    if ($LASTEXITCODE -ne 0) {
+        if ($redisMode -eq "auto") {
+            Write-Host "  [WARN] Docker Redis failed, will try WSL fallback" -ForegroundColor Yellow
+            $redisMode = "wsl"  # Fallback to WSL
+        } else {
+            Write-Host "  [FAIL] Docker Redis failed to start" -ForegroundColor Red
+            Write-Host "    Check Docker Desktop is running" -ForegroundColor Yellow
+        }
+    }
+}
+
+if ($redisMode -eq "wsl") {
+    # WSL mode: Check WSL health and start WSL Redis
+    Write-Host "  Checking WSL health..." -ForegroundColor Gray
+    $wslCheck = & "$scriptDir\wsl_health_check.ps1" -AutoRecover 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "  [WARN] WSL health check failed" -ForegroundColor Yellow
+        Write-Host "    Run: .\scripts\configure_wsl_resources.ps1 to fix permanently" -ForegroundColor Gray
+    }
+    
+    # Auto-fix WSL Redis connection
+    Write-Host "  Auto-fixing WSL Redis connection..." -ForegroundColor Gray
+    $redisFix = & "$scriptDir\auto_fix_redis.ps1" 2>&1
     if ($LASTEXITCODE -eq 0) {
-        Write-Host "  [OK] Redis connection verified (port forwarding may need admin)" -ForegroundColor Yellow
+        Write-Host "  [OK] WSL Redis connection fixed and verified" -ForegroundColor Green
     } else {
-        Write-Host "  [WARN] Redis fix failed - interceptor may fail to connect" -ForegroundColor Red
-        Write-Host "  Run manually as admin: .\scripts\fix_wsl_redis_connection.ps1" -ForegroundColor Yellow
+        Write-Host "  [WARN] WSL Redis auto-fix failed" -ForegroundColor Yellow
+        Write-Host "    Run manually as admin: .\scripts\fix_wsl_redis_connection.ps1" -ForegroundColor Gray
     }
 }
 
@@ -61,11 +78,13 @@ try {
 Write-Host "`n[2] Starting Rust Interceptor..." -ForegroundColor Yellow
 $rustPath = Join-Path $projectRoot "sentinel_core\interceptor\rust"
 if (Test-Path $rustPath) {
-    # CRITICAL: Auto-fix Redis again right before starting interceptor
-    Write-Host "  Pre-flight Redis check..." -ForegroundColor Gray
-    $preflight = & "$scriptDir\auto_fix_redis.ps1" -SkipPortForwarding 2>&1 | Out-Null
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "  [WARN] Pre-flight Redis check failed - interceptor may fail" -ForegroundColor Yellow
+    # Pre-flight Redis check (only for WSL mode)
+    if ($redisMode -eq "wsl") {
+        Write-Host "  Pre-flight Redis check..." -ForegroundColor Gray
+        $preflight = & "$scriptDir\auto_fix_redis.ps1" -SkipPortForwarding 2>&1 | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "  [WARN] Pre-flight Redis check failed - interceptor may fail" -ForegroundColor Yellow
+        }
     }
     
     $rustCommand = "cd '$rustPath'; Write-Host '=== Rust Interceptor ===' -ForegroundColor Cyan; Write-Host 'Compiling and starting...' -ForegroundColor Gray; cargo run --bin sentinel-interceptor"
