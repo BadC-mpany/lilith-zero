@@ -221,7 +221,8 @@ impl Config {
                         format!("Invalid {} value '{}': {}", key, value, e)
                     ))?;
                 
-                if parsed == 0 {
+                // Allow 0 for REDIS_POOL_MIN_IDLE (valid for Docker mode - lazy initialization)
+                if parsed == 0 && key != "REDIS_POOL_MIN_IDLE" {
                     return Err(InterceptorError::ConfigurationError(
                         format!("{} must be greater than 0", key)
                     ));

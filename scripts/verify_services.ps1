@@ -1,6 +1,45 @@
 # verify_services.ps1
 Write-Host "=== Sentinel Integration Verification ===" -ForegroundColor Cyan
 
+# Health check cache (5 second TTL)
+$script:healthCache = @{}
+
+function Get-CachedHealthCheck {
+    param(
+        [string]$url,
+        [int]$cacheSeconds = 5,
+        [int]$timeoutSec = 5
+    )
+    $cacheKey = $url
+    $now = Get-Date
+    
+    if ($script:healthCache.ContainsKey($cacheKey)) {
+        $cached = $script:healthCache[$cacheKey]
+        $age = ($now - $cached.Timestamp).TotalSeconds
+        if ($age -lt $cacheSeconds) {
+            return $cached.Result
+        }
+    }
+    
+    # Perform actual check
+    try {
+        $result = Invoke-WebRequest -Uri $url -TimeoutSec $timeoutSec -ErrorAction Stop
+        $script:healthCache[$cacheKey] = @{
+            Timestamp = $now
+            Result = $result
+        }
+        return $result
+    } catch {
+        # Cache failures too (but with shorter TTL)
+        $script:healthCache[$cacheKey] = @{
+            Timestamp = $now
+            Result = $null
+            Error = $_
+        }
+        throw
+    }
+}
+
 $allGood = $true
 
 # Check PostgreSQL
@@ -84,7 +123,7 @@ if ($redisMode -eq "wsl") {
 # Check Rust Interceptor
 Write-Host "`n[3] Checking Rust Interceptor..." -ForegroundColor Yellow
 try {
-    $response = Invoke-WebRequest -Uri "http://localhost:8000/health" -TimeoutSec 5 -ErrorAction Stop
+    $response = Get-CachedHealthCheck -url "http://localhost:8000/health" -timeoutSec 5
     if ($response.StatusCode -eq 200) {
         Write-Host "  [OK] Rust Interceptor is running" -ForegroundColor Green
         Write-Host "    Response: $($response.Content)" -ForegroundColor Gray
@@ -103,7 +142,7 @@ try {
 # Check MCP Server (use /health endpoint)
 Write-Host "`n[4] Checking MCP Server..." -ForegroundColor Yellow
 try {
-    $response = Invoke-WebRequest -Uri "http://localhost:9000/health" -TimeoutSec 5 -ErrorAction Stop
+    $response = Get-CachedHealthCheck -url "http://localhost:9000/health" -timeoutSec 5
     if ($response.StatusCode -eq 200) {
         Write-Host "  [OK] MCP Server is running" -ForegroundColor Green
     } else {
@@ -120,22 +159,64 @@ try {
 # Check Database Connection
 Write-Host "`n[5] Checking Database Connection..." -ForegroundColor Yellow
 try {
-    if ($env:PGPASSWORD) {
+    $dbConnected = $false
+    
+    # Try parsing DATABASE_URL first
+    if ($env:DATABASE_URL) {
+        # Parse DATABASE_URL: postgresql://user:password@host:port/database
+        if ($env:DATABASE_URL -match 'postgresql://([^:]+):([^@]+)@([^:]+):(\d+)/(.+)') {
+            $dbUser = $matches[1]
+            $dbPassword = $matches[2]
+            $dbHost = $matches[3]
+            $dbPort = $matches[4]
+            $dbName = $matches[5]
+            
+            # Set PGPASSWORD temporarily (don't display password)
+            $env:PGPASSWORD = $dbPassword
+            
+            $pgBinPath = "C:\Program Files\PostgreSQL\18\bin"
+            if ($env:PATH -notlike "*$pgBinPath*") {
+                $env:PATH = "$pgBinPath;$env:PATH"
+            }
+            
+            $result = psql -h $dbHost -p $dbPort -U $dbUser -d $dbName -c "SELECT 1;" 2>&1
+            if ($LASTEXITCODE -eq 0) {
+                Write-Host "  [OK] Database connection successful (from DATABASE_URL)" -ForegroundColor Green
+                $dbConnected = $true
+            } else {
+                Write-Host "  [FAIL] Database connection failed (from DATABASE_URL)" -ForegroundColor Red
+                Write-Host "    Error: $result" -ForegroundColor Gray
+                $allGood = $false
+            }
+            
+            # Clear password from environment
+            Remove-Item Env:\PGPASSWORD -ErrorAction SilentlyContinue
+        } else {
+            Write-Host "  [SKIP] DATABASE_URL format not recognized" -ForegroundColor Yellow
+            Write-Host "    Expected format: postgresql://user:password@host:port/database" -ForegroundColor Gray
+        }
+    }
+    
+    # Fallback to PGPASSWORD method if DATABASE_URL not used or failed
+    if (-not $dbConnected -and $env:PGPASSWORD) {
         $pgBinPath = "C:\Program Files\PostgreSQL\18\bin"
         if ($env:PATH -notlike "*$pgBinPath*") {
             $env:PATH = "$pgBinPath;$env:PATH"
         }
         $result = psql -U postgres -d sentinel_interceptor -c "SELECT COUNT(*) FROM customers;" 2>&1
         if ($LASTEXITCODE -eq 0) {
-            Write-Host "  [OK] Database connection successful" -ForegroundColor Green
+            Write-Host "  [OK] Database connection successful (from PGPASSWORD)" -ForegroundColor Green
+            $dbConnected = $true
         } else {
             Write-Host "  [FAIL] Database connection failed" -ForegroundColor Red
             Write-Host "    Error: $result" -ForegroundColor Gray
             $allGood = $false
         }
-    } else {
-        Write-Host "  [SKIP] PGPASSWORD not set, skipping database connection test" -ForegroundColor Yellow
-        Write-Host "    Set PGPASSWORD environment variable to test connection" -ForegroundColor Gray
+    }
+    
+    if (-not $dbConnected) {
+        Write-Host "  [SKIP] Database connection not tested" -ForegroundColor Yellow
+        Write-Host "    Set DATABASE_URL or PGPASSWORD environment variable to test connection" -ForegroundColor Gray
     }
 } catch {
     Write-Host "  [SKIP] Could not verify database (psql may not be in PATH)" -ForegroundColor Yellow

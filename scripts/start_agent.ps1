@@ -38,13 +38,52 @@ if (-not $env:OPENROUTER_API_KEY) {
     Write-Host "  Set it in .env file or environment" -ForegroundColor Gray
 }
 
+# Health check cache (5 second TTL)
+$script:healthCache = @{}
+
+function Get-CachedHealthCheck {
+    param(
+        [string]$url,
+        [int]$cacheSeconds = 5,
+        [int]$timeoutSec = 10
+    )
+    $cacheKey = $url
+    $now = Get-Date
+    
+    if ($script:healthCache.ContainsKey($cacheKey)) {
+        $cached = $script:healthCache[$cacheKey]
+        $age = ($now - $cached.Timestamp).TotalSeconds
+        if ($age -lt $cacheSeconds) {
+            return $cached.Result
+        }
+    }
+    
+    # Perform actual check
+    try {
+        $result = Invoke-WebRequest -Uri $url -TimeoutSec $timeoutSec -ErrorAction Stop
+        $script:healthCache[$cacheKey] = @{
+            Timestamp = $now
+            Result = $result
+        }
+        return $result
+    } catch {
+        # Cache failures too (but with shorter TTL)
+        $script:healthCache[$cacheKey] = @{
+            Timestamp = $now
+            Result = $null
+            Error = $_
+        }
+        throw
+    }
+}
+
 # Verify services are running before starting agent
 Write-Host "`n[1] Verifying services are running..." -ForegroundColor Yellow
 $servicesReady = $true
 
 # Check Rust Interceptor
 try {
-    $response = Invoke-WebRequest -Uri "http://localhost:8000/health" -TimeoutSec 10 -ErrorAction Stop
+    $response = Get-CachedHealthCheck -url "http://localhost:8000/health" -timeoutSec 10
     if ($response.StatusCode -eq 200) {
         Write-Host "  [OK] Rust Interceptor is running" -ForegroundColor Green
         # Parse response to show Redis status if available
@@ -78,7 +117,7 @@ try {
 # Check MCP Server (use /health endpoint)
 # Note: MCP server is optional - agent can start even if MCP is temporarily unavailable
 try {
-    $response = Invoke-WebRequest -Uri "http://localhost:9000/health" -TimeoutSec 10 -ErrorAction Stop
+    $response = Get-CachedHealthCheck -url "http://localhost:9000/health" -timeoutSec 10
     if ($response.StatusCode -eq 200) {
         Write-Host "  [OK] MCP Server is running" -ForegroundColor Green
     } else {

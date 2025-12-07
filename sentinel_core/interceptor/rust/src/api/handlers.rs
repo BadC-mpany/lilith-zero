@@ -2,6 +2,7 @@
 
 use axum::{
     extract::State,
+    http::HeaderMap,
     response::Json,
     Extension,
 };
@@ -19,25 +20,35 @@ use crate::core::models::{CustomerConfig, Decision, ProxyRequest};
 /// POST /v1/proxy-execute
 /// 
 /// Request flow:
-/// 1. Extract customer config and policy from extensions (set by auth middleware)
-/// 2. Deserialize ProxyRequest from JSON body
-/// 3. Fetch session taints from Redis
-/// 4. Get tool classes from tool registry
-/// 5. Evaluate policy using engine
-/// 6. If denied, return 403
-/// 7. If allowed, mint JWT token
-/// 8. Forward request to MCP server
-/// 9. Update state asynchronously (fire-and-forget)
-/// 10. Return JSON response
+/// 1. Extract request ID from headers or generate UUID
+/// 2. Extract customer config and policy from extensions (set by auth middleware)
+/// 3. Deserialize ProxyRequest from JSON body
+/// 4. Fetch session taints from Redis
+/// 5. Get tool classes from tool registry
+/// 6. Evaluate policy using engine
+/// 7. If denied, return 403 with request ID
+/// 8. If allowed, mint JWT token
+/// 9. Forward request to MCP server
+/// 10. Update state asynchronously (fire-and-forget)
+/// 11. Return JSON response
 pub async fn proxy_execute_handler(
     State(app_state): State<AppState>,
+    headers: HeaderMap,
     Extension(customer_config): Extension<CustomerConfig>,
     Extension(policy): Extension<PolicyDefinition>,
     Json(request): Json<ProxyRequest>,
 ) -> Result<Json<ProxyResponse>, ApiError> {
+    // Extract or generate request ID
+    let request_id = headers
+        .get("x-request-id")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+    
     info!(
         tool = %request.tool_name,
         session_id = %request.session_id,
+        request_id = %request_id,
         "Received proxy request"
     );
 
@@ -104,11 +115,14 @@ pub async fn proxy_execute_handler(
         .get_tool_classes(&request.tool_name)
         .await
         .map_err(|e| {
-            error!(error = %e, tool = %request.tool_name, "Failed to get tool classes");
-            ApiError::from_interceptor_error(InterceptorError::ConfigurationError(format!(
-                "Failed to get tool classes: {}",
-                e
-            )))
+            error!(error = %e, tool = %request.tool_name, request_id = %request_id, "Failed to get tool classes");
+            ApiError::from_interceptor_error_with_id(
+                InterceptorError::ConfigurationError(format!(
+                    "Failed to get tool classes: {}",
+                    e
+                )),
+                request_id.clone(),
+            )
         })?;
 
     info!(
@@ -131,11 +145,14 @@ pub async fn proxy_execute_handler(
         )
         .await
         .map_err(|e| {
-            error!(error = %e, "Policy evaluation failed");
-            ApiError::from_interceptor_error(InterceptorError::StateError(format!(
-                "Policy evaluation failed: {}",
-                e
-            )))
+            error!(error = %e, request_id = %request_id, "Policy evaluation failed");
+            ApiError::from_interceptor_error_with_id(
+                InterceptorError::StateError(format!(
+                    "Policy evaluation failed: {}",
+                    e
+                )),
+                request_id.clone(),
+            )
         })?;
 
     // Check decision
@@ -144,11 +161,13 @@ pub async fn proxy_execute_handler(
             warn!(
                 tool = %request.tool_name,
                 session_id = %request.session_id,
+                request_id = %request_id,
                 reason = %reason,
                 "Policy violation: request denied"
             );
-            return Err(ApiError::from_interceptor_error(
+            return Err(ApiError::from_interceptor_error_with_id(
                 InterceptorError::PolicyViolation(reason),
+                request_id,
             ));
         }
         Decision::Allowed => {
@@ -177,8 +196,11 @@ pub async fn proxy_execute_handler(
         .crypto_signer
         .mint_token(&request.session_id, &request.tool_name, &request.args)
         .map_err(|e| {
-            error!(error = ?e, "Failed to mint token");
-            ApiError::from_interceptor_error(InterceptorError::CryptoError(e))
+            error!(error = ?e, request_id = %request_id, "Failed to mint token");
+            ApiError::from_interceptor_error_with_id(
+                InterceptorError::CryptoError(e),
+                request_id.clone(),
+            )
         })?;
 
     info!(
@@ -200,8 +222,11 @@ pub async fn proxy_execute_handler(
         )
         .await
         .map_err(|e| {
-            error!(error = %e, "MCP proxy error");
-            ApiError::from_interceptor_error(InterceptorError::McpProxyError(e))
+            error!(error = %e, request_id = %request_id, "MCP proxy error");
+            ApiError::from_interceptor_error_with_id(
+                InterceptorError::McpProxyError(e),
+                request_id.clone(),
+            )
         })?;
 
     info!(
@@ -337,6 +362,28 @@ pub async fn health_handler(
         database: database_status,
     };
 
+    Ok(Json(response))
+}
+
+/// Policy introspection handler
+/// 
+/// GET /v1/policy
+/// 
+/// Returns current policy rules for authenticated customer
+/// Requires authentication (API key)
+pub async fn policy_introspection_handler(
+    State(_app_state): State<AppState>,
+    Extension(_customer_config): Extension<CustomerConfig>,
+    Extension(policy): Extension<PolicyDefinition>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    use serde_json::json;
+    
+    let response = json!({
+        "policy_name": policy.name,
+        "static_rules": policy.static_rules,
+        "taint_rules": policy.taint_rules,
+    });
+    
     Ok(Json(response))
 }
 

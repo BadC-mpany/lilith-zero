@@ -172,6 +172,25 @@ Detects and reports current Redis mode and availability.
 .\scripts\check_redis_mode.ps1
 ```
 
+### Redis Mode Coexistence
+
+**Important:** WSL Redis and Docker Redis can run simultaneously without conflicts. The `REDIS_MODE` environment variable determines which Redis instance the interceptor uses, not which Redis instances are running.
+
+**How it works:**
+
+- **Docker Redis** runs on `localhost:6379` (Windows host)
+- **WSL Redis** runs on WSL IP address (e.g., `172.x.x.x:6379`) with port forwarding to `localhost:6379`
+- The interceptor connects to the Redis specified by `REDIS_MODE`:
+  - `docker`: Connects to Docker Redis on `localhost:6379`
+  - `wsl`: Connects to WSL Redis (via WSL IP or port forwarding)
+  - `auto`: Tries Docker first, falls back to WSL if Docker unavailable
+
+**Troubleshooting:**
+
+- If Docker Redis fails, you can manually switch to WSL by setting `REDIS_MODE=wsl` in `.env` and restarting the interceptor
+- Both Redis instances can be running - only the one specified by `REDIS_MODE` will be used
+- The `check_redis_mode.ps1` script shows status of both instances for reference
+
 ### WSL Redis Scripts
 
 #### `start_redis.sh`

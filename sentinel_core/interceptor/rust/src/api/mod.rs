@@ -127,6 +127,7 @@ pub fn create_router(
     
     let mut router = Router::new()
         .route("/v1/proxy-execute", axum::routing::post(handlers::proxy_execute_handler))
+        .route("/v1/policy", axum::routing::get(handlers::policy_introspection_handler))
         .route("/health", axum::routing::get(handlers::health_handler))
         .route("/metrics", axum::routing::get(handlers::metrics_handler));
 
