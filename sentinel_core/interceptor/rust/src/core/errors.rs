@@ -28,6 +28,16 @@ pub enum InterceptorError {
     /// State management error (HTTP 500)
     #[error("State error: {0}")]
     StateError(String),
+
+    /// Dependency failure (HTTP 503)
+    /// Used when a downstream service (Redis, DB, MCP Agent) is unavailable
+    #[error("Dependency failure ({service}): {error}")]
+    DependencyFailure { service: String, error: String },
+
+    /// Transient error (HTTP 503)
+    /// Used for retryable conditions like timeouts or temporary network issues
+    #[error("Transient error: {0}")]
+    TransientError(String),
 }
 
 /// Cryptographic operation errors
@@ -59,7 +69,9 @@ impl InterceptorError {
             InterceptorError::CryptoError(_) => 500,
             InterceptorError::McpProxyError(_) => 502,
             InterceptorError::ConfigurationError(_) => 500,
-            InterceptorError::StateError(_) => 500,
+            InterceptorError::StateError(_) => 503,
+            InterceptorError::DependencyFailure { .. } => 503,
+            InterceptorError::TransientError(_) => 503,
         }
     }
 
@@ -72,6 +84,8 @@ impl InterceptorError {
             InterceptorError::McpProxyError(_) => "Service unavailable".to_string(),
             InterceptorError::ConfigurationError(_) => "Internal error".to_string(),
             InterceptorError::StateError(_) => "Internal error".to_string(),
+            InterceptorError::DependencyFailure { .. } => "Service unavailable".to_string(),
+            InterceptorError::TransientError(_) => "Service briefly unavailable".to_string(),
         }
     }
 }

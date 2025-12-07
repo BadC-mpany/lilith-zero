@@ -2,6 +2,7 @@
 
 use crate::api::{PolicyCache, PolicyStore};
 use crate::core::models::PolicyDefinition;
+use crate::core::errors::InterceptorError;
 use async_trait::async_trait;
 use moka::future::Cache;
 use std::sync::Arc;
@@ -42,7 +43,7 @@ impl MokaPolicyCache {
 
 #[async_trait]
 impl PolicyCache for MokaPolicyCache {
-    async fn get_policy(&self, policy_name: &str) -> Result<Option<Arc<PolicyDefinition>>, String> {
+    async fn get_policy(&self, policy_name: &str) -> Result<Option<Arc<PolicyDefinition>>, InterceptorError> {
         // Try cache first
         if let Some(policy) = self.cache.get(policy_name).await {
             return Ok(Some(policy));
@@ -61,7 +62,7 @@ impl PolicyCache for MokaPolicyCache {
         }
     }
     
-    async fn put_policy(&self, policy_name: &str, policy: Arc<PolicyDefinition>) -> Result<(), String> {
+    async fn put_policy(&self, policy_name: &str, policy: Arc<PolicyDefinition>) -> Result<(), InterceptorError> {
         self.cache.insert(policy_name.to_string(), policy).await;
         Ok(())
     }

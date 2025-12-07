@@ -55,8 +55,8 @@ impl fmt::Display for ApiKeyHash {
 pub struct ApiKey(Secret<String>);
 
 impl ApiKey {
-    /// Create an ApiKey from a string
-    pub fn from_str(api_key: &str) -> Self {
+    /// Create a new ApiKey from a string
+    pub fn new(api_key: &str) -> Self {
         Self(Secret::new(api_key.to_string()))
     }
 
@@ -116,7 +116,7 @@ mod tests {
 
     #[test]
     fn test_api_key_redaction() {
-        let api_key = ApiKey::from_str("secret_key_123");
+        let api_key = ApiKey::new("secret_key_123");
         let debug_str = format!("{:?}", api_key);
         let display_str = format!("{}", api_key);
         
@@ -127,7 +127,7 @@ mod tests {
 
     #[test]
     fn test_api_key_hash_method() {
-        let api_key = ApiKey::from_str("test_key");
+        let api_key = ApiKey::new("test_key");
         let hash = api_key.hash();
         
         assert_eq!(hash.as_str().len(), 64, "Hash should be 64 characters");

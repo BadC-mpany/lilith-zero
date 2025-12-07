@@ -458,7 +458,7 @@ impl RedisStore {
         // Use tokio::task::spawn_blocking to run blocking command
         tokio::task::spawn_blocking(|| {
             let output = std::process::Command::new("docker")
-                .args(&["ps", "--filter", "name=sentinel-redis-local", "--format", "{{.Names}}"])
+                .args(["ps", "--filter", "name=sentinel-redis-local", "--format", "{{.Names}}"])
                 .output();
             
             match output {
@@ -495,7 +495,7 @@ impl RedisStore {
             .map_err(|e| format!("Invalid UTF-8 from wsl hostname -I: {}", e))?;
         
         // Extract first IP address (WSL may return multiple IPs)
-        let ip = stdout.trim().split_whitespace().next()
+        let ip = stdout.split_whitespace().next()
             .ok_or_else(|| "No IP address found in wsl hostname -I output".to_string())?
             .to_string();
         

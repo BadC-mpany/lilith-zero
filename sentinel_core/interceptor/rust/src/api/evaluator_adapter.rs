@@ -2,6 +2,7 @@
 
 use crate::api::{PolicyEvaluator as ApiPolicyEvaluator, RedisStore};
 use crate::core::models::{Decision, PolicyDefinition};
+use crate::core::errors::InterceptorError;
 use crate::engine::evaluator::PolicyEvaluator as EnginePolicyEvaluator;
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -33,10 +34,9 @@ impl ApiPolicyEvaluator for PolicyEvaluatorAdapter {
         tool_classes: &[String],
         session_taints: &[String],
         session_id: &str,
-    ) -> Result<Decision, String> {
-        // Fetch session history from Redis (fail-safe: use empty history on timeout/error)
-        // CRITICAL: Redis timeout should not block policy evaluation
-        // If Redis is unavailable, proceed with empty history (fail-safe mode)
+    ) -> Result<Decision, InterceptorError> {
+        // Fetch session history from Redis
+        // CRITICAL: Redis timeout should not block policy evaluation but failing closed
         // Use 2-second timeout to match handler timeout for fast-fail
         use tokio::time::{timeout, Duration};
         let history = match timeout(
@@ -45,21 +45,19 @@ impl ApiPolicyEvaluator for PolicyEvaluatorAdapter {
         ).await {
             Ok(Ok(h)) => h,
             Ok(Err(e)) => {
-                // Log warning but proceed with empty history (fail-safe)
-                tracing::warn!(
+                tracing::error!(
                     error = %e,
                     session_id = session_id,
-                    "Failed to fetch session history - proceeding with empty history (fail-safe mode)"
+                    "Failed to fetch session history - failing closed"
                 );
-                Vec::new() // Fail-safe: empty history allows policy evaluation to proceed
+                return Err(e);
             }
             Err(_) => {
-                // Timeout - proceed with empty history (fail-safe)
-                tracing::warn!(
+                tracing::error!(
                     session_id = session_id,
-                    "Session history fetch timed out after 2 seconds - proceeding with empty history (fail-safe mode)"
+                    "Session history fetch timed out after 2 seconds - failing closed"
                 );
-                Vec::new() // Fail-safe: empty history allows policy evaluation to proceed
+                return Err(InterceptorError::StateError("Session history fetch timed out".to_string()));
             }
         };
 
@@ -75,6 +73,6 @@ impl ApiPolicyEvaluator for PolicyEvaluatorAdapter {
             &taints_set,
         )
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| InterceptorError::StateError(format!("Engine evaluation error: {}", e)))
     }
 }

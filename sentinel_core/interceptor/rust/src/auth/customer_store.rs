@@ -1,6 +1,7 @@
 // Database-backed customer storage with YAML fallback
 
 use crate::api::CustomerStore;
+use crate::core::errors::InterceptorError;
 use crate::auth::api_key::ApiKeyHash;
 use crate::core::models::CustomerConfig;
 use crate::loader::policy_loader::PolicyLoader;
@@ -79,14 +80,14 @@ impl CustomerStore for DbCustomerStore {
     async fn lookup_customer(
         &self,
         api_key_hash: &str,
-    ) -> Result<Option<CustomerConfig>, String> {
+    ) -> Result<Option<CustomerConfig>, InterceptorError> {
         // api_key_hash is already a hash string (64 hex chars), not a plaintext key
         // Use from_hash_string to avoid double-hashing
         let hash = ApiKeyHash::from_hash_string(api_key_hash)
-            .map_err(|e| format!("Invalid hash format: {}", e))?;
+            .map_err(|e| InterceptorError::StateError(format!("Invalid hash format: {}", e)))?;
         self.lookup_customer_by_hash(&hash)
             .await
-            .map_err(|e| format!("Database error: {}", e))
+            .map_err(|e| InterceptorError::StateError(format!("Database error: {}", e)))
     }
 }
 
@@ -115,11 +116,11 @@ impl CustomerStore for YamlCustomerStore {
     async fn lookup_customer(
         &self,
         _api_key_hash: &str,
-    ) -> Result<Option<CustomerConfig>, String> {
-        // Note: YAML store uses plaintext API keys, not hashes
-        // This is a limitation of the MVP fallback approach
-        // In production, database store should be used which stores hashes
-        Err("YAML store requires plaintext API key, not hash".to_string())
+    ) -> Result<Option<CustomerConfig>, InterceptorError> {
+        // Note: YAML store uses plaintext API keys, not hashes.
+        // We return None here so the auth middleware falls back to checking the YAML loader directly 
+        // with the plaintext API key (via auth_state.yaml_fallback).
+        Ok(None)
     }
 }
 
@@ -147,7 +148,7 @@ impl CustomerStore for FallbackCustomerStore {
     async fn lookup_customer(
         &self,
         api_key_hash: &str,
-    ) -> Result<Option<CustomerConfig>, String> {
+    ) -> Result<Option<CustomerConfig>, InterceptorError> {
         // Try database first if available
         if let Some(ref db_store) = self.db_store {
             match db_store.lookup_customer(api_key_hash).await {
@@ -171,7 +172,7 @@ impl CustomerStore for FallbackCustomerStore {
             // Cannot lookup by hash in YAML store
             // This would require storing original API key temporarily or
             // using a different authentication flow for YAML mode
-            return Err("YAML fallback requires plaintext API key lookup".to_string());
+            return Err(InterceptorError::ConfigurationError("YAML fallback requires plaintext API key lookup".to_string()));
         }
 
         Ok(None)

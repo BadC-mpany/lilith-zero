@@ -33,7 +33,7 @@ pub async fn auth_middleware(
     next: Next,
 ) -> Result<Response, (StatusCode, Json<ErrorResponse>)> {
     // 1. Extract API key from header
-    let api_key_str = extract_api_key(&request.headers())
+    let api_key_str = extract_api_key(request.headers())
         .ok_or_else(|| {
             let error = ErrorResponse {
                 error: "Missing API key".to_string(),
@@ -43,7 +43,7 @@ pub async fn auth_middleware(
         })?;
 
     // 2. Hash API key
-    let api_key = ApiKey::from_str(&api_key_str);
+    let api_key = ApiKey::new(&api_key_str);
     let api_key_hash = api_key.hash();
 
     // 3. Lookup customer (try database, fallback to YAML)
@@ -81,8 +81,9 @@ pub async fn auth_middleware(
         }
         Err(e) => {
             error!(error = %e, "Customer lookup failed");
-            return Err((StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorResponse {
-                error: "Internal server error".to_string(),
+            let status = axum::http::StatusCode::from_u16(e.status_code()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+            return Err((status, Json(ErrorResponse {
+                error: e.user_message(),
                 request_id: None,
             })));
         }
@@ -100,8 +101,9 @@ pub async fn auth_middleware(
         }
         Err(e) => {
             error!(error = %e, "Policy loading failed");
-            return Err((StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorResponse {
-                error: "Internal server error".to_string(),
+            let status = axum::http::StatusCode::from_u16(e.status_code()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+            return Err((status, Json(ErrorResponse {
+                error: e.user_message(),
                 request_id: None,
             })));
         }

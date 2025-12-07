@@ -100,7 +100,7 @@ impl ProxyClientImpl {
         session_id: &str,
         callback_url: Option<&str>,
         token: &str,
-    ) -> Result<serde_json::Value, String> {
+    ) -> Result<serde_json::Value, InterceptorError> {
         // Generate request ID
         let request_id = Uuid::new_v4().to_string();
 
@@ -135,15 +135,16 @@ impl ProxyClientImpl {
             .send()
             .await
             .map_err(|e| {
-                let error_msg = if e.is_timeout() {
-                    format!("Request timeout after {}s", self.default_timeout.as_secs())
+                if e.is_timeout() {
+                    InterceptorError::TransientError(format!("Request timeout after {}s", self.default_timeout.as_secs()))
                 } else if e.is_connect() {
-                    "Connection failed".to_string()
+                    InterceptorError::DependencyFailure { 
+                        service: "MCP Agent".to_string(), 
+                        error: "Connection failed".to_string() 
+                    }
                 } else {
-                    format!("HTTP request failed: {}", e)
-                };
-                error!(error = %e, url = %url, "MCP proxy HTTP error");
-                format!("MCP proxy error: {}", error_msg)
+                    InterceptorError::McpProxyError(format!("HTTP request failed: {}", e))
+                }
             })?;
 
         // Check HTTP status
@@ -156,7 +157,7 @@ impl ProxyClientImpl {
                 error = %error_text,
                 "MCP server returned HTTP error"
             );
-            return Err(format!("MCP server error: HTTP {} - {}", status, error_text));
+            return Err(InterceptorError::McpProxyError(format!("MCP server error: HTTP {} - {}", status, error_text)));
         }
 
         // Parse JSON-RPC 2.0 response
@@ -165,7 +166,7 @@ impl ProxyClientImpl {
             .await
             .map_err(|e| {
                 error!(error = %e, url = %url, "Failed to parse JSON-RPC response");
-                format!("MCP proxy error: Failed to parse response: {}", e)
+                InterceptorError::McpProxyError(format!("Failed to parse response: {}", e))
             })?;
 
         // Validate JSON-RPC version
@@ -175,10 +176,10 @@ impl ProxyClientImpl {
                 url = %url,
                 "Invalid JSON-RPC version"
             );
-            return Err(format!(
-                "MCP proxy error: Invalid JSON-RPC version: {}",
+            return Err(InterceptorError::McpProxyError(format!(
+                "Invalid JSON-RPC version: {}",
                 jsonrpc_response.jsonrpc
-            ));
+            )));
         }
 
         // Handle JSON-RPC error response
@@ -190,7 +191,7 @@ impl ProxyClientImpl {
                 url = %url,
                 "MCP server returned JSON-RPC error"
             );
-            return Err(format!("MCP proxy error: {}", error_msg));
+            return Err(InterceptorError::McpProxyError(error_msg));
         }
 
         // Extract result
@@ -210,7 +211,7 @@ impl ProxyClientImpl {
                     request_id = ?jsonrpc_response.id,
                     "JSON-RPC response missing result field"
                 );
-                Err("MCP proxy error: Invalid response from MCP server: missing result field".to_string())
+                Err(InterceptorError::McpProxyError("Invalid response from MCP server: missing result field".to_string()))
             }
         }
     }
@@ -226,7 +227,7 @@ impl ProxyClient for ProxyClientImpl {
         session_id: &str,
         callback_url: Option<&str>,
         token: &str,
-    ) -> Result<serde_json::Value, String> {
+    ) -> Result<serde_json::Value, InterceptorError> {
         self.forward_request_internal(url, tool_name, args, session_id, callback_url, token)
             .await
     }

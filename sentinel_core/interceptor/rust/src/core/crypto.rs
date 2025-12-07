@@ -3,7 +3,7 @@
 use crate::core::errors::CryptoError;
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use ed25519_dalek::{Signer, SigningKey};
-use pem;
+use pem; 
 use pkcs8::PrivateKeyInfo;
 use der::Decode;
 use secrecy::{Secret, ExposeSecret};
@@ -85,7 +85,7 @@ impl CryptoSigner {
         let raw_key_bytes: &[u8] = match key_bytes.len() {
             32 => {
                 // Raw 32-byte key
-                &key_bytes
+                key_bytes
             }
             34 => {
                 // Check for 0x04 0x20 prefix (ASN.1 OCTET STRING with length 32)

@@ -78,3 +78,13 @@ harness = false
 name = "proxy_client_bench"
 harness = false
 
+[[bench]]
+name = "bench_policy_evaluation"
+harness = false
+path = "tests/bench/bench_policy_evaluation.rs"
+
+[[bench]]
+name = "bench_crypto"
+harness = false
+path = "tests/bench/bench_crypto.rs"
+

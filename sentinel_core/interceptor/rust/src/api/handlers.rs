@@ -79,25 +79,29 @@ pub async fn proxy_execute_handler(
         },
         Ok(Err(e)) => {
             let taint_duration = taint_start.elapsed();
-            warn!(
+            error!(
                 error = %e,
                 duration_ms = taint_duration.as_millis(),
                 session_id = %request.session_id,
-                "Redis error - proceeding with empty taints (fail-safe mode)"
+                "Redis error fetching taints - failing closed"
             );
-            // Fail-safe: Redis errors don't block tool execution
-            Vec::new()
+            return Err(ApiError::from_interceptor_error_with_id(
+                InterceptorError::StateError(format!("Failed to fetch session taints: {}", e)),
+                request_id,
+            ));
         }
         Err(_) => {
             let taint_duration = taint_start.elapsed();
-            warn!(
+            error!(
                 duration_ms = taint_duration.as_millis(),
                 timeout_secs = REDIS_TAINT_TIMEOUT_SECS,
                 session_id = %request.session_id,
-                "Redis operation timed out - proceeding with empty taints (fail-safe mode)"
+                "Redis operation timed out fetching taints - failing closed"
             );
-            // Fail-safe: Redis timeout should not block tool execution
-            Vec::new()
+            return Err(ApiError::from_interceptor_error_with_id(
+                InterceptorError::StateError("Session taint fetch timed out".to_string()),
+                request_id,
+            ));
         }
     };
     
@@ -117,10 +121,7 @@ pub async fn proxy_execute_handler(
         .map_err(|e| {
             error!(error = %e, tool = %request.tool_name, request_id = %request_id, "Failed to get tool classes");
             ApiError::from_interceptor_error_with_id(
-                InterceptorError::ConfigurationError(format!(
-                    "Failed to get tool classes: {}",
-                    e
-                )),
+                e,
                 request_id.clone(),
             )
         })?;
@@ -147,10 +148,7 @@ pub async fn proxy_execute_handler(
         .map_err(|e| {
             error!(error = %e, request_id = %request_id, "Policy evaluation failed");
             ApiError::from_interceptor_error_with_id(
-                InterceptorError::StateError(format!(
-                    "Policy evaluation failed: {}",
-                    e
-                )),
+                e,
                 request_id.clone(),
             )
         })?;
@@ -224,7 +222,7 @@ pub async fn proxy_execute_handler(
         .map_err(|e| {
             error!(error = %e, request_id = %request_id, "MCP proxy error");
             ApiError::from_interceptor_error_with_id(
-                InterceptorError::McpProxyError(e),
+                e,
                 request_id.clone(),
             )
         })?;

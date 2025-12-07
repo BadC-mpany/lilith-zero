@@ -1,6 +1,7 @@
 // Database-backed policy storage with YAML fallback
 
 use crate::api::PolicyStore;
+use crate::core::errors::InterceptorError;
 use crate::core::models::PolicyDefinition;
 use crate::loader::policy_loader::PolicyLoader;
 use async_trait::async_trait;
@@ -88,10 +89,10 @@ impl PolicyStore for DbPolicyStore {
     async fn load_policy(
         &self,
         policy_name: &str,
-    ) -> Result<Option<Arc<PolicyDefinition>>, String> {
+    ) -> Result<Option<Arc<PolicyDefinition>>, InterceptorError> {
         self.load_policy_internal(policy_name)
             .await
-            .map_err(|e| format!("Database error: {}", e))
+            .map_err(|e| InterceptorError::StateError(format!("Database error: {}", e)))
     }
 }
 
@@ -112,7 +113,7 @@ impl PolicyStore for YamlPolicyStore {
     async fn load_policy(
         &self,
         policy_name: &str,
-    ) -> Result<Option<Arc<PolicyDefinition>>, String> {
+    ) -> Result<Option<Arc<PolicyDefinition>>, InterceptorError> {
         Ok(self.policy_loader.get_policy(policy_name).map(|p| Arc::new(p.clone())))
     }
 }
@@ -141,7 +142,7 @@ impl PolicyStore for FallbackPolicyStore {
     async fn load_policy(
         &self,
         policy_name: &str,
-    ) -> Result<Option<Arc<PolicyDefinition>>, String> {
+    ) -> Result<Option<Arc<PolicyDefinition>>, InterceptorError> {
         // Try database first if available
         if let Some(ref db_store) = self.db_store {
             match db_store.load_policy(policy_name).await {

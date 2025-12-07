@@ -14,6 +14,7 @@ use sentinel_interceptor::proxy::ProxyClientImpl;
 use sentinel_interceptor::state::redis_store::RedisStore as RedisStoreImpl;
 use sentinel_interceptor::state::policy_cache::MokaPolicyCache;
 use sentinel_interceptor::api::evaluator_adapter::PolicyEvaluatorAdapter;
+use sentinel_interceptor::core::errors::InterceptorError;
 
 use std::sync::Arc;
 use tracing::{error, info};
@@ -26,27 +27,25 @@ struct RedisStoreAdapter {
 
 #[async_trait::async_trait]
 impl ApiRedisStore for RedisStoreAdapter {
-    async fn get_session_taints(&self, session_id: &str) -> Result<Vec<String>, String> {
+    async fn get_session_taints(&self, session_id: &str) -> Result<Vec<String>, InterceptorError> {
         self.inner
             .get_taints(session_id)
             .await
             .map(|set| set.into_iter().collect())
-            .map_err(|e| e.to_string())
     }
     
-    async fn add_taint(&self, session_id: &str, tag: &str) -> Result<(), String> {
+    async fn add_taint(&self, session_id: &str, tag: &str) -> Result<(), InterceptorError> {
         self.inner
             .add_taint(session_id, tag)
             .await
-            .map_err(|e| e.to_string())
     }
     
-    async fn remove_taint(&self, _session_id: &str, _tag: &str) -> Result<(), String> {
+    async fn remove_taint(&self, _session_id: &str, _tag: &str) -> Result<(), InterceptorError> {
         // Redis is append-only, taints are removed via TTL expiration
         Ok(())
     }
     
-    async fn add_to_history(&self, session_id: &str, tool: &str, classes: &[String]) -> Result<(), String> {
+    async fn add_to_history(&self, session_id: &str, tool: &str, classes: &[String]) -> Result<(), InterceptorError> {
         use std::time::{SystemTime, UNIX_EPOCH};
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -56,23 +55,20 @@ impl ApiRedisStore for RedisStoreAdapter {
         self.inner
             .add_history_entry(session_id, tool, classes, timestamp)
             .await
-            .map_err(|e| e.to_string())
     }
     
-    async fn get_session_history(&self, session_id: &str) -> Result<Vec<HistoryEntry>, String> {
+    async fn get_session_history(&self, session_id: &str) -> Result<Vec<HistoryEntry>, InterceptorError> {
         self.inner
             .get_history(session_id)
             .await
-            .map_err(|e| e.to_string())
     }
     
-    async fn ping(&self) -> Result<(), String> {
+    async fn ping(&self) -> Result<(), InterceptorError> {
         // Use proper Redis PING command for reliable health checks
         // This avoids issues with broken connections and provides better error handling
         self.inner
             .ping()
             .await
-            .map_err(|e| format!("Redis ping failed: {}", e))
     }
 }
 
@@ -83,7 +79,7 @@ struct ToolRegistryAdapter {
 
 #[async_trait::async_trait]
 impl ToolRegistry for ToolRegistryAdapter {
-    async fn get_tool_classes(&self, tool_name: &str) -> Result<Vec<String>, String> {
+    async fn get_tool_classes(&self, tool_name: &str) -> Result<Vec<String>, InterceptorError> {
         Ok(self.inner.get_tool_classes(tool_name))
     }
 }

@@ -101,8 +101,8 @@ impl PolicyValidator {
             if let Some(pattern_type) = pattern.get("type").and_then(|v| v.as_str()) {
                 if pattern_type == "logic" {
                     if let Some(condition) = pattern.get("condition") {
-                        if Self::condition_contains_tool_args_match(condition) {
-                            if rule.tool_class.is_some() {
+                        if Self::condition_contains_tool_args_match(condition)
+                            && rule.tool_class.is_some() {
                                 return Err(InterceptorError::ConfigurationError(
                                     format!(
                                         "{}: tool_args_match in logic patterns is only valid for tool-specific rules (not tool_class rules). \
@@ -110,7 +110,6 @@ impl PolicyValidator {
                                         rule_context
                                     )
                                 ));
-                            }
                         }
                     }
                 }
@@ -405,11 +404,11 @@ impl PolicyValidator {
 
             // Check AND/OR/NOT operators recursively
             if let Some(and_array) = obj.get("AND").and_then(|v| v.as_array()) {
-                return and_array.iter().any(|c| Self::condition_contains_tool_args_match(c));
+                return and_array.iter().any(Self::condition_contains_tool_args_match);
             }
 
             if let Some(or_array) = obj.get("OR").and_then(|v| v.as_array()) {
-                return or_array.iter().any(|c| Self::condition_contains_tool_args_match(c));
+                return or_array.iter().any(Self::condition_contains_tool_args_match);
             }
 
             if let Some(not_value) = obj.get("NOT") {
