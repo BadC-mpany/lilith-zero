@@ -87,7 +87,7 @@ if ($redisMode -eq "docker" -or $redisMode -eq "auto") {
                 $redisMode = "wsl"  # Fallback to WSL check
             } else {
                 Write-Host "  [FAIL] Docker Redis container not running" -ForegroundColor Red
-                Write-Host "    Start with: .\scripts\start_redis_docker.ps1" -ForegroundColor Yellow
+                Write-Host "    Start with: .\scripts\start_all.ps1 or .\scripts\backend\start_redis_docker.ps1" -ForegroundColor Yellow
                 $allGood = $false
             }
         }

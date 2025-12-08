@@ -13,11 +13,40 @@ from src.tool_executor import execute_tool_logic
 from src.tool_registry_loader import get_tool_registry_loader
 
 # --- LOGGING CONFIGURATION ---
-logging.basicConfig(
-    level=logging.DEBUG,  # Changed to DEBUG for detailed diagnostics
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
+import sys
+import json
+import logging
+from datetime import datetime, timezone
+
+class JSONFormatter(logging.Formatter):
+    def format(self, record):
+        log_obj = {
+            "timestamp": datetime.fromtimestamp(record.created, timezone.utc).isoformat().replace('+00:00', 'Z'),
+            "level": record.levelname,
+            "logger": record.name,
+            "message": record.getMessage(),
+        }
+        if record.exc_info:
+            log_obj["exception"] = self.formatException(record.exc_info)
+        return json.dumps(log_obj)
+
+handler = logging.StreamHandler(sys.stdout)
+handler.setFormatter(JSONFormatter())
+
+# Root logger
+root_logger = logging.getLogger()
+root_logger.setLevel(logging.INFO)
+root_logger.handlers = [handler]
+
+# Suppress Uvicorn's default access logger to avoid dupes/messy logs, 
+# or let it be but it won't be JSON formatted easily without more hacking.
+# For now, let's just ensure OUR logs are JSON.
+logging.getLogger("uvicorn.access").disabled = True # Disable default access log to keep console clean?
+# Actually, keeping access logs is good, but maybe formatted. 
+# Simplest improvement: Ensure all application logs are JSON.
+
+logger = logging.getLogger("mcp_server")
+logger.setLevel(logging.DEBUG)
 
 # --- CONFIGURATION CLASS ---
 

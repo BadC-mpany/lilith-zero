@@ -52,65 +52,63 @@ pub async fn proxy_execute_handler(
         "Received proxy request"
     );
 
-    // Fetch session taints from Redis (ULTRA-FAST FAIL)
+    // Fetch session context from Redis (ULTRA-FAST FAIL via Pipeline)
     // CRITICAL: Agent timeout is 10s, Redis must complete in <2s to allow 8s for MCP forwarding
-    // Strategy: Fail fast (2s max) - if Redis is slow/unavailable, proceed with empty taints
-    // This ensures Redis never blocks tool execution - it's optional for session state tracking
-    const REDIS_TAINT_TIMEOUT_SECS: u64 = 2; // Ultra-fast fail - don't block on Redis
+    // Strategy: Fail fast (2s max) - if Redis is slow/unavailable, fail closed (503)
+    const REDIS_CONTEXT_TIMEOUT_SECS: u64 = 2; // Ultra-fast fail - don't block on Redis
     info!(
         session_id = %request.session_id,
-        redis_timeout_secs = REDIS_TAINT_TIMEOUT_SECS,
-        "Fetching session taints from Redis (fail-fast timeout)..."
+        redis_timeout_secs = REDIS_CONTEXT_TIMEOUT_SECS,
+        "Fetching session context (taints + history) from Redis (pipeline)..."
     );
-    let taint_start = std::time::Instant::now();
-    let session_taints_vec = match tokio::time::timeout(
-        std::time::Duration::from_secs(REDIS_TAINT_TIMEOUT_SECS),
-        app_state.redis_store.get_session_taints(&request.session_id)
+    let context_start = std::time::Instant::now();
+    let (session_taints_vec, session_history) = match tokio::time::timeout(
+        std::time::Duration::from_secs(REDIS_CONTEXT_TIMEOUT_SECS),
+        app_state.redis_store.get_session_context(&request.session_id)
     ).await {
-        Ok(Ok(taints)) => {
-            let taint_duration = taint_start.elapsed();
+        Ok(Ok(context)) => {
+            let context_duration = context_start.elapsed();
             info!(
                 session_id = %request.session_id,
-                duration_ms = taint_duration.as_millis(),
-                taint_count = taints.len(),
-                "Session taints retrieved successfully"
+                duration_ms = context_duration.as_millis(),
+                taint_count = context.0.len(),
+                history_count = context.1.len(),
+                "Session context retrieved successfully"
             );
-            taints
+            context
         },
         Ok(Err(e)) => {
-            let taint_duration = taint_start.elapsed();
+            let context_duration = context_start.elapsed();
             error!(
                 error = %e,
-                duration_ms = taint_duration.as_millis(),
+                duration_ms = context_duration.as_millis(),
                 session_id = %request.session_id,
-                "Redis error fetching taints - failing closed"
+                "Redis error fetching context - failing closed"
             );
             return Err(ApiError::from_interceptor_error_with_id(
-                InterceptorError::StateError(format!("Failed to fetch session taints: {}", e)),
+                e,
                 request_id,
             ));
         }
         Err(_) => {
-            let taint_duration = taint_start.elapsed();
+            let context_duration = context_start.elapsed();
             error!(
-                duration_ms = taint_duration.as_millis(),
-                timeout_secs = REDIS_TAINT_TIMEOUT_SECS,
+                duration_ms = context_duration.as_millis(),
+                timeout_secs = REDIS_CONTEXT_TIMEOUT_SECS,
                 session_id = %request.session_id,
-                "Redis operation timed out fetching taints - failing closed"
+                "Redis operation timed out fetching context - failing closed"
             );
             return Err(ApiError::from_interceptor_error_with_id(
-                InterceptorError::StateError("Session taint fetch timed out".to_string()),
+                InterceptorError::StateError("Session context fetch timed out".to_string()),
                 request_id,
             ));
         }
     };
     
-    let session_taints: std::collections::HashSet<String> = session_taints_vec.into_iter().collect();
-
     info!(
         session_id = %request.session_id,
-        taints = ?session_taints,
-        "Session taints processed"
+        taints_count = session_taints_vec.len(),
+        "Session context processed"
     );
 
     // Get tool classes from tool registry
@@ -133,8 +131,8 @@ pub async fn proxy_execute_handler(
     );
 
     // Evaluate policy
-    // Convert HashSet to Vec for evaluator (trait expects &[String])
-    let session_taints_vec: Vec<String> = session_taints.into_iter().collect();
+    // Convert HashMap to HashSet for logging if needed, but we already have vector
+    
     let decision = app_state
         .evaluator
         .evaluate(
@@ -142,6 +140,7 @@ pub async fn proxy_execute_handler(
             &request.tool_name,
             &tool_classes,
             &session_taints_vec,
+            &session_history,
             &request.session_id,
         )
         .await

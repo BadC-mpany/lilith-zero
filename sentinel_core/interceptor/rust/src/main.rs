@@ -63,6 +63,12 @@ impl ApiRedisStore for RedisStoreAdapter {
             .await
     }
     
+    async fn get_session_context(&self, session_id: &str) -> Result<(Vec<String>, Vec<HistoryEntry>), InterceptorError> {
+        self.inner
+            .get_session_context(session_id)
+            .await
+    }
+    
     async fn ping(&self) -> Result<(), InterceptorError> {
         // Use proper Redis PING command for reliable health checks
         // This avoids issues with broken connections and provides better error handling
@@ -287,7 +293,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     // 10. Initialize policy evaluator adapter
     let evaluator = Arc::new(
-        PolicyEvaluatorAdapter::new(redis_store.clone())
+        PolicyEvaluatorAdapter::new()
     );
     
     info!("Policy evaluator initialized");

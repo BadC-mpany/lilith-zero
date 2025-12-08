@@ -6,9 +6,9 @@ import os
 # Get script directory from environment or calculate from script location
 script_dir = os.environ.get('SENTINEL_SCRIPT_DIR')
 if not script_dir:
-    # Calculate project root from this script's location (this script is in scripts/)
-    # Go up one level to get project root
-    script_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    # Calculate project root from this script's location (this script is in scripts/backend/)
+    # Go up TWO levels to get project root (scripts/backend -> scripts -> root)
+    script_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     # Also set it in environment for other modules
     os.environ['SENTINEL_SCRIPT_DIR'] = script_dir
 

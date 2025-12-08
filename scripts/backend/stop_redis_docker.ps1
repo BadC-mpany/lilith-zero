@@ -4,7 +4,8 @@
 Write-Host "=== Stopping Redis (Docker) ===" -ForegroundColor Cyan
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$projectRoot = Split-Path -Parent $scriptDir
+$scriptsDir = Split-Path -Parent $scriptDir
+$projectRoot = Split-Path -Parent $scriptsDir
 
 Set-Location $projectRoot
 docker-compose -f docker-compose.local.yml stop redis

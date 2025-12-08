@@ -783,6 +783,86 @@ impl RedisStore {
     // Note: Redis is append-only. Taints are removed via TTL expiration only.
     // REMOVE_TAINT actions are tracked in history but not actively removed from Redis.
 
+    /// Get taints and history in a single pipeline
+    /// 
+    /// Optimized for performance by reducing Round Trip Time (RTT).
+    /// Fetches both session taints and history in a single Redis request.
+    pub async fn get_session_context(
+        &self,
+        session_id: &str,
+    ) -> Result<(Vec<String>, Vec<HistoryEntry>), InterceptorError> {
+        use tracing::info;
+        
+        // Timeout for the entire operation (fast fail)
+        const OPERATION_TIMEOUT_SECS: u64 = 2;
+
+        let taints_key = format!("session:{}:taints", session_id);
+        let history_key = format!("session:{}:history", session_id);
+        
+        info!(
+            session_id = session_id, 
+            timeout_secs = OPERATION_TIMEOUT_SECS,
+            "Fetching session context (taints + history) via pipeline"
+        );
+        
+        // Step 1: Get connection
+        let mut conn = match tokio::time::timeout(
+            TokioDuration::from_secs(OPERATION_TIMEOUT_SECS),
+            self.pool.get()
+        ).await {
+            Ok(Ok(c)) => c,
+            Ok(Err(e)) => return Err(InterceptorError::StateError(
+                format!("Failed to get connection from pool: {}", e)
+            )),
+            Err(_) => return Err(InterceptorError::StateError(
+                format!("Connection timeout after {} seconds", OPERATION_TIMEOUT_SECS)
+            )),
+        };
+
+        // Step 2: Execute Pipeline
+        let pipe_start = std::time::Instant::now();
+        let (taints, raw_history): (Vec<String>, Vec<String>) = match tokio::time::timeout(
+            TokioDuration::from_secs(OPERATION_TIMEOUT_SECS),
+            bb8_redis::redis::pipe()
+                .atomic() // Use MULTI/EXEC transaction
+                .cmd("SMEMBERS").arg(&taints_key)
+                .cmd("LRANGE").arg(&history_key).arg(0).arg(-1)
+                .query_async::<_, (Vec<String>, Vec<String>)>(conn.deref_mut())
+        ).await {
+            Ok(Ok(result)) => result,
+            Ok(Err(e)) => {
+                return Err(InterceptorError::StateError(
+                    format!("Pipeline execution failed: {}", e)
+                ));
+            },
+            Err(_) => {
+                return Err(InterceptorError::StateError(
+                    format!("Pipeline timeout after {} seconds", OPERATION_TIMEOUT_SECS)
+                ));
+            }
+        };
+
+        info!(
+            duration_ms = pipe_start.elapsed().as_millis(),
+            taint_count = taints.len(),
+            history_count = raw_history.len(),
+            "Pipeline executed successfully"
+        );
+
+        // Step 3: Deserialize history
+        let history: Result<Vec<HistoryEntry>, _> = raw_history
+            .iter()
+            .map(|item| serde_json::from_str(item))
+            .collect();
+
+        match history {
+            Ok(h) => Ok((taints, h)),
+            Err(e) => Err(InterceptorError::StateError(
+                format!("Failed to deserialize history entries: {}", e)
+            )),
+        }
+    }
+
     /// Get session history - delegates to SessionHistory module
     pub async fn get_history(&self, session_id: &str) -> Result<Vec<HistoryEntry>, InterceptorError> {
         SessionHistory::get_history(&self.pool, session_id).await

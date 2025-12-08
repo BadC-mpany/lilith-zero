@@ -57,14 +57,14 @@ if ($redisMode -eq "auto") {
     } else {
         Write-Host "Auto mode: Neither Docker nor WSL Redis available" -ForegroundColor Red
         Write-Host "  Start one of:" -ForegroundColor Yellow
-        Write-Host "    - Docker: .\scripts\start_redis_docker.ps1" -ForegroundColor Gray
+        Write-Host "    - Docker: .\scripts\backend\start_redis_docker.ps1" -ForegroundColor Gray
         Write-Host "    - WSL: wsl redis-server --daemonize yes" -ForegroundColor Gray
     }
 } else {
     Write-Host "Using explicit mode: $redisMode" -ForegroundColor Green
     if ($redisMode -eq "docker" -and -not $dockerAvailable) {
         Write-Host "  [WARN] Docker mode selected but Docker Redis not running" -ForegroundColor Yellow
-        Write-Host "    Start with: .\scripts\start_redis_docker.ps1" -ForegroundColor Gray
+        Write-Host "    Start with: .\scripts\backend\start_redis_docker.ps1" -ForegroundColor Gray
     } elseif ($redisMode -eq "wsl" -and -not $wslAvailable) {
         Write-Host "  [WARN] WSL mode selected but WSL Redis not running" -ForegroundColor Yellow
         Write-Host "    Start with: wsl redis-server --daemonize yes" -ForegroundColor Gray

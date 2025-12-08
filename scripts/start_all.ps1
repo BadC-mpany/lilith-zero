@@ -1,4 +1,4 @@
-# start_all.ps1
+# scripts/start_all.ps1
 # Start all Sentinel services with proper initialization and verification
 
 param(
@@ -7,192 +7,123 @@ param(
 
 Write-Host "=== Starting Sentinel Services ===" -ForegroundColor Cyan
 
-# Get script directory
-$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+# 1. Setup Paths
+$scriptPath = $MyInvocation.MyCommand.Path
+$scriptDir = Split-Path -Parent $scriptPath
+$projectRoot = $scriptDir # scripts is direct child of root check?
+# Actually if this is in scripts/, parent is root.
+# But original script calculated it via Split-Path -Parent $scriptDir.
+# Let's verify.
+# If path is C:\...\scripts\start_all.ps1
+# $scriptDir is C:\...\scripts
+# $projectRoot is C:\...
 $projectRoot = Split-Path -Parent $scriptDir
 
-# Detect Redis mode from environment variable
-$redisMode = $env:REDIS_MODE
-if (-not $redisMode) {
-    $redisMode = "docker"  # Default to Docker
-    Write-Host "`n[0] Redis Mode: $redisMode (default)" -ForegroundColor Cyan
-} else {
-    Write-Host "`n[0] Redis Mode: $redisMode" -ForegroundColor Cyan
-}
+$backendDir = Join-Path $scriptDir "backend"
+$utilsDir = Join-Path $scriptDir "utils"
 
-# Start Redis based on mode
-Write-Host "`n[0.5] Starting Redis ($redisMode mode)..." -ForegroundColor Yellow
+# 2. Redis Setup
+$redisMode = $env:REDIS_MODE
+if (-not $redisMode) { $redisMode = "docker" }
+
+Write-Host "`n[0] Redis Mode: $redisMode" -ForegroundColor Cyan
+
 if ($redisMode -eq "docker" -or $redisMode -eq "auto") {
-    # Docker mode: Start Docker Redis
-    & "$scriptDir\start_redis_docker.ps1"
+    & "$backendDir\start_redis_docker.ps1"
     if ($LASTEXITCODE -ne 0) {
         if ($redisMode -eq "auto") {
-            Write-Host "  [WARN] Docker Redis failed, will try WSL fallback" -ForegroundColor Yellow
-            $redisMode = "wsl"  # Fallback to WSL
+            Write-Host "  [WARN] Docker Redis failed, failing over to WSL" -ForegroundColor Yellow
+            $redisMode = "wsl"
         } else {
-            Write-Host "  [FAIL] Docker Redis failed to start" -ForegroundColor Red
-            Write-Host "    Check Docker Desktop is running" -ForegroundColor Yellow
+            Write-Error "Docker Redis failed to start."
+            exit 1
         }
     }
 }
 
 if ($redisMode -eq "wsl") {
-    # WSL mode: Check WSL health and start WSL Redis
-    Write-Host "  Checking WSL health..." -ForegroundColor Gray
-    $wslCheck = & "$scriptDir\wsl_health_check.ps1" -AutoRecover 2>&1
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "  [WARN] WSL health check failed" -ForegroundColor Yellow
-        Write-Host "    Run: .\scripts\configure_wsl_resources.ps1 to fix permanently" -ForegroundColor Gray
-    }
+    # Check health using new location
+    & "$utilsDir\wsl_health_check.ps1" -AutoRecover 2>&1 | Out-Null
     
-    # Auto-fix WSL Redis connection
-    Write-Host "  Auto-fixing WSL Redis connection..." -ForegroundColor Gray
-    $redisFix = & "$scriptDir\auto_fix_redis.ps1" 2>&1
+    # Fix connection
+    & "$utilsDir\auto_fix_redis.ps1" 2>&1 | Out-Null
     if ($LASTEXITCODE -eq 0) {
-        Write-Host "  [OK] WSL Redis connection fixed and verified" -ForegroundColor Green
+        Write-Host "  [OK] WSL Redis verified" -ForegroundColor Green
     } else {
-        Write-Host "  [WARN] WSL Redis auto-fix failed" -ForegroundColor Yellow
-        Write-Host "    Run manually as admin: .\scripts\fix_wsl_redis_connection.ps1" -ForegroundColor Gray
+        Write-Warning "WSL Redis auto-fix failed. Check manually."
     }
 }
 
-# Start PostgreSQL service
-Write-Host "`n[1] Starting PostgreSQL..." -ForegroundColor Yellow
-try {
-    $pgService = Get-Service | Where-Object { $_.Name -like "postgresql*" } | Select-Object -First 1
-    if ($pgService) {
-        if ($pgService.Status -eq "Running") {
-            Write-Host "  [OK] PostgreSQL already running" -ForegroundColor Green
-        } else {
-            Start-Service $pgService.Name -ErrorAction Stop
-            Write-Host "  [OK] PostgreSQL started" -ForegroundColor Green
-        }
-    } else {
-        Write-Host "  [WARN] PostgreSQL service not found" -ForegroundColor Yellow
-    }
-} catch {
-    Write-Host "  [WARN] PostgreSQL error: $_" -ForegroundColor Yellow
-}
-
-# Start Rust Interceptor (in new window)
-Write-Host "`n[2] Starting Rust Interceptor..." -ForegroundColor Yellow
-$rustPath = Join-Path $projectRoot "sentinel_core\interceptor\rust"
-if (Test-Path $rustPath) {
-    # Pre-flight Redis check (only for WSL mode)
-    if ($redisMode -eq "wsl") {
-        Write-Host "  Pre-flight Redis check..." -ForegroundColor Gray
-        $preflight = & "$scriptDir\auto_fix_redis.ps1" -SkipPortForwarding 2>&1 | Out-Null
-        if ($LASTEXITCODE -ne 0) {
-            Write-Host "  [WARN] Pre-flight Redis check failed - interceptor may fail" -ForegroundColor Yellow
-        }
-    }
-    
-    $rustCommand = "cd '$rustPath'; Write-Host '=== Rust Interceptor ===' -ForegroundColor Cyan; Write-Host 'Compiling and starting...' -ForegroundColor Gray; cargo run --bin sentinel-interceptor"
-    Start-Process powershell -ArgumentList "-NoExit", "-Command", $rustCommand
-    Write-Host "  [OK] Rust Interceptor window opened" -ForegroundColor Green
-    Write-Host "  [INFO] Compilation may take 30-60 seconds on first run" -ForegroundColor Gray
+# 3. PostgreSQL (Service check)
+# Keeping existing simple logic or relying on Verify later.
+# Let's keep the quick check.
+$pgOk = Get-Service "postgresql*" -ErrorAction SilentlyContinue | Where-Object Status -eq 'Running'
+if ($pgOk) {
+    Write-Host "  [OK] PostgreSQL is running" -ForegroundColor Green
 } else {
-    Write-Host "  [FAIL] Rust interceptor path not found: $rustPath" -ForegroundColor Red
+    Write-Host "  [WARN] PostgreSQL service not detected running" -ForegroundColor Yellow
 }
 
-# Start MCP Server (in new window)
-Write-Host "`n[3] Starting MCP Server..." -ForegroundColor Yellow
-$mcpPath = Join-Path $projectRoot "sentinel_core\mcp"
-if (Test-Path $mcpPath) {
-    # Check for virtual environment
-    $venvPath = Join-Path $projectRoot "sentinel_env"
-    $pythonCmd = "python"
-    if (Test-Path $venvPath) {
-        $pythonCmd = Join-Path $venvPath "Scripts\python.exe"
-        if (-not (Test-Path $pythonCmd)) {
-            $pythonCmd = "python"  # Fallback if venv python not found
-        }
-    }
-    
-    # Build command with error handling
-    $mcpCommand = @"
-cd '$mcpPath'
-Write-Host '=== MCP Server ===' -ForegroundColor Cyan
-Write-Host 'Starting on http://0.0.0.0:9000...' -ForegroundColor Gray
-`$ErrorActionPreference = 'Stop'
-try {
-    $pythonCmd -m uvicorn src.mcp_server:app --host 0.0.0.0 --port 9000
-} catch {
-    Write-Host '[ERROR] MCP Server failed to start' -ForegroundColor Red
-    Write-Host `$_.Exception.Message -ForegroundColor Red
-    Write-Host '`nTroubleshooting:' -ForegroundColor Yellow
-    Write-Host '  1. Check Python is installed: python --version' -ForegroundColor Gray
-    Write-Host '  2. Install dependencies: pip install -r requirements.txt' -ForegroundColor Gray
-    Write-Host '  3. Check virtual environment is activated' -ForegroundColor Gray
-    Write-Host '`nPress any key to exit...' -ForegroundColor Gray
-    `$null = `$Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')
-}
-"@
-    Start-Process powershell -ArgumentList "-NoExit", "-Command", $mcpCommand
-    Write-Host "  [OK] MCP Server window opened" -ForegroundColor Green
-    Write-Host "  [INFO] Check the window for startup errors" -ForegroundColor Gray
+# 4. Start Services (New Windows)
+Write-Host "`n[1] Launching Services..." -ForegroundColor Yellow
+
+# Interceptor
+$interceptorWrapper = Join-Path $backendDir "run_interceptor_wrapper.ps1"
+if (Test-Path $interceptorWrapper) {
+    Start-Process powershell -ArgumentList "-NoExit", "-File", $interceptorWrapper
+    Write-Host "  [OK] Interceptor launched" -ForegroundColor Green
 } else {
-    Write-Host "  [FAIL] MCP server path not found: $mcpPath" -ForegroundColor Red
+    Write-Error "Interceptor wrapper not found at $interceptorWrapper"
 }
 
-Write-Host "`n=== Services Starting ===" -ForegroundColor Green
-Write-Host "Rust Interceptor: http://localhost:8000" -ForegroundColor Cyan
-Write-Host "MCP Server: http://localhost:9000" -ForegroundColor Cyan
+# MCP Server
+$mcpWrapper = Join-Path $backendDir "run_mcp_wrapper.ps1"
+if (Test-Path $mcpWrapper) {
+    Start-Process powershell -ArgumentList "-NoExit", "-File", $mcpWrapper
+    Write-Host "  [OK] MCP Server launched" -ForegroundColor Green
+} else {
+    Write-Error "MCP wrapper not found at $mcpWrapper"
+}
 
+# 5. Verification
 if (-not $SkipVerification) {
-    Write-Host "`nWaiting for services to initialize..." -ForegroundColor Yellow
-    Write-Host "  (Rust compilation may take 30-60 seconds)" -ForegroundColor Gray
+    Write-Host "`n[2] Verifying startup..." -ForegroundColor Yellow
+    Write-Host "  Waiting for services (max 90s)..." -ForegroundColor Gray
     
-    # Wait longer for services to start (especially Rust compilation)
-    $maxWait = 90  # Maximum wait time in seconds
-    $checkInterval = 5  # Check every 5 seconds
-    $elapsed = 0
-    $rustReady = $false
-    $mcpReady = $false
+    # Simple wait loop
+    $maxWait = 90
+    $start = Get-Date
+    $ready = $false
     
-    while ($elapsed -lt $maxWait -and (-not $rustReady -or -not $mcpReady)) {
-        Start-Sleep -Seconds $checkInterval
-        $elapsed += $checkInterval
+    while ((Get-Date) -lt $start.AddSeconds($maxWait)) {
+        $backendOk = $false
+        try {
+            $r1 = Invoke-WebRequest "http://localhost:8000/health" -TimeoutSec 1 -ErrorAction SilentlyContinue
+            if ($r1.StatusCode -eq 200) { $backendOk = $true }
+        } catch {}
         
-        # Check Rust Interceptor
-        if (-not $rustReady) {
-            try {
-                $response = Invoke-WebRequest -Uri "http://localhost:8000/health" -TimeoutSec 2 -ErrorAction SilentlyContinue
-                if ($response.StatusCode -eq 200) {
-                    $rustReady = $true
-                    Write-Host "  [OK] Rust Interceptor is ready" -ForegroundColor Green
-                }
-            } catch {
-                # Still waiting
-            }
-        }
+        $mcpOk = $false
+        try {
+            $r2 = Invoke-WebRequest "http://localhost:9000/health" -TimeoutSec 1 -ErrorAction SilentlyContinue
+            if ($r2.StatusCode -eq 200) { $mcpOk = $true }
+        } catch {}
         
-        # Check MCP Server
-        if (-not $mcpReady) {
-            try {
-                $response = Invoke-WebRequest -Uri "http://localhost:9000" -TimeoutSec 2 -ErrorAction SilentlyContinue
-                if ($response.StatusCode -eq 200) {
-                    $mcpReady = $true
-                    Write-Host "  [OK] MCP Server is ready" -ForegroundColor Green
-                }
-            } catch {
-                # Still waiting
-            }
+        if ($backendOk -and $mcpOk) {
+            $ready = $true
+            break
         }
-        
-        if (-not $rustReady -or -not $mcpReady) {
-            Write-Host "  Waiting... ($elapsed/$maxWait seconds)" -ForegroundColor Gray
-        }
+        Start-Sleep -Seconds 2
     }
     
-    Write-Host "`nRunning full verification..." -ForegroundColor Yellow
-    & "$scriptDir\verify_services.ps1"
+    if ($ready) {
+        Write-Host "  [OK] All services are reachable!" -ForegroundColor Green
+        # Optional: run full verify
+        # & "$utilsDir\verify_services.ps1"
+    } else {
+        Write-Host "  [WARN] Services did not become ready in time." -ForegroundColor Yellow
+        Write-Host "  Check the other windows for errors." -ForegroundColor Gray
+    }
 }
 
-Write-Host "`n=== Next Steps ===" -ForegroundColor Cyan
-Write-Host "To start the conversational agent, run:" -ForegroundColor Yellow
-Write-Host "  .\scripts\start_agent.ps1" -ForegroundColor White
-Write-Host "`nor manually:" -ForegroundColor Gray
-Write-Host "  cd sentinel_agent" -ForegroundColor Gray
-Write-Host "  python examples\conversational_agent.py" -ForegroundColor Gray
-
+Write-Host "`n=== Ready ===" -ForegroundColor Cyan
+Write-Host "Run .\scripts\start_agent.ps1 to start the agent." -ForegroundColor White

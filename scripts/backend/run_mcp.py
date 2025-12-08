@@ -6,9 +6,9 @@ import os
 # Get script directory from environment or calculate from script location
 script_dir = os.environ.get('SENTINEL_SCRIPT_DIR')
 if not script_dir:
-    # Calculate project root from this script's location (this script is in scripts/)
-    # Go up one level to get project root
-    script_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    # Calculate project root from this script's location (this script is in scripts/backend/)
+    # Go up TWO levels to get project root (scripts/backend -> scripts -> root)
+    script_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     # Also set it in environment for other modules
     os.environ['SENTINEL_SCRIPT_DIR'] = script_dir
 
@@ -55,18 +55,23 @@ for p in paths:
     if os.path.exists(p_abs) and p_abs not in sys.path:
         sys.path.insert(0, p_abs)
 
-# Change to MCP src directory using os.path.join
-mcp_src = os.path.join(script_dir, "sentinel_core", "mcp", "src")
-if not os.path.exists(mcp_src):
-    print(f"ERROR: MCP source directory not found: {mcp_src}")
+# Change to MCP ROOT directory (parent of src)
+# This is required because mcp_server.py does "from src.xxx import ..."
+mcp_root = os.path.join(script_dir, "sentinel_core", "mcp")
+if not os.path.exists(mcp_root):
+    print(f"ERROR: MCP root directory not found: {mcp_root}")
     sys.exit(1)
-os.chdir(mcp_src)
+
+# CRITICAL: Add the MCP root to sys.path so that 'import src.mcp_server' can find 'src'
+if mcp_root not in sys.path:
+    sys.path.insert(0, mcp_root)
+
+os.chdir(mcp_root)
 
 # Import and run
 if __name__ == "__main__":
-    # Import the module (this will execute the module-level code)
-    import mcp_server
-    # The module should have uvicorn.run in its __main__ block, but if not, run it here
+    # Import the module as package
+    import src.mcp_server
     import uvicorn
-    uvicorn.run(mcp_server.app, host="0.0.0.0", port=9000)
+    uvicorn.run(src.mcp_server.app, host="0.0.0.0", port=9000)
 

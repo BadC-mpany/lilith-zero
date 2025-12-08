@@ -75,6 +75,19 @@ impl RedisStore for MockRedisStore {
         Ok(self.history.get(session_id).cloned().unwrap_or_default())
     }
 
+    async fn get_session_context(&self, session_id: &str) -> Result<(Vec<String>, Vec<HistoryEntry>), InterceptorError> {
+        if self.get_taints_should_fail || self.get_history_should_fail {
+            return Err(InterceptorError::StateError("Redis connection failed".to_string()));
+        }
+        if self.get_history_should_timeout {
+             tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+             return Err(InterceptorError::StateError("Timeout".to_string()));
+        }
+        let taints = self.taints.get(session_id).cloned().unwrap_or_default();
+        let history = self.history.get(session_id).cloned().unwrap_or_default();
+        Ok((taints, history))
+    }
+
     async fn ping(&self) -> Result<(), InterceptorError> {
         self.ping_result.clone().map_err(InterceptorError::StateError)
     }
@@ -186,6 +199,7 @@ impl PolicyEvaluator for MockPolicyEvaluator {
         _tool_name: &str,
         _tool_classes: &[String],
         _session_taints: &[String],
+        _session_history: &[HistoryEntry],
         _session_id: &str,
     ) -> Result<Decision, InterceptorError> {
         if self.should_fail {

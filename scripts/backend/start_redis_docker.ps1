@@ -4,21 +4,25 @@
 Write-Host "=== Starting Redis (Docker) ===" -ForegroundColor Cyan
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$projectRoot = Split-Path -Parent $scriptDir
+# Script is now in scripts/backend, so project root is 2 levels up
+$scriptsDir = Split-Path -Parent $scriptDir
+$projectRoot = Split-Path -Parent $scriptsDir
 
 # Check if Docker is running
-try {
-    docker info | Out-Null
-    Write-Host "  [OK] Docker is running" -ForegroundColor Green
-} catch {
-    Write-Host "  [FAIL] Docker is not running" -ForegroundColor Red
+# Check if Docker is running
+docker info | Out-Null
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "  [FAIL] Docker is not running or not accessible" -ForegroundColor Red
+    Write-Host "    Error: Docker command returned exit code $LASTEXITCODE" -ForegroundColor Yellow
     Write-Host "    Start Docker Desktop and try again" -ForegroundColor Yellow
     exit 1
 }
+Write-Host "  [OK] Docker is running" -ForegroundColor Green
 
 # Start Redis
 Write-Host "`n[1] Starting Redis container..." -ForegroundColor Yellow
 Set-Location $projectRoot
+# Docker compose file is in project root
 docker-compose -f docker-compose.local.yml up -d redis
 
 if ($LASTEXITCODE -eq 0) {

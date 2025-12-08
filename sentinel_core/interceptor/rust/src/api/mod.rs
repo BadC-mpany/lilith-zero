@@ -44,6 +44,7 @@ pub trait RedisStore: Send + Sync {
     async fn remove_taint(&self, session_id: &str, tag: &str) -> Result<(), InterceptorError>;
     async fn add_to_history(&self, session_id: &str, tool: &str, classes: &[String]) -> Result<(), InterceptorError>;
     async fn get_session_history(&self, session_id: &str) -> Result<Vec<crate::core::models::HistoryEntry>, InterceptorError>;
+    async fn get_session_context(&self, session_id: &str) -> Result<(Vec<String>, Vec<crate::core::models::HistoryEntry>), InterceptorError>;
     async fn ping(&self) -> Result<(), InterceptorError>;
 }
 
@@ -65,6 +66,7 @@ pub trait PolicyEvaluator: Send + Sync {
         tool_name: &str,
         tool_classes: &[String],
         session_taints: &[String],
+        session_history: &[crate::core::models::HistoryEntry],
         session_id: &str,
     ) -> Result<Decision, InterceptorError>;
 }
