@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use tracing::{debug, error, info};
 use uuid::Uuid;
+use crate::core::resilience::{SentinelCircuitBreaker, create_circuit_breaker, execute_with_cb};
 
 /// JSON-RPC 2.0 error structure
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -35,6 +36,7 @@ pub(crate) struct JsonRpcResponse {
 pub struct ProxyClientImpl {
     http_client: Client,
     default_timeout: Duration,
+    cb: SentinelCircuitBreaker,
 }
 
 impl ProxyClientImpl {
@@ -62,6 +64,7 @@ impl ProxyClientImpl {
         Ok(Self {
             http_client,
             default_timeout: timeout,
+            cb: create_circuit_breaker(),
         })
     }
 
@@ -228,8 +231,26 @@ impl ProxyClient for ProxyClientImpl {
         callback_url: Option<&str>,
         token: &str,
     ) -> Result<serde_json::Value, InterceptorError> {
-        self.forward_request_internal(url, tool_name, args, session_id, callback_url, token)
-            .await
+        // Clone arguments for the closure (to satisfy 'static or lifetime requirements of async closures)
+        // Although failsafe call might support references, cloning ensures safety and simpler lifetimes
+        // for these relatively small metadata strings. args (Value) is cloned too.
+        let url = url.to_string();
+        let tool_name = tool_name.to_string();
+        let args = args.clone();
+        let session_id = session_id.to_string();
+        let callback_url = callback_url.map(|s| s.to_string());
+        let token = token.to_string();
+
+        execute_with_cb(&self.cb, || async {
+            self.forward_request_internal(
+                &url, 
+                &tool_name, 
+                &args, 
+                &session_id, 
+                callback_url.as_deref(), 
+                &token
+            ).await
+        }).await
     }
 }
 

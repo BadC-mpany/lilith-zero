@@ -4,6 +4,7 @@ use crate::core::errors::InterceptorError;
 use crate::core::models::HistoryEntry;
 use crate::config::{Config, RedisMode};
 use crate::state::session_history::SessionHistory;
+use crate::core::resilience::{SentinelCircuitBreaker, create_circuit_breaker, execute_with_cb};
 use bb8_redis::{bb8::Pool, RedisConnectionManager};
 use bb8_redis::redis::AsyncCommands;
 use std::collections::HashSet;
@@ -17,6 +18,7 @@ use tokio::time::Duration as TokioDuration;
 pub struct RedisStore {
     pool: Pool<RedisConnectionManager>,
     config: Config, // Store config for timeout values
+    cb: SentinelCircuitBreaker, // Circuit breaker for resilience
 }
 
 impl RedisStore {
@@ -201,11 +203,14 @@ impl RedisStore {
                     match Self::verify_pool_connection(&pool, config).await {
                         Ok(_) => {
                             tracing::info!(
-                                effective_url = %effective_url,
                                 mode = "Docker",
                                 "Redis connection pool verified successfully"
                             );
-                            return Ok(Self { pool, config: config.clone() });
+                            return Ok(Self { 
+                                pool, 
+                                config: config.clone(),
+                                cb: create_circuit_breaker(),
+                            });
                         }
                         Err(e) => {
                             let err_msg = format!("Handshake failed: {}", e);
@@ -414,11 +419,14 @@ impl RedisStore {
                     match Self::verify_pool_connection(&pool, config).await {
                         Ok(_) => {
                             tracing::info!(
-                                effective_url = %effective_url,
                                 mode = "WSL",
                                 "Redis connection pool verified successfully"
                             );
-                            return Ok(Self { pool, config: config.clone() });
+                            return Ok(Self { 
+                                pool, 
+                                config: config.clone(),
+                                cb: create_circuit_breaker() 
+                            });
                         }
                         Err(e) => {
                             let err_msg = format!("Handshake failed: {}", e);
@@ -783,11 +791,21 @@ impl RedisStore {
     // Note: Redis is append-only. Taints are removed via TTL expiration only.
     // REMOVE_TAINT actions are tracked in history but not actively removed from Redis.
 
-    /// Get taints and history in a single pipeline
-    /// 
     /// Optimized for performance by reducing Round Trip Time (RTT).
     /// Fetches both session taints and history in a single Redis request.
+    /// Protected by Circuit Breaker.
     pub async fn get_session_context(
+        &self,
+        session_id: &str,
+    ) -> Result<(Vec<String>, Vec<HistoryEntry>), InterceptorError> {
+        // Enforce Circuit Breaker Protection
+        execute_with_cb(&self.cb, || async {
+            self.get_session_context_internal(session_id).await
+        }).await
+    }
+
+    /// Internal implementation of get_session_context (actual Redis logic)
+    async fn get_session_context_internal(
         &self,
         session_id: &str,
     ) -> Result<(Vec<String>, Vec<HistoryEntry>), InterceptorError> {
@@ -801,67 +819,60 @@ impl RedisStore {
         
         info!(
             session_id = session_id, 
-            timeout_secs = OPERATION_TIMEOUT_SECS,
-            "Fetching session context (taints + history) via pipeline"
+            redis_timeout_secs = OPERATION_TIMEOUT_SECS,
+            "Fetching session context (taints + history) from Redis (pipeline)..."
         );
         
-        // Step 1: Get connection
+        // 1. Get Connection
         let mut conn = match tokio::time::timeout(
             TokioDuration::from_secs(OPERATION_TIMEOUT_SECS),
             self.pool.get()
         ).await {
             Ok(Ok(c)) => c,
-            Ok(Err(e)) => return Err(InterceptorError::StateError(
-                format!("Failed to get connection from pool: {}", e)
-            )),
-            Err(_) => return Err(InterceptorError::StateError(
-                format!("Connection timeout after {} seconds", OPERATION_TIMEOUT_SECS)
-            )),
+            Ok(Err(e)) => return Err(InterceptorError::StateError(format!("Pool error: {}", e))),
+            Err(_) => return Err(InterceptorError::StateError("Connection acquisition timed out".to_string())),
         };
 
-        // Step 2: Execute Pipeline
-        let pipe_start = std::time::Instant::now();
-        let (taints, raw_history): (Vec<String>, Vec<String>) = match tokio::time::timeout(
+        // 2. Execute Pipeline
+        let pipeline_start = std::time::Instant::now();
+        
+        let (taints, history_json): (Vec<String>, Vec<String>) = match tokio::time::timeout(
             TokioDuration::from_secs(OPERATION_TIMEOUT_SECS),
             bb8_redis::redis::pipe()
-                .atomic() // Use MULTI/EXEC transaction
                 .cmd("SMEMBERS").arg(&taints_key)
-                .cmd("LRANGE").arg(&history_key).arg(0).arg(-1)
-                .query_async::<_, (Vec<String>, Vec<String>)>(conn.deref_mut())
+                .cmd("LRANGE").arg(&history_key).arg(0).arg(19) // Last 20 items
+                .query_async(&mut *conn)
         ).await {
-            Ok(Ok(result)) => result,
-            Ok(Err(e)) => {
-                return Err(InterceptorError::StateError(
-                    format!("Pipeline execution failed: {}", e)
-                ));
-            },
-            Err(_) => {
-                return Err(InterceptorError::StateError(
-                    format!("Pipeline timeout after {} seconds", OPERATION_TIMEOUT_SECS)
-                ));
-            }
+            Ok(Ok(res)) => res,
+            Ok(Err(e)) => return Err(InterceptorError::StateError(format!("Pipeline execution failed: {}", e))),
+            Err(_) => return Err(InterceptorError::StateError("Pipeline execution timed out".to_string())),
         };
 
         info!(
-            duration_ms = pipe_start.elapsed().as_millis(),
+            duration_ms = pipeline_start.elapsed().as_millis(),
             taint_count = taints.len(),
-            history_count = raw_history.len(),
+            history_count = history_json.len(),
             "Pipeline executed successfully"
         );
 
-        // Step 3: Deserialize history
-        let history: Result<Vec<HistoryEntry>, _> = raw_history
-            .iter()
-            .map(|item| serde_json::from_str(item))
+        // 3. Parse History (CPU bound, fast)
+        let history: Vec<HistoryEntry> = history_json
+            .into_iter()
+            .filter_map(|json_str| {
+                match serde_json::from_str::<HistoryEntry>(&json_str) {
+                    Ok(entry) => Some(entry),
+                    Err(e) => {
+                        tracing::warn!("Failed to parse history entry: {}", e);
+                        None
+                    }
+                }
+            })
             .collect();
-
-        match history {
-            Ok(h) => Ok((taints, h)),
-            Err(e) => Err(InterceptorError::StateError(
-                format!("Failed to deserialize history entries: {}", e)
-            )),
-        }
+            
+        Ok((taints, history))
     }
+        
+
 
     /// Get session history - delegates to SessionHistory module
     pub async fn get_history(&self, session_id: &str) -> Result<Vec<HistoryEntry>, InterceptorError> {

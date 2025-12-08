@@ -45,3 +45,4 @@ fn bench_json_canonicalization(c: &mut Criterion) {
 criterion_group!(benches, bench_crypto_signing, bench_json_canonicalization);
 criterion_main!(benches);
 
+

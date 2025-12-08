@@ -3,4 +3,5 @@
 pub mod models;
 pub mod crypto;
 pub mod errors;
+pub mod resilience;
 

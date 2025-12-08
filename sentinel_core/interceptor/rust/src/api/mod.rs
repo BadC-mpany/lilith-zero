@@ -24,7 +24,6 @@ use crate::core::errors::InterceptorError;
 #[derive(Clone)]
 pub struct AppState {
     pub crypto_signer: Arc<CryptoSigner>,
-    // TODO: Replace with actual implementations when modules are ready
     pub redis_store: Arc<dyn RedisStore + Send + Sync>,
     pub policy_cache: Arc<dyn PolicyCache + Send + Sync>,
     pub evaluator: Arc<dyn PolicyEvaluator + Send + Sync>,
@@ -36,7 +35,6 @@ pub struct AppState {
 }
 
 /// Trait for Redis store operations
-/// TODO: Replace with actual RedisStore implementation
 #[async_trait::async_trait]
 pub trait RedisStore: Send + Sync {
     async fn get_session_taints(&self, session_id: &str) -> Result<Vec<String>, InterceptorError>;
@@ -49,7 +47,6 @@ pub trait RedisStore: Send + Sync {
 }
 
 /// Trait for policy cache operations
-/// TODO: Replace with actual PolicyCache implementation
 #[async_trait::async_trait]
 pub trait PolicyCache: Send + Sync {
     async fn get_policy(&self, policy_name: &str) -> Result<Option<Arc<PolicyDefinition>>, InterceptorError>;
@@ -57,7 +54,6 @@ pub trait PolicyCache: Send + Sync {
 }
 
 /// Trait for policy evaluation
-/// TODO: Replace with actual PolicyEvaluator implementation
 #[async_trait::async_trait]
 pub trait PolicyEvaluator: Send + Sync {
     async fn evaluate(
@@ -72,7 +68,6 @@ pub trait PolicyEvaluator: Send + Sync {
 }
 
 /// Trait for MCP proxy client
-/// TODO: Replace with actual ProxyClient implementation
 #[async_trait::async_trait]
 pub trait ProxyClient: Send + Sync {
     async fn forward_request(
@@ -87,21 +82,18 @@ pub trait ProxyClient: Send + Sync {
 }
 
 /// Trait for customer store operations
-/// TODO: Replace with actual CustomerStore implementation
 #[async_trait::async_trait]
 pub trait CustomerStore: Send + Sync {
     async fn lookup_customer(&self, api_key_hash: &str) -> Result<Option<CustomerConfig>, InterceptorError>;
 }
 
 /// Trait for policy store operations
-/// TODO: Replace with actual PolicyStore implementation
 #[async_trait::async_trait]
 pub trait PolicyStore: Send + Sync {
     async fn load_policy(&self, policy_name: &str) -> Result<Option<Arc<PolicyDefinition>>, InterceptorError>;
 }
 
 /// Trait for tool registry operations
-/// TODO: Replace with actual ToolRegistry implementation
 #[async_trait::async_trait]
 pub trait ToolRegistry: Send + Sync {
     async fn get_tool_classes(&self, tool_name: &str) -> Result<Vec<String>, InterceptorError>;
