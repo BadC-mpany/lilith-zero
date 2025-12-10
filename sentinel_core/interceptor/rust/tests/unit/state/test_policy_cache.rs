@@ -14,11 +14,13 @@ struct MockPolicyStore {
     should_fail: bool,
 }
 
+use sentinel_interceptor::core::errors::InterceptorError;
+
 #[async_trait::async_trait]
 impl PolicyStore for MockPolicyStore {
-    async fn load_policy(&self, policy_name: &str) -> Result<Option<Arc<PolicyDefinition>>, String> {
+    async fn load_policy(&self, policy_name: &str) -> Result<Option<Arc<PolicyDefinition>>, InterceptorError> {
         if self.should_fail {
-            return Err("Database error".to_string());
+            return Err(InterceptorError::StateError("Database error".to_string()));
         }
         Ok(self.policies.get(policy_name).cloned())
     }
@@ -149,7 +151,7 @@ async fn test_policy_cache_store_error() {
     
     // Assert: Should propagate error
     assert!(result.is_err());
-    assert!(result.unwrap_err().contains("Database error"));
+    assert!(result.unwrap_err().to_string().contains("Database error"));
 }
 
 /// Test manual cache insertion

@@ -39,7 +39,7 @@ fn test_api_key_hash_hex_format() {
 
 #[test]
 fn test_api_key_redaction_debug() {
-    let api_key = ApiKey::from_str("secret_key_123");
+    let api_key = ApiKey::new("secret_key_123");
     let debug_str = format!("{:?}", api_key);
     
     assert!(!debug_str.contains("secret_key_123"), "Debug should not expose key");
@@ -49,7 +49,7 @@ fn test_api_key_redaction_debug() {
 
 #[test]
 fn test_api_key_redaction_display() {
-    let api_key = ApiKey::from_str("secret_key_123");
+    let api_key = ApiKey::new("secret_key_123");
     let display_str = format!("{}", api_key);
     
     assert!(!display_str.contains("secret_key_123"), "Display should not expose key");
@@ -59,7 +59,7 @@ fn test_api_key_redaction_display() {
 
 #[test]
 fn test_api_key_hash_method() {
-    let api_key = ApiKey::from_str("test_key");
+    let api_key = ApiKey::new("test_key");
     let hash = api_key.hash();
     
     assert_eq!(hash.as_str().len(), 64, "Hash should be 64 characters");
@@ -72,7 +72,7 @@ fn test_api_key_hash_method() {
 #[test]
 fn test_api_key_expose_secret() {
     let original_key = "test_secret_key";
-    let api_key = ApiKey::from_str(original_key);
+    let api_key = ApiKey::new(original_key);
     let exposed = api_key.expose_secret();
     
     assert_eq!(exposed, original_key, "Expose secret should return original key");

@@ -2,6 +2,7 @@
 
 use sentinel_interceptor::auth::policy_store::YamlPolicyStore;
 use sentinel_interceptor::loader::policy_loader::PolicyLoader;
+use sentinel_interceptor::api::PolicyStore;
 use std::io::Write;
 use tempfile::NamedTempFile;
 

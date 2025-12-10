@@ -10,9 +10,7 @@ use std::collections::HashMap;
 use ed25519_dalek::SigningKey;
 use rand::rngs::OsRng;
 
-#[path = "common/mod.rs"]
-mod common;
-use common::*;
+use super::common::*;
 
 fn create_failing_app_state(fail_taints: bool, fail_history: bool) -> AppState {
     let mut redis_store = MockRedisStore::default();

@@ -194,7 +194,7 @@ fn test_api_error_status_code_mapping() {
         (InterceptorError::CryptoError(CryptoError::KeyLoadError("test".to_string())), StatusCode::INTERNAL_SERVER_ERROR),
         (InterceptorError::McpProxyError("test".to_string()), StatusCode::BAD_GATEWAY),
         (InterceptorError::ConfigurationError("test".to_string()), StatusCode::INTERNAL_SERVER_ERROR),
-        (InterceptorError::StateError("test".to_string()), StatusCode::INTERNAL_SERVER_ERROR),
+        (InterceptorError::StateError("test".to_string()), StatusCode::SERVICE_UNAVAILABLE),
     ];
     
     for (interceptor_err, expected_status) in test_cases {

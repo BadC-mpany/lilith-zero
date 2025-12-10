@@ -30,7 +30,7 @@ fn create_test_app_state() -> AppState {
     let policy_cache: Arc<dyn sentinel_interceptor::api::PolicyCache + Send + Sync> =
         Arc::new(MockPolicyCache);
     let evaluator: Arc<dyn sentinel_interceptor::api::PolicyEvaluator + Send + Sync> =
-        Arc::new(MockPolicyEvaluator);
+        Arc::new(MockPolicyEvaluator::default());
     let proxy_client: Arc<dyn sentinel_interceptor::api::ProxyClient + Send + Sync> =
         Arc::new(MockProxyClient {
             response: Ok(serde_json::json!({"result": "success"})),
@@ -44,7 +44,7 @@ fn create_test_app_state() -> AppState {
     let mut tool_classes = HashMap::new();
     tool_classes.insert("read_file".to_string(), vec!["FILE_OPERATION".to_string()]);
     let tool_registry: Arc<dyn sentinel_interceptor::api::ToolRegistry + Send + Sync> =
-        Arc::new(MockToolRegistry { tool_classes });
+        Arc::new(MockToolRegistry { tool_classes, should_fail: false });
     
     let config = Arc::new(sentinel_interceptor::config::Config::test_config());
     
@@ -93,7 +93,7 @@ policies:
     });
 
     let app_state = create_test_app_state();
-    let app = create_router(&app_state, Some(auth_state));
+    let app = create_router(&app_state, Some(auth_state)).with_state(app_state.clone());
 
     // Request without API key
     let request = Request::builder()
@@ -139,7 +139,7 @@ policies:
     });
 
     let app_state = create_test_app_state();
-    let app = create_router(&app_state, Some(auth_state));
+    let app = create_router(&app_state, Some(auth_state)).with_state(app_state.clone());
 
     // Request with invalid API key
     let request = Request::builder()
@@ -186,7 +186,7 @@ policies:
     });
 
     let app_state = create_test_app_state();
-    let app = create_router(&app_state, Some(auth_state));
+    let app = create_router(&app_state, Some(auth_state)).with_state(app_state.clone());
 
     // Health endpoint should bypass auth
     let request = Request::builder()
@@ -232,7 +232,7 @@ policies:
     });
 
     let app_state = create_test_app_state();
-    let app = create_router(&app_state, Some(auth_state));
+    let app = create_router(&app_state, Some(auth_state)).with_state(app_state.clone());
 
     // Request with valid API key
     // Note: This will pass auth but may fail in handler if mocks aren't set up correctly

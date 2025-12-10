@@ -5,6 +5,7 @@ use axum::http::HeaderMap;
 use sentinel_interceptor::api::handlers::*;
 use sentinel_interceptor::api::*;
 use sentinel_interceptor::core::models::*;
+use sentinel_interceptor::core::errors::InterceptorError;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -13,32 +14,50 @@ use std::sync::Arc;
 struct MockRedisStore {
     taints: HashMap<String, Vec<String>>,
     ping_result: Result<(), String>,
+    get_taints_should_fail: bool,
+}
+
+impl Default for MockRedisStore {
+    fn default() -> Self {
+        Self {
+            taints: HashMap::new(),
+            ping_result: Ok(()),
+            get_taints_should_fail: false,
+        }
+    }
 }
 
 #[async_trait::async_trait]
 impl RedisStore for MockRedisStore {
-    async fn get_session_taints(&self, session_id: &str) -> Result<Vec<String>, String> {
+    async fn get_session_taints(&self, session_id: &str) -> Result<Vec<String>, InterceptorError> {
+        if self.get_taints_should_fail {
+            return Err(InterceptorError::StateError("Redis taint fetch failed".to_string()));
+        }
         Ok(self.taints.get(session_id).cloned().unwrap_or_default())
     }
 
-    async fn add_taint(&self, _session_id: &str, _tag: &str) -> Result<(), String> {
+    async fn add_taint(&self, _session_id: &str, _tag: &str) -> Result<(), InterceptorError> {
         Ok(())
     }
 
-    async fn remove_taint(&self, _session_id: &str, _tag: &str) -> Result<(), String> {
+    async fn remove_taint(&self, _session_id: &str, _tag: &str) -> Result<(), InterceptorError> {
         Ok(())
     }
 
-    async fn add_to_history(&self, _session_id: &str, _tool: &str, _classes: &[String]) -> Result<(), String> {
+    async fn add_to_history(&self, _session_id: &str, _tool: &str, _classes: &[String]) -> Result<(), InterceptorError> {
         Ok(())
     }
 
-    async fn get_session_history(&self, _session_id: &str) -> Result<Vec<sentinel_interceptor::core::models::HistoryEntry>, String> {
+    async fn get_session_history(&self, _session_id: &str) -> Result<Vec<sentinel_interceptor::core::models::HistoryEntry>, InterceptorError> {
         Ok(vec![])
     }
 
-    async fn ping(&self) -> Result<(), String> {
-        self.ping_result.clone()
+    async fn get_session_context(&self, _session_id: &str) -> Result<(Vec<String>, Vec<sentinel_interceptor::core::models::HistoryEntry>), InterceptorError> {
+        Ok((vec![], vec![]))
+    }
+
+    async fn ping(&self) -> Result<(), InterceptorError> {
+        self.ping_result.clone().map_err(InterceptorError::StateError)
     }
 }
 
@@ -46,11 +65,11 @@ struct MockPolicyCache;
 
 #[async_trait::async_trait]
 impl PolicyCache for MockPolicyCache {
-    async fn get_policy(&self, _policy_name: &str) -> Result<Option<Arc<PolicyDefinition>>, String> {
+    async fn get_policy(&self, _policy_name: &str) -> Result<Option<Arc<PolicyDefinition>>, InterceptorError> {
         Ok(None)
     }
 
-    async fn put_policy(&self, _policy_name: &str, _policy: Arc<PolicyDefinition>) -> Result<(), String> {
+    async fn put_policy(&self, _policy_name: &str, _policy: Arc<PolicyDefinition>) -> Result<(), InterceptorError> {
         Ok(())
     }
 }
@@ -67,8 +86,9 @@ impl PolicyEvaluator for MockPolicyEvaluator {
         _tool_name: &str,
         _tool_classes: &[String],
         _session_taints: &[String],
+        _session_history: &[HistoryEntry],
         _session_id: &str,
-    ) -> Result<Decision, String> {
+    ) -> Result<Decision, InterceptorError> {
         Ok(self.decision.clone())
     }
 }
@@ -87,8 +107,8 @@ impl ProxyClient for MockProxyClient {
         _session_id: &str,
         _callback_url: Option<&str>,
         _token: &str,
-    ) -> Result<serde_json::Value, String> {
-        self.result.clone()
+    ) -> Result<serde_json::Value, InterceptorError> {
+        self.result.clone().map_err(InterceptorError::StateError)
     }
 }
 
@@ -96,7 +116,7 @@ struct MockCustomerStore;
 
 #[async_trait::async_trait]
 impl CustomerStore for MockCustomerStore {
-    async fn lookup_customer(&self, _api_key_hash: &str) -> Result<Option<CustomerConfig>, String> {
+    async fn lookup_customer(&self, _api_key_hash: &str) -> Result<Option<CustomerConfig>, InterceptorError> {
         Ok(None)
     }
 }
@@ -105,7 +125,7 @@ struct MockPolicyStore;
 
 #[async_trait::async_trait]
 impl PolicyStore for MockPolicyStore {
-    async fn load_policy(&self, _policy_name: &str) -> Result<Option<Arc<PolicyDefinition>>, String> {
+    async fn load_policy(&self, _policy_name: &str) -> Result<Option<Arc<PolicyDefinition>>, InterceptorError> {
         Ok(None)
     }
 }
@@ -116,7 +136,7 @@ struct MockToolRegistry {
 
 #[async_trait::async_trait]
 impl ToolRegistry for MockToolRegistry {
-    async fn get_tool_classes(&self, _tool_name: &str) -> Result<Vec<String>, String> {
+    async fn get_tool_classes(&self, _tool_name: &str) -> Result<Vec<String>, InterceptorError> {
         Ok(self.classes.clone())
     }
 }
@@ -133,6 +153,7 @@ fn create_test_app_state(decision: Decision, ping_result: Result<(), String>) ->
     let redis_store = Arc::new(MockRedisStore {
         taints: HashMap::new(),
         ping_result,
+        get_taints_should_fail: false,
     });
 
     let policy_cache = Arc::new(MockPolicyCache);
@@ -217,6 +238,7 @@ async fn test_proxy_execute_handler_redis_error() {
     let mut redis_store = MockRedisStore {
         taints: HashMap::new(),
         ping_result: Ok(()),
+        ..Default::default()
     };
     redis_store.get_taints_should_fail = true;
     
@@ -266,7 +288,7 @@ async fn test_proxy_execute_handler_tool_registry_error() {
     // Assert: Should return error
     assert!(result.is_err());
     let error = result.unwrap_err();
-    assert_eq!(error.status, axum::http::StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(error.status, axum::http::StatusCode::SERVICE_UNAVAILABLE);
 }
 
 #[tokio::test]
@@ -360,7 +382,7 @@ async fn test_proxy_execute_handler_mcp_proxy_error() {
     // Assert: Should return 502 with request ID
     assert!(result.is_err());
     let error = result.unwrap_err();
-    assert_eq!(error.status, axum::http::StatusCode::BAD_GATEWAY);
+    assert_eq!(error.status, axum::http::StatusCode::SERVICE_UNAVAILABLE);
     assert!(error.request_id.is_some(), "Request ID should be present in error");
 }
 
@@ -455,16 +477,17 @@ async fn test_proxy_execute_handler_redis_timeout() {
     
     #[async_trait::async_trait]
     impl RedisStore for SlowRedisStore {
-        async fn get_session_taints(&self, _session_id: &str) -> Result<Vec<String>, String> {
+        async fn get_session_taints(&self, _session_id: &str) -> Result<Vec<String>, InterceptorError> {
             sleep(Duration::from_secs(3)).await; // Exceeds 2s timeout
             Ok(vec![])
         }
         
-        async fn add_taint(&self, _session_id: &str, _tag: &str) -> Result<(), String> { Ok(()) }
-        async fn remove_taint(&self, _session_id: &str, _tag: &str) -> Result<(), String> { Ok(()) }
-        async fn add_to_history(&self, _session_id: &str, _tool: &str, _classes: &[String]) -> Result<(), String> { Ok(()) }
-        async fn get_session_history(&self, _session_id: &str) -> Result<Vec<HistoryEntry>, String> { Ok(vec![]) }
-        async fn ping(&self) -> Result<(), String> { Ok(()) }
+        async fn add_taint(&self, _session_id: &str, _tag: &str) -> Result<(), InterceptorError> { Ok(()) }
+        async fn remove_taint(&self, _session_id: &str, _tag: &str) -> Result<(), InterceptorError> { Ok(()) }
+        async fn add_to_history(&self, _session_id: &str, _tool: &str, _classes: &[String]) -> Result<(), InterceptorError> { Ok(()) }
+        async fn get_session_history(&self, _session_id: &str) -> Result<Vec<HistoryEntry>, InterceptorError> { Ok(vec![]) }
+        async fn get_session_context(&self, _session_id: &str) -> Result<(Vec<String>, Vec<HistoryEntry>), InterceptorError> { Ok((vec![], vec![])) }
+        async fn ping(&self) -> Result<(), InterceptorError> { Ok(()) }
     }
     
     let app_state = create_test_app_state_with_redis(
@@ -501,6 +524,7 @@ async fn test_proxy_execute_handler_empty_taints_on_redis_failure() {
     let mut redis_store = MockRedisStore {
         taints: HashMap::new(),
         ping_result: Ok(()),
+        ..Default::default()
     };
     redis_store.get_taints_should_fail = true;
     
@@ -571,7 +595,6 @@ async fn test_policy_introspection_handler_success() {
     // Act: Call handler
     let result = policy_introspection_handler(
         State(app_state),
-        headers,
         customer_config,
         policy,
     ).await;
@@ -591,12 +614,13 @@ async fn test_health_handler_redis_slow() {
     
     #[async_trait::async_trait]
     impl RedisStore for SlowPingRedisStore {
-        async fn get_session_taints(&self, _session_id: &str) -> Result<Vec<String>, String> { Ok(vec![]) }
-        async fn add_taint(&self, _session_id: &str, _tag: &str) -> Result<(), String> { Ok(()) }
-        async fn remove_taint(&self, _session_id: &str, _tag: &str) -> Result<(), String> { Ok(()) }
-        async fn add_to_history(&self, _session_id: &str, _tool: &str, _classes: &[String]) -> Result<(), String> { Ok(()) }
-        async fn get_session_history(&self, _session_id: &str) -> Result<Vec<HistoryEntry>, String> { Ok(vec![]) }
-        async fn ping(&self) -> Result<(), String> {
+        async fn get_session_taints(&self, _session_id: &str) -> Result<Vec<String>, InterceptorError> { Ok(vec![]) }
+        async fn add_taint(&self, _session_id: &str, _tag: &str) -> Result<(), InterceptorError> { Ok(()) }
+        async fn remove_taint(&self, _session_id: &str, _tag: &str) -> Result<(), InterceptorError> { Ok(()) }
+        async fn add_to_history(&self, _session_id: &str, _tool: &str, _classes: &[String]) -> Result<(), InterceptorError> { Ok(()) }
+        async fn get_session_history(&self, _session_id: &str) -> Result<Vec<HistoryEntry>, InterceptorError> { Ok(vec![]) }
+        async fn get_session_context(&self, _session_id: &str) -> Result<(Vec<String>, Vec<HistoryEntry>), InterceptorError> { Ok((vec![], vec![])) }
+        async fn ping(&self) -> Result<(), InterceptorError> {
             tokio::time::sleep(tokio::time::Duration::from_millis(600)).await;
             Ok(())
         }
@@ -623,12 +647,13 @@ async fn test_health_handler_redis_timeout() {
     
     #[async_trait::async_trait]
     impl RedisStore for TimeoutRedisStore {
-        async fn get_session_taints(&self, _session_id: &str) -> Result<Vec<String>, String> { Ok(vec![]) }
-        async fn add_taint(&self, _session_id: &str, _tag: &str) -> Result<(), String> { Ok(()) }
-        async fn remove_taint(&self, _session_id: &str, _tag: &str) -> Result<(), String> { Ok(()) }
-        async fn add_to_history(&self, _session_id: &str, _tool: &str, _classes: &[String]) -> Result<(), String> { Ok(()) }
-        async fn get_session_history(&self, _session_id: &str) -> Result<Vec<HistoryEntry>, String> { Ok(vec![]) }
-        async fn ping(&self) -> Result<(), String> {
+        async fn get_session_taints(&self, _session_id: &str) -> Result<Vec<String>, InterceptorError> { Ok(vec![]) }
+        async fn add_taint(&self, _session_id: &str, _tag: &str) -> Result<(), InterceptorError> { Ok(()) }
+        async fn remove_taint(&self, _session_id: &str, _tag: &str) -> Result<(), InterceptorError> { Ok(()) }
+        async fn add_to_history(&self, _session_id: &str, _tool: &str, _classes: &[String]) -> Result<(), InterceptorError> { Ok(()) }
+        async fn get_session_history(&self, _session_id: &str) -> Result<Vec<HistoryEntry>, InterceptorError> { Ok(vec![]) }
+        async fn get_session_context(&self, _session_id: &str) -> Result<(Vec<String>, Vec<HistoryEntry>), InterceptorError> { Ok((vec![], vec![])) }
+        async fn ping(&self) -> Result<(), InterceptorError> {
             tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
             Ok(())
         }
@@ -731,8 +756,8 @@ fn create_test_app_state_with_tool_registry_error() -> AppState {
     
     #[async_trait::async_trait]
     impl ToolRegistry for FailingToolRegistry {
-        async fn get_tool_classes(&self, _tool_name: &str) -> Result<Vec<String>, String> {
-            Err("Tool registry error".to_string())
+        async fn get_tool_classes(&self, _tool_name: &str) -> Result<Vec<String>, InterceptorError> {
+            Err(InterceptorError::StateError("Tool registry error".to_string()))
         }
     }
     

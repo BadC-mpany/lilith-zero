@@ -1,11 +1,11 @@
-// Integration tests organized by module
-
 #[path = "../common/mod.rs"]
 mod common;
 
 pub mod api;
 pub mod auth;
+pub mod config;
+pub mod core;
 pub mod engine;
-pub mod fail_closed;
-
-
+pub mod proxy;
+pub mod state;
+pub mod utils;

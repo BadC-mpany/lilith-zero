@@ -92,7 +92,7 @@ async fn test_redis_store_failure_handling() {
     
     let result = redis_store.get_session_taints("session-123").await;
     assert!(result.is_err());
-    assert!(result.unwrap_err().contains("Redis connection failed"));
+    assert!(result.unwrap_err().to_string().contains("Redis connection failed"));
 }
 
 #[tokio::test]

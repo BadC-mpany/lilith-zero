@@ -13,7 +13,7 @@ use tower::ServiceExt;
 use ed25519_dalek::SigningKey;
 use rand::rngs::OsRng;
 
-use super::common::*;
+use super::super::common::*;
 
 fn create_test_app_state() -> AppState {
     let signing_key = SigningKey::generate(&mut OsRng);
@@ -24,7 +24,7 @@ fn create_test_app_state() -> AppState {
     let policy_cache: Arc<dyn sentinel_interceptor::api::PolicyCache + Send + Sync> =
         Arc::new(MockPolicyCache);
     let evaluator: Arc<dyn sentinel_interceptor::api::PolicyEvaluator + Send + Sync> =
-        Arc::new(MockPolicyEvaluator);
+        Arc::new(MockPolicyEvaluator::default());
     let proxy_client: Arc<dyn sentinel_interceptor::api::ProxyClient + Send + Sync> =
         Arc::new(MockProxyClient {
             response: Ok(serde_json::json!({"result": "success"})),
@@ -38,7 +38,7 @@ fn create_test_app_state() -> AppState {
     let mut tool_classes = HashMap::new();
     tool_classes.insert("read_file".to_string(), vec!["FILE_OPERATION".to_string()]);
     let tool_registry: Arc<dyn sentinel_interceptor::api::ToolRegistry + Send + Sync> =
-        Arc::new(MockToolRegistry { tool_classes });
+        Arc::new(MockToolRegistry { tool_classes, should_fail: false });
     
     let config = Arc::new(sentinel_interceptor::config::Config::test_config());
     
@@ -58,7 +58,7 @@ fn create_test_app_state() -> AppState {
 #[tokio::test]
 async fn test_health_endpoint_returns_200() {
     let app_state = create_test_app_state();
-    let app = create_router(&app_state, None);
+    let app = create_router(&app_state, None).with_state(app_state.clone());
     
     let request = Request::builder()
         .uri("/health")
@@ -69,7 +69,7 @@ async fn test_health_endpoint_returns_200() {
     
     assert_eq!(response.status(), StatusCode::OK);
     
-    let body = hyper::body::to_bytes(response.into_body()).await.unwrap();
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
     let health: serde_json::Value = serde_json::from_slice(&body).unwrap();
     
     assert_eq!(health["status"], "healthy");
@@ -78,7 +78,7 @@ async fn test_health_endpoint_returns_200() {
 #[tokio::test]
 async fn test_health_endpoint_no_auth_required() {
     let app_state = create_test_app_state();
-    let app = create_router(&app_state, None);
+    let app = create_router(&app_state, None).with_state(app_state.clone());
     
     // Health endpoint should work without auth
     let request = Request::builder()
@@ -93,7 +93,7 @@ async fn test_health_endpoint_no_auth_required() {
 #[tokio::test]
 async fn test_health_endpoint_includes_redis_status() {
     let app_state = create_test_app_state();
-    let app = create_router(&app_state, None);
+    let app = create_router(&app_state, None).with_state(app_state.clone());
     
     let request = Request::builder()
         .uri("/health")
@@ -101,7 +101,7 @@ async fn test_health_endpoint_includes_redis_status() {
         .unwrap();
     
     let response = app.oneshot(request).await.unwrap();
-    let body = hyper::body::to_bytes(response.into_body()).await.unwrap();
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
     let health: serde_json::Value = serde_json::from_slice(&body).unwrap();
     
     // Should have redis field
@@ -111,7 +111,7 @@ async fn test_health_endpoint_includes_redis_status() {
 #[tokio::test]
 async fn test_proxy_execute_requires_auth() {
     let app_state = create_test_app_state();
-    let app = create_router(&app_state, None);
+    let app = create_router(&app_state, None).with_state(app_state.clone());
     
     let request_body = serde_json::json!({
         "session_id": "test-session",
@@ -136,7 +136,7 @@ async fn test_proxy_execute_requires_auth() {
 #[tokio::test]
 async fn test_policy_introspection_requires_auth() {
     let app_state = create_test_app_state();
-    let app = create_router(&app_state, None);
+    let app = create_router(&app_state, None).with_state(app_state.clone());
     
     let request = Request::builder()
         .uri("/v1/policy")
@@ -151,7 +151,7 @@ async fn test_policy_introspection_requires_auth() {
 #[tokio::test]
 async fn test_metrics_endpoint_returns_200() {
     let app_state = create_test_app_state();
-    let app = create_router(&app_state, None);
+    let app = create_router(&app_state, None).with_state(app_state.clone());
     
     let request = Request::builder()
         .uri("/metrics")
@@ -165,7 +165,7 @@ async fn test_metrics_endpoint_returns_200() {
 #[tokio::test]
 async fn test_invalid_endpoint_returns_404() {
     let app_state = create_test_app_state();
-    let app = create_router(&app_state, None);
+    let app = create_router(&app_state, None).with_state(app_state.clone());
     
     let request = Request::builder()
         .uri("/nonexistent")
@@ -179,7 +179,7 @@ async fn test_invalid_endpoint_returns_404() {
 #[tokio::test]
 async fn test_malformed_json_returns_400() {
     let app_state = create_test_app_state();
-    let app = create_router(&app_state, None);
+    let app = create_router(&app_state, None).with_state(app_state.clone());
     
     let request = Request::builder()
         .method("POST")
@@ -195,7 +195,7 @@ async fn test_malformed_json_returns_400() {
 #[tokio::test]
 async fn test_request_id_propagated_in_header() {
     let app_state = create_test_app_state();
-    let app = create_router(&app_state, None);
+    let app = create_router(&app_state, None).with_state(app_state.clone());
     
     let request_body = serde_json::json!({
         "session_id": "test-session",
