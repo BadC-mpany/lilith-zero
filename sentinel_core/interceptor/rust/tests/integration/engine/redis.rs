@@ -35,7 +35,7 @@ async fn test_redis_store_add_and_get_history() {
 #[tokio::test]
 async fn test_redis_store_remove_taint() {
     let mut redis_store = MockRedisStore::default();
-    redis_store.taints.insert(
+    redis_store.taints.lock().unwrap().insert(
         "session-123".to_string(),
         vec!["SENSITIVE_DATA".to_string(), "PII".to_string()],
     );

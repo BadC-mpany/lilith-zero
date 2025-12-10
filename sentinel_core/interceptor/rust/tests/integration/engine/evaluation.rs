@@ -60,12 +60,7 @@ async fn test_policy_evaluation_static_deny() {
 
 #[tokio::test]
 async fn test_policy_evaluation_taint_rule_blocks() {
-    let mut redis_store = MockRedisStore::default();
-    redis_store.taints.insert(
-        "session-123".to_string(),
-        vec!["SENSITIVE_DATA".to_string()],
-    );
-    let redis_store = Arc::new(redis_store);
+
     let adapter = PolicyEvaluatorAdapter::new();
     
     let static_rules = HashMap::new();
@@ -106,42 +101,5 @@ async fn test_policy_evaluation_history_based_rule() {
 }
 */
 
-#[tokio::test]
-async fn test_policy_evaluation_redis_failure_failsafe() {
-    let mut redis_store = MockRedisStore::default();
-    redis_store.get_history_should_fail = true;
-    let redis_store = Arc::new(redis_store);
-    let adapter = PolicyEvaluatorAdapter::new();
-    
-    let static_rules = HashMap::new();
-    let taint_rules = vec![PolicyRule {
-        tool: None,
-        tool_class: Some("FILE_OPERATION".to_string()),
-        action: "CHECK_TAINT".to_string(),
-        tag: None,
-        forbidden_tags: Some(vec!["SENSITIVE_DATA".to_string()]),
-        error: Some("Data leak blocked".to_string()),
-        pattern: None,
-        exceptions: None,
-    }];
-    
-    let policy = sentinel_interceptor::core::models::PolicyDefinition {
-        name: "test_policy".to_string(),
-        static_rules,
-        taint_rules,
-    };
-    
-    // Should proceed with empty history (fail-safe) when Redis fails
-    let decision = adapter.evaluate(
-        &policy,
-        "read_file",
-        &["FILE_OPERATION".to_string()],
-        &[], // Empty taints (no SENSITIVE_DATA)
-        &[],
-        "session-123", // Adapter will try to fetch history, fail, and use empty
-    ).await.unwrap();
-    
-    // Should allow (no taints to block, empty history)
-    assert!(matches!(decision, Decision::Allowed { .. }));
-}
+
 

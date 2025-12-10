@@ -12,8 +12,8 @@ use rand::rngs::OsRng;
 
 /// Mock RedisStore implementation for testing
 pub struct MockRedisStore {
-    pub taints: HashMap<String, Vec<String>>,
-    pub history: HashMap<String, Vec<HistoryEntry>>,
+    pub taints: std::sync::Mutex<HashMap<String, Vec<String>>>,
+    pub history: std::sync::Mutex<HashMap<String, Vec<HistoryEntry>>>,
     pub ping_result: Result<(), String>,
     pub get_taints_should_fail: bool,
     pub get_history_should_fail: bool,
@@ -25,8 +25,8 @@ pub struct MockRedisStore {
 impl Default for MockRedisStore {
     fn default() -> Self {
         Self {
-            taints: HashMap::new(),
-            history: HashMap::new(),
+            taints: std::sync::Mutex::new(HashMap::new()),
+            history: std::sync::Mutex::new(HashMap::new()),
             ping_result: Ok(()),
             get_taints_should_fail: false,
             get_history_should_fail: false,
@@ -43,24 +43,41 @@ impl RedisStore for MockRedisStore {
         if self.get_taints_should_fail {
              return Err(InterceptorError::StateError("Redis connection failed".to_string()));
         }
-        Ok(self.taints.get(session_id).cloned().unwrap_or_default())
+        let taints = self.taints.lock().unwrap();
+        Ok(taints.get(session_id).cloned().unwrap_or_default())
     }
 
-    async fn add_taint(&self, _session_id: &str, _tag: &str) -> Result<(), InterceptorError> {
+    async fn add_taint(&self, session_id: &str, tag: &str) -> Result<(), InterceptorError> {
         if self.add_taint_should_fail {
             return Err(InterceptorError::StateError("Failed to add taint".to_string()));
         }
+        let mut taints = self.taints.lock().unwrap();
+        taints.entry(session_id.to_string())
+            .or_insert_with(Vec::new)
+            .push(tag.to_string());
         Ok(())
     }
 
-    async fn remove_taint(&self, _session_id: &str, _tag: &str) -> Result<(), InterceptorError> {
+    async fn remove_taint(&self, session_id: &str, tag: &str) -> Result<(), InterceptorError> {
+        let mut taints = self.taints.lock().unwrap();
+        if let Some(tags) = taints.get_mut(session_id) {
+            tags.retain(|t| t != tag);
+        }
         Ok(())
     }
 
-    async fn add_to_history(&self, _session_id: &str, _tool: &str, _classes: &[String]) -> Result<(), InterceptorError> {
+    async fn add_to_history(&self, session_id: &str, tool: &str, classes: &[String]) -> Result<(), InterceptorError> {
         if self.add_to_history_should_fail {
             return Err(InterceptorError::StateError("Failed to add to history".to_string()));
         }
+        let mut history = self.history.lock().unwrap();
+        history.entry(session_id.to_string())
+            .or_insert_with(Vec::new)
+            .push(HistoryEntry {
+                tool: tool.to_string(),
+                classes: classes.to_vec(),
+                timestamp: 1234567890.0,
+            });
         Ok(())
     }
 
@@ -72,7 +89,8 @@ impl RedisStore for MockRedisStore {
         if self.get_history_should_fail {
             return Err(InterceptorError::StateError("Redis connection failed".to_string()));
         }
-        Ok(self.history.get(session_id).cloned().unwrap_or_default())
+        let history = self.history.lock().unwrap();
+        Ok(history.get(session_id).cloned().unwrap_or_default())
     }
 
     async fn get_session_context(&self, session_id: &str) -> Result<(Vec<String>, Vec<HistoryEntry>), InterceptorError> {
@@ -83,8 +101,10 @@ impl RedisStore for MockRedisStore {
              tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
              return Err(InterceptorError::StateError("Timeout".to_string()));
         }
-        let taints = self.taints.get(session_id).cloned().unwrap_or_default();
-        let history = self.history.get(session_id).cloned().unwrap_or_default();
+        let taints_lock = self.taints.lock().unwrap();
+        let history_lock = self.history.lock().unwrap();
+        let taints = taints_lock.get(session_id).cloned().unwrap_or_default();
+        let history = history_lock.get(session_id).cloned().unwrap_or_default();
         Ok((taints, history))
     }
 

@@ -78,8 +78,10 @@ async fn test_body_size_limit_enforced() {
     
     let response = app.oneshot(request).await.unwrap();
     // Should reject large payload (413 or 400 depending on where it's caught)
-    assert!(response.status() == StatusCode::PAYLOAD_TOO_LARGE || 
-            response.status() == StatusCode::BAD_REQUEST);
+    let status = response.status();
+    // Should reject large payload (413 or 400 depending on where it's caught)
+    assert!(status == StatusCode::PAYLOAD_TOO_LARGE || status == StatusCode::BAD_REQUEST, 
+            "Expected PAYLOAD_TOO_LARGE or BAD_REQUEST, got {:?}", status);
 }
 
 #[tokio::test]
