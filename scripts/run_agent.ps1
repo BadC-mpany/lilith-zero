@@ -64,5 +64,5 @@ Invoke-WithEnvironment -ScriptBlock {
     Write-Host "  Script: $AgentScript"
     Write-Host "  URL: $($env:SENTINEL_URL -replace '/$','')"
     
-    python $AgentScript -v
+    python $AgentScript
 }

@@ -12,7 +12,6 @@ pub mod middleware;
 pub mod responses;
 
 use crate::core::models::{CustomerConfig, PolicyDefinition, Decision, ToolConfig};
-use crate::core::crypto::CryptoSigner;
 use crate::core::errors::InterceptorError;
 use crate::infra::supabase::SupabaseClient;  // Import SupabaseClient
 
@@ -24,7 +23,6 @@ use crate::infra::supabase::SupabaseClient;  // Import SupabaseClient
 /// Note: AppState itself is wrapped in Arc when used with Axum router.
 #[derive(Clone)]
 pub struct AppState {
-    pub crypto_signer: Arc<CryptoSigner>,
     pub redis_store: Arc<dyn RedisStore + Send + Sync>,
     pub policy_cache: Arc<dyn PolicyCache + Send + Sync>,
     pub evaluator: Arc<dyn PolicyEvaluator + Send + Sync>,

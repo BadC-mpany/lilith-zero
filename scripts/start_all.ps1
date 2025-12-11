@@ -55,7 +55,7 @@ if ($redisMode -eq "wsl") {
 }
 
 # 3. Supabase Connection Check
-$envFile = Join-Path $projectRoot ".env"
+$envFile = Join-Path $projectRoot "sentinel_core\interceptor\rust\.env"
 if (Test-Path $envFile) {
     # Extract SUPABASE_PROJECT_URL from .env
     $supabaseUrl = Get-Content $envFile | Where-Object { $_ -match "^SUPABASE_PROJECT_URL=(.+)" } | ForEach-Object { $matches[1] }

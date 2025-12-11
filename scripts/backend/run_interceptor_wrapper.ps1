@@ -19,8 +19,9 @@ if (-not (Test-Path $interceptorDir)) {
 $utilsDir = Join-Path $projectRoot "scripts\utils"
 if (Test-Path "$utilsDir\env_utils.ps1") {
     . "$utilsDir\env_utils.ps1"
-    Load-EnvFile "$projectRoot\.env"
-    Write-Host "Loaded environment variables from .env" -ForegroundColor Gray
+    $rustEnv = Join-Path $interceptorDir ".env"
+    Load-EnvFile $rustEnv
+    Write-Host "Loaded environment variables from $rustEnv" -ForegroundColor Gray
 } else {
     Write-Warning "env_utils.ps1 not found, assuming env vars are set."
 }
@@ -28,7 +29,8 @@ if (Test-Path "$utilsDir\env_utils.ps1") {
 Set-Location $interceptorDir
 
 Write-Host "Compiling and starting..." -ForegroundColor Yellow
-cargo run --bin sentinel-interceptor 2>&1 | Tee-Object -FilePath "interceptor.log"
+# Use cmd /c to stream output correctly without PS interpreting stderr as specific error records
+cmd /c "cargo run --bin sentinel-interceptor 2>&1" | Tee-Object -FilePath "interceptor.log"
 
 if ($LASTEXITCODE -ne 0) {
     Write-Host "`nInterceptor exited with error code $LASTEXITCODE" -ForegroundColor Red

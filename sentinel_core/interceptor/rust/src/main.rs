@@ -5,7 +5,6 @@ use sentinel_interceptor::auth::audit_logger::AuditLogger;
 use sentinel_interceptor::auth::auth_middleware::AuthState;
 
 use sentinel_interceptor::config::{Config, RedisMode};
-use sentinel_interceptor::core::crypto::CryptoSigner;
 use sentinel_interceptor::core::models::{HistoryEntry, PolicyDefinition, ToolConfig};
 use sentinel_interceptor::loader::policy_loader::PolicyLoader;
 use sentinel_interceptor::infra::supabase::SupabaseClient; // Import SupabaseClient
@@ -219,22 +218,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("Redis store initialized");
     
     // 4. Initialize database pool (if configured)
-    let db_pool: Option<Arc<sqlx::PgPool>> = if let Some(ref database_url) = config.database_url {
-        Some(Arc::new(
-            sqlx::PgPool::connect(database_url)
-                .await
-                .map_err(|e| {
-                    error!(error = %e, "Failed to connect to database");
-                    e
-                })?
-        ))
-    } else {
-        None
-    };
+    let db_pool: Option<Arc<sqlx::PgPool>> = None;
     
-    if db_pool.is_some() {
-        info!("Database pool initialized");
-    }
     
     // 5. Initialize policy loader (YAML fallback)
     let policy_loader: Option<Arc<PolicyLoader>> = if let Some(ref policies_path) = config.policies_yaml_path {
@@ -269,21 +254,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
     
     info!("Tool registry initialized");
-    
-    // 9. Initialize crypto signer
-    let crypto_signer = Arc::new(
-        CryptoSigner::from_pem_file(
-            config.interceptor_private_key_path
-                .to_str()
-                .ok_or("Invalid private key path encoding")?
-        )
-        .map_err(|e| {
-            error!(error = ?e, path = ?config.interceptor_private_key_path, "Failed to load private key");
-            e
-        })?
-    );
-    
-    info!("Crypto signer initialized");
     
     // 10. Initialize policy evaluator adapter
     let evaluator = Arc::new(
@@ -344,7 +314,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     // 15. Create AppState
     let app_state = AppState {
-        crypto_signer,
         redis_store: redis_store.clone(),
         policy_cache,
         evaluator,

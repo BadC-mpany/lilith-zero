@@ -42,11 +42,7 @@ pub struct Config {
     pub redis_connection_timeout_secs: u64,  // Connection establishment timeout
     pub redis_operation_timeout_secs: u64,   // Individual operation timeout
     
-    // Database configuration (optional)
-    pub database_url: Option<String>,
-    
-    // Cryptographic configuration
-    pub interceptor_private_key_path: PathBuf,
+
     
     // Policy and tool registry paths
     pub policies_yaml_path: Option<PathBuf>,
@@ -104,8 +100,6 @@ impl Config {
             redis_pool_idle_timeout_secs: Self::detect_redis_pool_idle_timeout(&redis_mode)?,
             redis_connection_timeout_secs: Self::detect_redis_connection_timeout(&redis_mode)?,
             redis_operation_timeout_secs: Self::detect_redis_operation_timeout(&redis_mode)?,
-            database_url: Self::get_optional_env("DATABASE_URL")?,
-            interceptor_private_key_path: Self::get_required_path("INTERCEPTOR_PRIVATE_KEY_PATH")?,
             policies_yaml_path: Self::get_optional_path("POLICIES_YAML_PATH")?,
             tool_registry_yaml_path: Self::get_required_path("TOOL_REGISTRY_YAML_PATH")?,
             mcp_proxy_timeout_secs: Self::parse_u64_or_default("MCP_PROXY_TIMEOUT_SECS", 30)?, // Increased from 5 to 30 seconds for tool execution
@@ -129,13 +123,7 @@ impl Config {
         Ok(env::var(key).unwrap_or_else(|_| default.to_string()))
     }
     
-    /// Get optional environment variable
-    fn get_optional_env(key: &str) -> Result<Option<String>, InterceptorError> {
-        match env::var(key) {
-            Ok(value) if !value.is_empty() => Ok(Some(value)),
-            _ => Ok(None),
-        }
-    }
+
     
     /// Get required file path from environment variable
     fn get_required_path(key: &str) -> Result<PathBuf, InterceptorError> {
@@ -371,8 +359,8 @@ impl Config {
         }
         
         // Validate required file paths
-        Self::validate_file_path(&self.interceptor_private_key_path, "Private key file")?;
         Self::validate_file_path(&self.tool_registry_yaml_path, "Tool registry file")?;
+        
         
         // Validate optional file paths
         if let Some(ref path) = self.policies_yaml_path {
@@ -381,16 +369,6 @@ impl Config {
         
         // Validate URLs
         Self::validate_url(&self.redis_url, "Redis URL")?;
-        if let Some(ref url) = self.database_url {
-            Self::validate_url(url, "Database URL")?;
-        }
-        
-        // Validate mutually exclusive fields
-        if self.database_url.is_none() && self.policies_yaml_path.is_none() {
-            return Err(InterceptorError::ConfigurationError(
-                "Either DATABASE_URL or POLICIES_YAML_PATH must be set".to_string()
-            ));
-        }
 
         // Validate Supabase config if set (it might be optional if we fallback to YAML, but user wants migration)
         // For now, let's make it optional validation logic-wise but required for new flow.
@@ -483,8 +461,6 @@ impl Config {
             redis_pool_idle_timeout_secs: 300,
             redis_connection_timeout_secs: 5, // Test default (Docker)
             redis_operation_timeout_secs: 2,
-            database_url: Some("postgresql://localhost/test".to_string()),
-            interceptor_private_key_path: PathBuf::from("/tmp/test_key.pem"),
             policies_yaml_path: None,
             tool_registry_yaml_path: PathBuf::from("/tmp/test_tools.yaml"),
             mcp_proxy_timeout_secs: 5,

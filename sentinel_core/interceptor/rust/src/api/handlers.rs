@@ -12,7 +12,7 @@ use tracing::{debug, error, info, warn};
 
 use crate::api::responses::{ApiError, HealthResponse, ProxyResponse};
 use crate::api::{AppState, PolicyDefinition};
-use base64::{Engine as _, engine::general_purpose::URL_SAFE};
+use base64::Engine as _ ;
 use crate::core::errors::InterceptorError;
 use crate::core::models::{CustomerConfig, Decision, ProxyRequest, SessionId};
 use serde_json::json;

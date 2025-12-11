@@ -14,7 +14,7 @@ Write-Host "=== MCP Server ===" -ForegroundColor Cyan
 Write-Host "Initializing..." -ForegroundColor Gray
 
 # Load .env
-Load-EnvFile -Path (Join-Path $projectRoot ".env")
+Load-EnvFile -Path (Join-Path $projectRoot "sentinel_core\interceptor\rust\.env")
 
 $runMcpPy = Join-Path $scriptDir "run_mcp.py"
 
