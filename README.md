@@ -14,31 +14,34 @@ The system is segmented into three distinct trust zones, enforcing security thro
 
 1.  **Zone A: The Untrusted Client (The Agent)**
 
-    - **Component:** `sentinel_sdk.py` (`SentinelSecureTool`)
+    - **Component:** `sentinel_sdk` (Python Package)
     - **Trust Level:** Zero. The agent has an API key but no direct knowledge of the secure execution environment or its rules.
-    - **Function:** Wraps the agent's intended tool calls and forwards them to the Interceptor for approval.
+    - **Function:**
+      - Initiates a secure session via `/session/start`.
+      - Wraps the agent's intended tool calls using the `SentinelClient`.
+      - Forwards tool execution requests to the Interceptor.
 
 2.  **Zone B: The Policy Enforcement Point (The Interceptor)**
 
-    - **Component:** `interceptor_service.py`
+    - **Component:** `sentinel-interceptor` (Rust)
     - **Trust Level:** High. This is the authoritative security engine.
     - **Function:**
-      - Authenticates the agent via its API key.
-      - Loads security rules from `policies.yaml`.
-      - Checks **Static Rules** (simple `ALLOW`/`DENY` on a tool).
-      - Checks **Dynamic Rules** by tracking the session's "taint state" in Redis (e.g., blocking a web search if the session has accessed sensitive data).
-      - If approved, mints a short-lived JSON Web Signature (JWS) token that cryptographically binds the permission to the exact tool arguments.
-      - Proxies the request and the JWS token to the secure execution environment.
+      - **Authentication:** Validates the `X-Sentinel-Key` header against Supabase `projects` table.
+      - **Configuration:** Loads granular Policies and Tool definitions dynamically from Supabase.
+      - **Session Security:** Generates a unique, ephemeral **Ed25519 keypair** for each session.
+      - **Handshake:** Registers the ephemeral public key with the MCP server upon session start.
+      - **Enforcement:** Checks **Static Rules** (ALLOW/DENY) and **Dynamic Taint Rules** (Redis-backed state).
+      - **Signing:** If approved, signs the request with the session-specific private key and forwards it to the MCP.
 
 3.  **Zone C: The Secure Execution Environment (The MCP)**
-    - **Component:** `mcp_server.py`
-    - **Trust Level:** Verified Execution Only. Trusts nothing but a valid token.
-    - **Protocol:** Implements JSON-RPC 2.0 at root endpoint (`/`) with methods `tools/list` and `tools/call`.
+    - **Component:** `mcp_server.py` (Python)
+    - **Trust Level:** Verified Execution Only. Trusts nothing but a valid token signed by the registered session key.
+    - **Protocol:** Custom JSON-RPC over HTTP.
     - **Function:**
-      - Verifies the JWS token's cryptographic signature using a public key.
-      - Performs replay protection by checking the token's nonce (`jti`) against a Redis cache.
-      - Validates parameter integrity by comparing a hash of the received arguments against the hash in the token, preventing in-transit tampering (TOCTOU attacks).
-      - Executes the tool **only if all checks pass**.
+      - **Dynamic Verification:** Verifies the JWT signature using the ephemeral public key registered for that specific session ID.
+      - **Replay Protection:** Ensures tokens are not reused.
+      - **Integrity:** Validates that arguments match the signed payload.
+      - **Execution:** Executes the tool **only if all checks pass**.
 
 ## Getting Started: End-to-End Local Setup
 
@@ -53,30 +56,25 @@ These instructions cover running the backend infrastructure (Interceptor, MCP, R
 
 ### Step 1: Configure Your Environment
 
-1.  **Create `.env` file:** Create a file named `.env` in the project root. This file holds your API keys. You must add your OpenRouter API key.
+1.  **Create `.env` file:** Create a file named `.env` in the project root. This file holds your API keys.
 
     ```ini
     # .env
-    SENTINEL_API_KEY="sk_live_demo_123"
+    SENTINEL_API_KEY="<your_supabase_api_key>"
     SENTINEL_URL="http://localhost:8000"
+    MCP_UPSTREAM_URL="http://localhost:9000"
+    SUPABASE_PROJECT_URL="https://<your-project>.supabase.co"
+    SUPABASE_SERVICE_ROLE_KEY="<your-service-role-key>"
+    
     OPENROUTER_API_KEY="YOUR_OPENROUTER_API_KEY_HERE"
     OPENROUTER_MODEL="qwen/qwen3-next-80b-a3b-instruct"
     ```
 
-2.  **Review `policies.yaml`:** This file defines all security rules. The default configuration is set up for the demo, including the API key `sk_live_demo_123`.
+2.  **Supabase Setup:** Ensure you have a Supabase project. The `projects` table must contain a record with your `api_key`.
 
-### Step 2: Generate Cryptographic Keys
+### Step 2: Supabase (Managed Configuration)
 
-The Interceptor and MCP use an Ed25519 keypair to sign and verify requests. Run these commands from the project root directory once to create the `sentinel_core/secrets` directory and the key files.
-
-```powershell
-python -m venv temp_env
-.\temp_env\Scripts\activate
-pip install cryptography
-python sentinel_core\keygen\src\key_gen.py
-deactivate
-Remove-Item -Recurse -Force temp_env
-```
+Sentinel uses Supabase for policy storage. Ensure your `projects` table has the required API key and JSON configurations. No manual key generation is needed; keys are ephemeral and managed automatically.
 
 ### Step 3: Run the Backend Services
 
@@ -90,137 +88,18 @@ docker-compose up --build
 
 **Option B: Running Services Separately** (Alternative)
 
-If you prefer not to use Docker, you can run each service separately using the provided shell scripts. This method works on Windows (Git Bash or PowerShell), macOS, and Linux.
-
-**Important for PowerShell Users:** PowerShell does not execute `.sh` files directly. You must either:
-
-- Use `bash scripts/script_name.sh` (recommended)
-- Use the PowerShell wrapper scripts: `.\scripts\script_name.ps1`
-
-**Prerequisites:**
-
-- Redis installed and running (see Redis setup below)
-- Python 3.10+ with a virtual environment activated
-- Cryptographic keys generated (see Step 2)
-
-**Setup Steps:**
-
-1. **Install Redis** (if not already installed):
-
-   - **Windows:** Install Redis via WSL (`wsl sudo apt-get install -y redis-server`) or download from [Redis for Windows](https://github.com/microsoftarchive/redis/releases)
-   - **macOS:** `brew install redis`
-   - **Linux:** `sudo apt-get install redis-server` (Debian/Ubuntu) or use your package manager
-
-2. **Create and activate a virtual environment** (if not already done):
-
-   ```bash
-   # Windows PowerShell
-   py -3.12 -m venv sentinel_env
-   .\sentinel_env\Scripts\activate
-
-   # Windows Git Bash / macOS / Linux
-   python3 -m venv sentinel_env
-   source sentinel_env/bin/activate  # or: . sentinel_env/bin/activate
-   ```
-
-3. **Install dependencies** (once, in the activated virtual environment):
-
-   ```bash
-   pip install -r sentinel_core/interceptor/python/requirements.txt
-   pip install -r sentinel_core/mcp/requirements.txt
-   ```
-
-4. **Start the services in separate terminals** (keep each terminal open):
-
-   **Important:** Run these commands from the project root directory (`sentinel`), not from inside the `scripts` folder.
-
-   **Terminal 1 - Redis:**
-
-   **Windows (PowerShell):**
-
-   ```powershell
-   bash scripts/start_redis.sh
-   # OR use PowerShell wrapper:
-   .\scripts\start_redis.ps1
-   ```
-
-   **Windows (Git Bash) / macOS / Linux:**
-
-   ```bash
-   ./scripts/start_redis.sh
-   ```
-
-   This script checks if Redis is running and provides installation instructions if not found.
-
-   **Terminal 2 - Interceptor:**
-
-   **Windows (PowerShell):**
-
-   ```powershell
-   # Make sure virtual environment is activated
-   .\sentinel_env\Scripts\Activate.ps1
-   bash scripts/start_interceptor.sh
-   # OR use PowerShell wrapper:
-   .\scripts\start_interceptor.ps1
-   ```
-
-   **Windows (Git Bash) / macOS / Linux:**
-
-   ```bash
-   # Make sure virtual environment is activated
-   source sentinel_env/bin/activate  # or: . sentinel_env/bin/activate
-   ./scripts/start_interceptor.sh
-   ```
-
-   The Interceptor will start on `http://localhost:8000`.
-
-   **Terminal 3 - MCP Server:**
-
-   **Windows (PowerShell):**
-
-   ```powershell
-   # Make sure virtual environment is activated
-   .\sentinel_env\Scripts\Activate.ps1
-   bash scripts/start_mcp.sh
-   # OR use PowerShell wrapper:
-   .\scripts\start_mcp.ps1
-   ```
-
-   **Windows (Git Bash) / macOS / Linux:**
-
-   ```bash
-   # Make sure virtual environment is activated
-   source sentinel_env/bin/activate  # or: . sentinel_env/bin/activate
-   ./scripts/start_mcp.sh
-   ```
-
-   The MCP server will start on `http://localhost:9000`.
-
-**Note:** The shell scripts automatically detect your Python environment, convert paths for cross-platform compatibility, and set required environment variables. They will display configuration information when starting.
-
-The services are now running. The Interceptor is available at `http://localhost:8000` and the MCP at `http://localhost:9000`. You can leave these terminals running.
+If you prefer not to use Docker, you can run each service separately using the provided shell scripts (available in `./scripts/`).
 
 ### Step 4: Set Up the Agent Environment
 
-In a **new terminal**, set up a clean Python 3.12 virtual environment. This is crucial for avoiding dependency conflicts.
+In a **new terminal**, set up a clean Python 3.12 virtual environment.
 
-1.  **Create the virtual environment:**
-
-    ```powershell
-    py -3.12 -m venv sentinel_env
-    ```
-
-2.  **Activate the environment:**
-
-    ```powershell
-    .\sentinel_env\Scripts\activate
-    ```
-
-3.  **Install dependencies:**
-    ```powershell
-    pip install -r requirements.txt
-    pip install -e sentinel_sdk -e sentinel_agent
-    ```
+```powershell
+py -3.12 -m venv sentinel_env
+.\sentinel_env\Scripts\activate
+pip install -r requirements.txt
+pip install -e sentinel_sdk -e sentinel_agent
+```
 
 ### Step 5: Run the Experiment Suite
 
@@ -230,91 +109,86 @@ With the backend running and the agent environment activated, execute the test s
 python sentinel_agent/examples/run_experiments.py
 ```
 
-You will see the formatted output for each of the four test scenarios, demonstrating the Sentinel system allowing, tainting, and blocking actions as designed.
-
 ### Step 6 (Optional): Interactive Conversational Mode
 
-For manual testing and interactive exploration of the security policies, you can use the `conversational_agent.py` script. This provides a professional, chat-like interface to talk directly with the Sentinel-secured agent.
+For manual testing:
 
-1.  **Ensure your backend is running** (`docker-compose up` or use the shell scripts from `./scripts/`).
-2.  **Activate the agent environment**:
-    ```powershell
-    .\sentinel_env\Scripts\activate
-    ```
-3.  **Run the Agent:**
+```powershell
+python sentinel_agent/examples/conversational_agent.py --verbose
+```
 
-    - **Default (Clean) Mode:** For a simple, clean chat experience.
-      ```powershell
-      python sentinel_agent/examples/conversational_agent.py
-      ```
-    - **Verbose (Debug) Mode:** To see the agent's full thought process, security checks, and detailed LLM inputs/outputs, use the `--verbose` flag.
-      ```powershell
-      python sentinel_agent/examples/conversational_agent.py --verbose
-      ```
+## System Configuration: Supabase
 
-## System Configuration: `policies.yaml`
+Sentinel's configuration is managed via Supabase.
 
-This file is the control plane for the entire security system.
+- **`projects` table**:
+   - `api_key`: The master key for the client.
+   - `tools`: JSONB column defining available tools and their input schemas.
+   - `policies`: JSONB column defining security rules.
 
-- **`customers`:** Defines API keys and maps them to a policy. The `mcp_upstream_url` should point to the MCP server root endpoint (e.g., `http://mcp_server:9000` for Docker or `http://localhost:9000` for local). The Interceptor communicates using JSON-RPC 2.0 protocol.
-- **`policies`:** A list of named policies that can be assigned to customers.
-  - **`static_rules`:** A simple map of `tool_name: ALLOW` or `tool_name: DENY`. Acts as a primary access control list.
-  - **`taint_rules`:** Defines the dynamic, stateful logic.
-    - **`ADD_TAINT`:** If `tool` is used, apply the specified `tag` to the session.
-    - **`CHECK_TAINT`:** Before allowing `tool` to run, check if the session has any of the `forbidden_tags`. If so, block the request and return the specified `error` message.
+- **Policies Structure**:
+   - **`staticRules`**: Key-value map of `tool_name: "ALLOW" | "DENY"`.
+   - **`taintRules`**: State-based rules.
+     - `ADD_TAINT`: Tags the session when a tool is used.
+     - `CHECK_TAINT`: Blocks execution if forbidden tags are present.
+     - `BLOCK_SECOND`: Advanced sequence blocking (e.g., Read Sensitive -> Write External).
 
 ## Tool Classification: `rule_maker`
 
-The `rule_maker` directory contains utilities for managing tool security classifications. Tools are classified into security classes (e.g., `SENSITIVE_READ`, `CONSEQUENTIAL_WRITE`, `HUMAN_VERIFY`) which are used by the interceptor to enforce policies.
-
-- **`tool_registry.yaml`:** Defines all tools with their security classes. The interceptor loads this file to determine tool classifications.
-- **Classifier:** LLM-based tool classification system for automatically categorizing new tools.
-- **MCP Import:** Bulk import tools from MCP (Model Context Protocol) format with automatic classification.
-
-**Quick Example:**
+The `rule_maker` utility aids in classifying new tools into security classes (e.g., `SENSITIVE_READ`, `CONSEQUENTIAL_WRITE`) using an LLM classifier. This classification populates the Supabase `tools` definitions.
 
 ```bash
-# Classify a single tool (requires OPENROUTER_API_KEY in .env)
 python rule_maker/src/classifier.py "send_email" "Sends email to recipient"
 ```
 
-For detailed documentation, see `rule_maker/docs/README.md` and `rule_maker/docs/QUICK_START.md`.
+For detailed documentation, see `rule_maker/docs/README.md`.
 
 ## Integration with Your Own Agent
 
-Integrating Sentinel into your own LangChain agent is straightforward.
+Integrating Sentinel into your own LangChain agent is seamless using the `SentinelClient`.
 
-1.  Ensure your agent's environment has access to the Sentinel source (`src`) or has it installed as a package.
-2.  Use the `load_sentinel_tools` function from `sentinel_agent.tool_loader` to create secure tool instances.
-3.  Set the `session_id` before starting your agent loop.
+1.  **Initialize the Client**: Use the async context manager to handle session lifecycle automatically.
+2.  **Fetch Tools**: `client.get_langchain_tools()` automatically converts policies into `StructuredTool` objects compatible with LangChain.
+3.  **Run Agent**: Pass these tools directly to your agent executor.
 
 **Example Code Snippet:**
 
 ```python
 import os
-import uuid
-from sentinel_agent.tool_loader import load_sentinel_tools
+from sentinel_sdk import SentinelClient
 from langchain.agents import AgentExecutor, create_react_agent
-from sentinel_sdk import SecurityBlockException
+from langchain_openai import ChatOpenAI
+from langchain_core.prompts import PromptTemplate
 
-API_KEY = os.getenv("SENTINEL_API_KEY")
-session_id = str(uuid.uuid4())
-secure_tools = load_sentinel_tools(api_key=API_KEY)
+async def main():
+    api_key = os.getenv("SENTINEL_API_KEY")
+    interceptor_url = os.getenv("SENTINEL_URL", "http://localhost:8000")
 
-for tool in secure_tools:
-    tool.set_session_id(session_id)
-
-agent = create_react_agent(llm, secure_tools, prompt)
-agent_executor = AgentExecutor(agent=agent, tools=secure_tools, handle_tool_error=True)
-agent_executor.invoke({"input": "Your user's first prompt"})
+    # SentinelClient manages the secure session handshake automatically
+    async with SentinelClient(api_key=api_key, base_url=interceptor_url) as client:
+        print(f"Secure Session ID: {client.session_id}")
+        
+        # 1. Get Secure Tools (Native LangChain Integration)
+        # These tools wrap the proxy call and handle JSON-RPC execution
+        tools = await client.get_langchain_tools()
+        
+        # 2. Setup your LangChain Agent
+        llm = ChatOpenAI(model="gpt-4", temperature=0)
+        prompt = PromptTemplate.from_template("Answer this: {input} using tools: {tools} ...")
+        
+        agent = create_react_agent(llm, tools, prompt)
+        agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
+        
+        # 3. Invoke
+        # The tool calls are now interceptor-proxied and policy-enforced!
+        await agent_executor.ainvoke({"input": "Read the production database configuration."})
 ```
 
 ## Next Steps & Refinements
 
-The current MVP is fully functional but can be hardened and scaled for production use.
+The current version establishes a robust Zero Trust foundation. Future improvements include:
 
-- **Dynamic Tool Loading:** Refactor `mcp_server.py` to dynamically load tool functions from a directory, rather than using hardcoded `if/else` statements.
-- **Structured Logging:** Replace all `print()` statements in the services with Python's `logging` module for production-grade, searchable logs.
-- **Agent Error Handling:** Refine the agent's prompt or the `AgentExecutor` configuration (`max_iterations`) to handle `SECURITY_BLOCK` errors more gracefully instead of retrying indefinitely.
-- **Implement mTLS:** For maximum security, the connection between the Interceptor and the MCP should be secured with mutual TLS (mTLS) in addition to the JWS token verification.
-- **Configuration Management:** For a large-scale deployment, policies in `policies.yaml` could be moved to a dedicated database or a service like HashiCorp Vault. 
+- **mTLS**: Securing the Interceptor-to-MCP link with mutual TLS.
+- **Agent SDK**: Expanding error handling and providing retry strategies for blocked actions.
+- **Dashboard**: A UI for viewing real-time session logs and policy violations (Audit Logs).
+- **Policy Versioning**: Tracking changes to policies over time in Supabase.
