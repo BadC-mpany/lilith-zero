@@ -6,7 +6,6 @@ $scriptDir = Split-Path -Parent $scriptPath
 $projectRoot = Split-Path -Parent (Split-Path -Parent $scriptDir)
 
 # Import Utils
-$envUtils = Join-Path $projectRoot "scripts\utils\env_utils.ps1"
 # Import Utils
 $envUtils = Join-Path $projectRoot "scripts\utils\env_utils.ps1"
 . $envUtils

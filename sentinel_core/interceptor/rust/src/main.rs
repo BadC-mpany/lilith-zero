@@ -3,8 +3,7 @@
 use sentinel_interceptor::api::{create_router, AppState, RedisStore as ApiRedisStore, ToolRegistry};
 use sentinel_interceptor::auth::audit_logger::AuditLogger;
 use sentinel_interceptor::auth::auth_middleware::AuthState;
-use sentinel_interceptor::auth::customer_store::{DbCustomerStore, YamlCustomerStore};
-use sentinel_interceptor::auth::policy_store::{DbPolicyStore, YamlPolicyStore};
+
 use sentinel_interceptor::config::{Config, RedisMode};
 use sentinel_interceptor::core::crypto::CryptoSigner;
 use sentinel_interceptor::core::models::{HistoryEntry, PolicyDefinition, ToolConfig};
@@ -250,30 +249,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         info!("Policy loader initialized");
     }
     
-    // 6. Initialize customer store (DB or YAML)
-    // Use references to avoid moving db_pool and policy_loader
-    let customer_store: Arc<dyn sentinel_interceptor::api::CustomerStore + Send + Sync> = 
-        if let Some(ref pool) = db_pool {
-            Arc::new(DbCustomerStore::new((**pool).clone()))
-        } else if let Some(ref loader) = policy_loader {
-            Arc::new(YamlCustomerStore::new((**loader).clone()))
-        } else {
-            return Err("Either DATABASE_URL or POLICIES_YAML_PATH must be set".into());
-        };
-    
-    info!("Customer store initialized");
-    
-    // 7. Initialize policy store (DB or YAML)
-    let policy_store: Arc<dyn sentinel_interceptor::api::PolicyStore + Send + Sync> = 
-        if let Some(ref pool) = db_pool {
-            Arc::new(DbPolicyStore::new((**pool).clone()))
-        } else if let Some(ref loader) = policy_loader {
-            Arc::new(YamlPolicyStore::new((**loader).clone()))
-        } else {
-            return Err("Either DATABASE_URL or POLICIES_YAML_PATH must be set".into());
-        };
-    
-    info!("Policy store initialized");
+
     
     // 8. Initialize tool registry
     let tool_registry_impl = Arc::new(
@@ -347,8 +323,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("Policy cache initialized");
     
     // 13. Initialize audit logger
+    // 13. Initialize audit logger
     let audit_logger = Arc::new(
-        AuditLogger::new()
+        AuditLogger::new(db_pool.clone())
     );
     
     info!("Audit logger initialized");
@@ -368,9 +345,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         policy_cache,
         evaluator,
         proxy_client,
-        customer_store,
-        policy_store,
-        tool_registry,
         customer_store,
         policy_store,
         tool_registry,

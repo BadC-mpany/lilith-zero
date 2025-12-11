@@ -418,8 +418,11 @@ pub async fn start_session_handler(
             )
         })?;
 
-    // 2. Lookup Project in Supabase
-    let project = app_state.supabase_client.get_project_config(api_key).await
+    // 2. Hash API Key & Lookup Project in Supabase
+    let api_key_obj = ApiKey::new(api_key);
+    let api_key_hash = api_key_obj.hash();
+
+    let project = app_state.supabase_client.get_project_config(api_key_hash.as_str()).await
         .map_err(|e| ApiError::from_interceptor_error_with_id(e, request_id.clone()))?;
 
     // 3. Generate Session ID

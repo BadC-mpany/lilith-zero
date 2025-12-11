@@ -1,16 +1,15 @@
 import logging
 import uuid
-import time
+import asyncio
 import argparse
 import langchain
+import os
 from typing import Dict, Any, List
 
 # Import modular components
-# Use proper package imports - packages are installed in editable mode
 from sentinel_agent import config
-from sentinel_agent.tool_loader import load_sentinel_tools
 from sentinel_agent.rich_callbacks import RichCallbackHandler, console
-from sentinel_sdk import SecurityBlockException
+from sentinel_sdk import SentinelClient
 
 # Import LangChain components
 from langchain.agents import AgentExecutor, create_react_agent
@@ -21,6 +20,7 @@ from langchain.memory import ConversationBufferWindowMemory
 # Import Rich components for manual panel rendering
 from rich.panel import Panel
 from rich.text import Text
+import httpx
 
 # --- Conversational Prompt Template ---
 CONVERSATIONAL_PROMPT_TEMPLATE = """
@@ -66,121 +66,118 @@ prompt = PromptTemplate.from_template(CONVERSATIONAL_PROMPT_TEMPLATE)
 
 # --- Main Application Logic ---
 
-
-def main(verbose: bool = False):
+async def main(verbose: bool = False):
     """
     Initializes a conversational agent for manual, interactive testing.
     Args:
         verbose: If True, enables rich callback logging and langchain debug mode.
     """
-    session_id = str(uuid.uuid4())
     console.print(f"--- Sentinel Conversational Agent ---", style="bold blue")
-    console.print(f"--- Session ID: {session_id} ---", style="blue")
     if verbose:
         console.print("[bold yellow]Verbose mode enabled.[/bold yellow]")
     console.print("Enter 'exit' or 'quit' to end the session.", style="italic")
     console.print("-" * 50)
 
-    # 1. Initialize Tools
-    sentinel_tools = load_sentinel_tools(api_key=config.SENTINEL_API_KEY)
-    for t in sentinel_tools:
-        t.set_session_id(session_id)
+    api_key = config.SENTINEL_API_KEY
+    if not api_key:
+        console.print("[bold red]Error: SENTINEL_API_KEY env var not set.[/bold red]")
+        return
 
-    # 2. Initialize LLM
-    llm = ChatOpenAI(
-        model=config.OPENROUTER_MODEL,
-        temperature=0,
-        openai_api_key=config.OPENROUTER_API_KEY,
-        base_url=config.OPENROUTER_BASE_URL
-    )
+    interceptor_url = config.SENTINEL_URL or "http://localhost:8000"
 
-    # 3. Initialize Memory & Conditional Callbacks
-    memory = ConversationBufferWindowMemory(k=4, memory_key="chat_history", input_key="input", output_key="output")
-    callbacks = [RichCallbackHandler()] if verbose else []
+    print(f"Connecting to Sentinel Interceptor at {interceptor_url}...")
 
-    # 4. Create Agent and Executor
-    agent = create_react_agent(llm, sentinel_tools, prompt)
-    agent_executor = AgentExecutor(
-        agent=agent,
-        tools=sentinel_tools,
-        verbose=False,  # Always False, callbacks handle printing
-        handle_parsing_errors="The agent's output was not understood. Please try again.",
-        memory=memory,
-        callbacks=callbacks,
-        max_iterations=7,
-        early_stopping_method="generate"
-    )
+    # 1. Start Session with SentinelClient
+    try:
+        async with SentinelClient(api_key=api_key, base_url=interceptor_url) as client:
+            session_id = client.session_id
+            console.print(f"[bold green]Session Started: {session_id}[/bold green]")
+            
+            # 2. Fetch Tools
+            sentinel_tools = await client.get_langchain_tools()
+            console.print(f"Loaded {len(sentinel_tools)} tools from Sentinel Policy.")
 
-    # 5. Start interactive loop
-    while True:
-        try:
-            user_input = console.input("\n[bold]You:[/bold] ")
-            if user_input.lower() in ["exit", "quit"]:
-                console.print("Ending session. Goodbye!", style="bold red")
-                break
-
-            result = agent_executor.invoke({"input": user_input})
-
-            # If not in verbose mode, we need to print the final answer manually.
-            if not verbose:
-                console.print(f"\n[bold green]Agent:[/bold green] {result.get('output', 'No output available.')}")
-
-        except SecurityBlockException as e:
-            # Deterministically handle and display the security block as a standard event.
-            error_panel = Panel(
-                Text(str(e.reason), style="white"),
-                title=f"[bold red]Security Block: Tool '{e.tool_name}' Denied[/bold red]",
-                border_style="red",
-                title_align="left"
+            # 3. Initialize LLM
+            llm = ChatOpenAI(
+                model=config.OPENROUTER_MODEL or "gpt-4o", # Default fallback
+                temperature=0,
+                openai_api_key=config.OPENROUTER_API_KEY,
+                base_url=config.OPENROUTER_BASE_URL
             )
-            console.print(error_panel)
-        except Exception as e:
-            console.print(f"\n[bold red]An unexpected application error occurred:[/bold red]\n {e}")
+
+            # 4. Initialize Memory & Callback
+            memory = ConversationBufferWindowMemory(k=4, memory_key="chat_history", input_key="input", output_key="output")
+            callbacks = [RichCallbackHandler()] if verbose else []
+
+            # 5. Create Agent
+            agent = create_react_agent(llm, sentinel_tools, prompt)
+            agent_executor = AgentExecutor(
+                agent=agent,
+                tools=sentinel_tools,
+                verbose=False,
+                handle_parsing_errors=True,
+                memory=memory,
+                callbacks=callbacks,
+                max_iterations=7
+            )
+
+            # 6. Interactive Loop
+            while True:
+                # Use executor to run blocking input
+                try:
+                    user_input = await asyncio.get_event_loop().run_in_executor(None, input, "\nYou: ")
+                except EOFError:
+                     break
+                     
+                if user_input.lower().strip() in ["exit", "quit"]:
+                    console.print("Ending session. Goodbye!", style="bold red")
+                    break
+
+                if not user_input.strip():
+                    continue
+
+                try:
+                    result = await agent_executor.ainvoke({"input": user_input})
+                    
+                    if not verbose:
+                        console.print(f"\n[bold green]Agent:[/bold green] {result.get('output', 'No output.')}")
+
+                except httpx.HTTPStatusError as e:
+                    if e.response.status_code == 403:
+                         # Security Block
+                         # Try to parse reason from response if possible
+                         try:
+                             detail = e.response.json().get("error", "Policy Violation")
+                         except:
+                             detail = str(e)
+                             
+                         error_panel = Panel(
+                            Text(detail, style="white"),
+                            title=f"[bold red]Security Blocked[/bold red]",
+                            border_style="red"
+                        )
+                         console.print(error_panel)
+                    else:
+                        console.print(f"[bold red]HTTP Error:[/bold red] {e}")
+                except Exception as e:
+                    console.print(f"[bold red]Error:[/bold red] {e}")
+
+    except Exception as e:
+        console.print(f"[bold red]Failed to initialize session:[/bold red] {e}")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run the Sentinel Conversational Agent.")
-    parser.add_argument(
-        "-v", "--verbose",
-        action="store_true",
-        help="Enable verbose logging to see the agent's thought process and full LLM I/O."
-    )
+    parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose logging.")
     args = parser.parse_args()
 
-    # --- Logging Configuration ---
-    # Get the root logger for our application module
+    # Logging config
     app_logger = logging.getLogger("sentinel-agent")
-
     if args.verbose:
-        # In verbose mode, enable full langchain debugging and app-level INFO logs
         langchain.debug = True
         app_logger.setLevel(logging.INFO)
     else:
-        # In silent mode, suppress all non-critical logs from our app and libraries
         app_logger.setLevel(logging.CRITICAL)
         logging.getLogger("httpx").setLevel(logging.CRITICAL)
 
-    console.print("[bold green]Verifying backend services are running...[/bold green]")
-    try:
-        import httpx
-        # Use longer timeout and check health endpoint
-        health_url = f"{config.SENTINEL_URL}/health"
-        response = httpx.get(health_url, timeout=10.0)
-        if response.status_code == 200:
-            console.print("[bold green]Sentinel Interceptor is reachable. Starting agent.[/bold green]")
-            time.sleep(1)
-            main(verbose=args.verbose)
-        else:
-            console.print(f"[bold red]CRITICAL ERROR: Sentinel Interceptor returned status {response.status_code}[/bold red]")
-            console.print(f"Please ensure services are running. Start with: .\\scripts\\start_all.ps1")
-    except ImportError as e:
-        console.print(f"[bold red]CRITICAL ERROR: Missing dependency: {e}[/bold red]")
-        console.print("Install dependencies with: pip install -r requirements.txt")
-    except httpx.RequestError as e:
-        console.print(f"[bold red]CRITICAL ERROR: Could not connect to the Sentinel Interceptor.[/bold red]")
-        console.print(f"URL: {config.SENTINEL_URL}")
-        console.print(f"Error: {e}")
-        console.print(f"Please ensure services are running. Start with: .\\scripts\\start_all.ps1")
-    except Exception as e:
-        console.print(f"[bold red]CRITICAL ERROR: Unexpected error: {e}[/bold red]")
-        console.print(f"Error type: {type(e).__name__}")
+    asyncio.run(main(verbose=args.verbose))

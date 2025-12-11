@@ -831,7 +831,7 @@ impl RedisStore {
             .set(&tools_key, tools_json)
             .expire(&tools_key, ttl_seconds as usize);
             
-        pipe.query_async(&mut *conn)
+        pipe.query_async::<_, ()>(&mut *conn)
             .await
             .map_err(|e| InterceptorError::StateError(format!("Failed to init session: {}", e)))?;
             
@@ -849,7 +849,7 @@ impl RedisStore {
         
         bb8_redis::redis::cmd("DEL")
             .arg(&[&policy_key, &tools_key, &taints_key, &history_key])
-            .query_async(&mut *conn)
+            .query_async::<_, ()>(&mut *conn)
             .await
             .map_err(|e| InterceptorError::StateError(format!("Failed to invalidate session: {}", e)))?;
             

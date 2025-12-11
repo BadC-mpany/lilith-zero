@@ -11,18 +11,18 @@ async def main():
     print("Initializing SentinelClient...")
     try:
         client = SentinelClient(api_key="test_key", base_url="http://localhost:8000")
-        print("✓ Client initialized successfully")
+        print("[OK] Client initialized successfully")
     except Exception as e:
-        print(f"✗ Client initialization failed: {e}")
+        print(f"[FAIL] Client initialization failed: {e}")
         return
 
     print("Checking method signatures...")
     methods = ["start_session", "stop_session", "get_tools_config", "execute_tool", "get_langchain_tools"]
     for method in methods:
         if hasattr(client, method):
-             print(f"✓ Method '{method}' exists")
+             print(f"[OK] Method '{method}' exists")
         else:
-             print(f"✗ Method '{method}' MISSING")
+             print(f"[FAIL] Method '{method}' MISSING")
 
     print("\nVerification (Static) Complete.")
 
