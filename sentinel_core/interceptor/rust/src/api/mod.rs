@@ -11,9 +11,10 @@ pub mod handlers;
 pub mod middleware;
 pub mod responses;
 
+use crate::core::models::{CustomerConfig, PolicyDefinition, Decision, ToolConfig};
 use crate::core::crypto::CryptoSigner;
-use crate::core::models::{CustomerConfig, PolicyDefinition, Decision};
 use crate::core::errors::InterceptorError;
+use crate::infra::supabase::SupabaseClient;  // Import SupabaseClient
 
 /// Application state containing all shared dependencies
 /// 
@@ -31,6 +32,7 @@ pub struct AppState {
     pub customer_store: Arc<dyn CustomerStore + Send + Sync>,
     pub policy_store: Arc<dyn PolicyStore + Send + Sync>,
     pub tool_registry: Arc<dyn ToolRegistry + Send + Sync>,
+    pub supabase_client: Arc<SupabaseClient>, // Add Supabase Client
     pub config: Arc<Config>,
 }
 
@@ -44,6 +46,12 @@ pub trait RedisStore: Send + Sync {
     async fn get_session_history(&self, session_id: &str) -> Result<Vec<crate::core::models::HistoryEntry>, InterceptorError>;
     async fn get_session_context(&self, session_id: &str) -> Result<(Vec<String>, Vec<crate::core::models::HistoryEntry>), InterceptorError>;
     async fn ping(&self) -> Result<(), InterceptorError>;
+    
+    // Session Lifecycle Methods
+    async fn init_session(&self, session_id: &str, policy: &PolicyDefinition, tools: &Vec<ToolConfig>, ttl_seconds: u64) -> Result<(), InterceptorError>;
+    async fn invalidate_session(&self, session_id: &str) -> Result<(), InterceptorError>;
+    async fn get_session_policy(&self, session_id: &str) -> Result<Option<PolicyDefinition>, InterceptorError>;
+    async fn get_session_tools(&self, session_id: &str) -> Result<Option<Vec<ToolConfig>>, InterceptorError>;
 }
 
 /// Trait for policy cache operations
@@ -122,6 +130,9 @@ pub fn create_router(
     
     let mut router = Router::new()
         .route("/v1/proxy-execute", axum::routing::post(handlers::proxy_execute_handler))
+        .route("/v1/session/start", axum::routing::post(handlers::start_session_handler))
+        .route("/v1/session/stop", axum::routing::post(handlers::stop_session_handler))
+        .route("/v1/tools/list", axum::routing::post(handlers::list_tools_handler))
         .route("/v1/policy", axum::routing::get(handlers::policy_introspection_handler))
         .route("/health", axum::routing::get(handlers::health_handler))
         .route("/metrics", axum::routing::get(handlers::metrics_handler));

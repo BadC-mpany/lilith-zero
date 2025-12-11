@@ -165,3 +165,17 @@ pub struct HistoryEntry {
     pub classes: Vec<String>,
     pub timestamp: f64,
 }
+
+/// Tool configuration (schema and metadata)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolConfig {
+    pub name: String,
+    pub description: String,
+    #[serde(rename = "inputSchema")]
+    pub input_schema: serde_json::Value,
+    #[serde(default)]
+    pub severity: String,
+    #[serde(default)]
+    #[serde(rename = "taintClass")]
+    pub taint_class: Option<String>,
+}

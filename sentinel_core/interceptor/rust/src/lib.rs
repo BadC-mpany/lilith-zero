@@ -8,5 +8,6 @@ pub mod auth;
 pub mod api;
 pub mod proxy;
 pub mod config;
+pub mod infra;
 pub mod utils;
 

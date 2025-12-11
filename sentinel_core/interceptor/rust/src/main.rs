@@ -7,8 +7,10 @@ use sentinel_interceptor::auth::customer_store::{DbCustomerStore, YamlCustomerSt
 use sentinel_interceptor::auth::policy_store::{DbPolicyStore, YamlPolicyStore};
 use sentinel_interceptor::config::{Config, RedisMode};
 use sentinel_interceptor::core::crypto::CryptoSigner;
-use sentinel_interceptor::core::models::HistoryEntry;
+use sentinel_interceptor::core::models::{HistoryEntry, PolicyDefinition, ToolConfig};
 use sentinel_interceptor::loader::policy_loader::PolicyLoader;
+use sentinel_interceptor::infra::supabase::SupabaseClient; // Import SupabaseClient
+use sentinel_interceptor::infra::supabase_store::SupabaseStore; // Import SupabaseStore
 use sentinel_interceptor::loader::tool_registry::ToolRegistry as ToolRegistryImpl;
 use sentinel_interceptor::proxy::ProxyClientImpl;
 use sentinel_interceptor::state::redis_store::RedisStore as RedisStoreImpl;
@@ -70,11 +72,23 @@ impl ApiRedisStore for RedisStoreAdapter {
     }
     
     async fn ping(&self) -> Result<(), InterceptorError> {
-        // Use proper Redis PING command for reliable health checks
-        // This avoids issues with broken connections and provides better error handling
-        self.inner
-            .ping()
-            .await
+        self.inner.ping().await
+    }
+    
+    async fn init_session(&self, session_id: &str, policy: &PolicyDefinition, tools: &Vec<ToolConfig>, ttl_seconds: u64) -> Result<(), InterceptorError> {
+        self.inner.init_session(session_id, policy, tools, ttl_seconds).await
+    }
+    
+    async fn invalidate_session(&self, session_id: &str) -> Result<(), InterceptorError> {
+        self.inner.invalidate_session(session_id).await
+    }
+    
+    async fn get_session_policy(&self, session_id: &str) -> Result<Option<PolicyDefinition>, InterceptorError> {
+        self.inner.get_session_policy(session_id).await
+    }
+
+    async fn get_session_tools(&self, session_id: &str) -> Result<Option<Vec<ToolConfig>>, InterceptorError> {
+        self.inner.get_session_tools(session_id).await
     }
 }
 
@@ -309,6 +323,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     info!("Proxy client initialized");
     
+    // 11.5 Initialize Supabase Client & Store
+    let supabase_client = Arc::new(SupabaseClient::new(
+        config.supabase_project_url.clone(),
+        config.supabase_service_role_key.clone(),
+    ));
+    info!("Supabase client initialized");
+
+    let supabase_store = Arc::new(SupabaseStore::new(supabase_client.clone()));
+    let customer_store: Arc<dyn sentinel_interceptor::api::CustomerStore + Send + Sync> = supabase_store.clone();
+    let policy_store: Arc<dyn sentinel_interceptor::api::PolicyStore + Send + Sync> = supabase_store.clone();
+    info!("Supabase store initialized (Customer + Policy)");
+    
     // 12. Initialize policy cache (Moka-based with 60s TTL, 1000 capacity)
     let policy_cache = Arc::new(
         MokaPolicyCache::new(
@@ -322,7 +348,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     // 13. Initialize audit logger
     let audit_logger = Arc::new(
-        AuditLogger::new(db_pool.clone())
+        AuditLogger::new()
     );
     
     info!("Audit logger initialized");
@@ -345,6 +371,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         customer_store,
         policy_store,
         tool_registry,
+        customer_store,
+        policy_store,
+        tool_registry,
+        supabase_client,
         config: Arc::new(config.clone()),
     };
     

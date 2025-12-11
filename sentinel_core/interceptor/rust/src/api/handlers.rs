@@ -13,7 +13,9 @@ use tracing::{debug, error, info, warn};
 use crate::api::responses::{ApiError, HealthResponse, ProxyResponse};
 use crate::api::{AppState, PolicyDefinition};
 use crate::core::errors::InterceptorError;
-use crate::core::models::{CustomerConfig, Decision, ProxyRequest};
+use crate::core::models::{CustomerConfig, Decision, ProxyRequest, SessionId};
+use crate::auth::api_key::ApiKey;
+use serde_json::json;
 
 /// Main handler for proxy execute endpoint
 /// 
@@ -393,4 +395,112 @@ pub async fn metrics_handler() -> Result<String, ApiError> {
     // TODO: Implement Prometheus metrics collection
     // For now, return empty metrics
     Ok("# Sentinel Interceptor Metrics\n# TODO: Implement metrics collection\n".to_string())
+}
+
+/// Start a new session
+/// 
+/// POST /v1/session/start
+/// Header: X-Sentinel-Key
+pub async fn start_session_handler(
+    State(app_state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let request_id = uuid::Uuid::new_v4().to_string();
+
+    // 1. Extract API Key (Direct extraction as this is a public endpoint regarding auth middleware)
+    let api_key = headers
+        .get("x-sentinel-key")
+        .and_then(|v| v.to_str().ok())
+        .ok_or_else(|| {
+            ApiError::from_interceptor_error_with_id(
+                InterceptorError::AuthenticationError("Missing X-Sentinel-Key header".to_string()),
+                request_id.clone(),
+            )
+        })?;
+
+    // 2. Lookup Project in Supabase
+    let project = app_state.supabase_client.get_project_config(api_key).await
+        .map_err(|e| ApiError::from_interceptor_error_with_id(e, request_id.clone()))?;
+
+    // 3. Generate Session ID
+    let session_id = SessionId::generate();
+    let session_id_str: String = session_id.into();
+
+    // 4. Determine Policy (First one or default)
+    let active_policy = project.policies.first().ok_or_else(|| {
+        ApiError::from_interceptor_error_with_id(
+            InterceptorError::ConfigurationError("No policies found for project".to_string()),
+            request_id.clone(),
+        )
+    })?;
+
+    // 5. Initialize Session in Redis (TTL 1 hour)
+    app_state.redis_store.init_session(&session_id_str, active_policy, &project.tools, 3600).await
+        .map_err(|e| ApiError::from_interceptor_error_with_id(e, request_id.clone()))?;
+
+    info!(session_id = %session_id_str, "Session started");
+
+    Ok(Json(json!({
+        "session_id": session_id_str,
+        "valid_until": "1h" // ISO timestamp would be better but keeping simple
+    })))
+}
+
+/// Stop a session
+/// 
+/// POST /v1/session/stop
+/// Body: { "session_id": "..." }
+pub async fn stop_session_handler(
+    State(app_state): State<AppState>,
+    Json(payload): Json<serde_json::Value>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let session_id = payload.get("session_id")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| ApiError::from_interceptor_error_with_id(InterceptorError::ValidationError("Missing session_id".to_string()), "unknown".to_string()))?;
+
+    app_state.redis_store.invalidate_session(session_id).await
+        .map_err(|e| ApiError::from_interceptor_error_with_id(e, session_id.to_string()))?;
+
+    info!(session_id = %session_id, "Session stopped");
+
+    Ok(Json(json!({"status": "ok"})))
+}
+
+/// List available tools for a session
+/// 
+/// POST /v1/tools/list
+/// Body: { "session_id": "..." }
+pub async fn list_tools_handler(
+    State(app_state): State<AppState>,
+    Json(payload): Json<serde_json::Value>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let request_id = uuid::Uuid::new_v4().to_string();
+    let session_id = payload.get("session_id")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| ApiError::from_interceptor_error_with_id(InterceptorError::ValidationError("Missing session_id".to_string()), request_id.clone()))?;
+
+    // Get Tools from Redis
+    let tools_opt = app_state.redis_store.get_session_tools(session_id).await
+        .map_err(|e| ApiError::from_interceptor_error_with_id(e, request_id.clone()))?;
+
+    let tools = tools_opt.ok_or_else(|| {
+        ApiError::from_interceptor_error_with_id(
+             InterceptorError::AuthenticationError("Tools not found for this session".to_string()),
+             request_id.clone()
+        )
+    })?;
+    
+    // Filter tools based on policy if needed?
+    // Policy has static_rules ALLOW/DENY.
+    // We should only return ALLOWed tools?
+    // User Plan: "Interceptor fetches policies (JSON) and tools (JSON) ... agent calls SDK.tool() ... Interceptor checks validity".
+    // Listing tools should probably filter.
+    // The policy object is available via `get_session_policy` if we want to filter.
+    // Let's assume we return all defined tools, and the Agent/SDK filters or Interceptor blocks usage.
+    // But helpfulness => Filter.
+    // For now, returning all cached tools is a good start.
+
+    Ok(Json(json!({
+        "tools": tools
+    })))
 }

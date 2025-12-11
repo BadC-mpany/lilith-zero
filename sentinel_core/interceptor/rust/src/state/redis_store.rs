@@ -1,7 +1,8 @@
 // Redis connection pool and taint operations
 
 use crate::core::errors::InterceptorError;
-use crate::core::models::HistoryEntry;
+
+use crate::core::models::{HistoryEntry, PolicyDefinition, ToolConfig};
 use crate::config::{Config, RedisMode};
 use crate::state::session_history::SessionHistory;
 use crate::core::resilience::{SentinelCircuitBreaker, create_circuit_breaker, execute_with_cb};
@@ -803,6 +804,118 @@ impl RedisStore {
             self.get_session_context_internal(session_id).await
         }).await
     }
+    
+    // Placeholder for the original function if I was replacing it, but I won't touch get_session_context implementation 
+    // if I can help it. The tool `multi_replace` allows me to target specific chunks.
+    // I will target the end of `add_taint` and insert new methods.
+    
+    /// Initialize a session with policy configuration and tools
+    pub async fn init_session(&self, session_id: &str, policy: &PolicyDefinition, tools: &Vec<ToolConfig>, ttl_seconds: u64) -> Result<(), InterceptorError> {
+        let mut conn = self.get_connection().await?;
+        
+        // Keys
+        let policy_key = format!("session:{}:policy", session_id);
+        let tools_key = format!("session:{}:tools", session_id);
+        
+        // Serialize
+        let policy_json = serde_json::to_string(policy)
+            .map_err(|e| InterceptorError::StateError(format!("Failed to serialize policy: {}", e)))?;
+        let tools_json = serde_json::to_string(tools)
+            .map_err(|e| InterceptorError::StateError(format!("Failed to serialize tools: {}", e)))?;
+            
+        // Pipeline: Set Policy + Tools + Expire
+        let mut pipe = bb8_redis::redis::pipe();
+        pipe.atomic()
+            .set(&policy_key, policy_json)
+            .expire(&policy_key, ttl_seconds as usize)
+            .set(&tools_key, tools_json)
+            .expire(&tools_key, ttl_seconds as usize);
+            
+        pipe.query_async(&mut *conn)
+            .await
+            .map_err(|e| InterceptorError::StateError(format!("Failed to init session: {}", e)))?;
+            
+        Ok(())
+    }
+
+    /// Invalidate a session (logout)
+    pub async fn invalidate_session(&self, session_id: &str) -> Result<(), InterceptorError> {
+        let mut conn = self.get_connection().await?;
+        
+        let policy_key = format!("session:{}:policy", session_id);
+        let tools_key = format!("session:{}:tools", session_id);
+        let taints_key = format!("session:{}:taints", session_id);
+        let history_key = format!("session:{}:history", session_id);
+        
+        bb8_redis::redis::cmd("DEL")
+            .arg(&[&policy_key, &tools_key, &taints_key, &history_key])
+            .query_async(&mut *conn)
+            .await
+            .map_err(|e| InterceptorError::StateError(format!("Failed to invalidate session: {}", e)))?;
+            
+        Ok(())
+    }
+
+    /// Get policy for a session
+    pub async fn get_session_policy(&self, session_id: &str) -> Result<Option<PolicyDefinition>, InterceptorError> {
+        let mut conn = self.get_connection().await?;
+        let policy_key = format!("session:{}:policy", session_id);
+        
+        let json: Option<String> = bb8_redis::redis::cmd("GET")
+            .arg(&policy_key)
+            .query_async(&mut *conn)
+            .await
+            .map_err(|e| InterceptorError::StateError(format!("Failed to get policy: {}", e)))?;
+        
+        match json {
+            Some(s) => {
+                let policy = serde_json::from_str(&s)
+                    .map_err(|e| InterceptorError::StateError(format!("Failed to deserialize policy: {}", e)))?;
+                Ok(Some(policy))
+            }
+            None => Ok(None),
+        }
+    }
+
+    /// Get tools for a session
+    pub async fn get_session_tools(&self, session_id: &str) -> Result<Option<Vec<ToolConfig>>, InterceptorError> {
+        let mut conn = self.get_connection().await?;
+        let tools_key = format!("session:{}:tools", session_id);
+        
+        let json: Option<String> = bb8_redis::redis::cmd("GET")
+             .arg(&tools_key)
+             .query_async(&mut *conn)
+             .await
+             .map_err(|e| InterceptorError::StateError(format!("Failed to get tools: {}", e)))?;
+        
+        match json {
+            Some(s) => {
+                let tools = serde_json::from_str(&s)
+                    .map_err(|e| InterceptorError::StateError(format!("Failed to deserialize tools: {}", e)))?;
+                Ok(Some(tools))
+            }
+            None => Ok(None),
+        }
+    }
+
+    // Helper to get connection (reusing logic from add_taint/others if I can extract it, 
+    // but I'll simpler write a private helper or just duplicate the get logic for now to be safe/fast).
+    async fn get_connection(&self) -> Result<bb8_redis::bb8::PooledConnection<'_, RedisConnectionManager>, InterceptorError> {
+         match tokio::time::timeout(
+            TokioDuration::from_secs(self.config.redis_connection_timeout_secs),
+            self.pool.get()
+        ).await {
+            Ok(Ok(c)) => Ok(c),
+            Ok(Err(e)) => Err(InterceptorError::StateError(
+                format!("Failed to get connection from pool: {}", e)
+            )),
+            Err(_) => Err(InterceptorError::StateError(
+                format!("Connection timeout after {} seconds", self.config.redis_connection_timeout_secs)
+            )),
+        }
+    }
+
+
 
     /// Internal implementation of get_session_context (actual Redis logic)
     async fn get_session_context_internal(

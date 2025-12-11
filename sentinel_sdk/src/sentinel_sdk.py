@@ -1,170 +1,164 @@
-import os
-import json
-import logging
-from typing import Optional, Any
 import httpx
+import os
+import logging
+from typing import List, Optional, Any, Dict, Union
+from contextlib import asynccontextmanager
 
-# Import Pydantic v1 components from langchain_core for compatibility with BaseTool
-from langchain_core.pydantic_v1 import BaseModel, Field
-from langchain_core.tools import BaseTool, ToolException
+logger = logging.getLogger("sentinel_sdk")
 
-# --- LOGGING CONFIGURATION ---
-logger = logging.getLogger(__name__)
-
-
-class SecurityBlockException(ToolException):
+class SentinelClient:
     """
-    Exception raised when a security policy blocks a tool execution.
-    This is a permanent denial - the agent should not retry.
+    Minimalist Sentinel Client for secure AI agent sessions.
+    
+    Usage:
+        async with SentinelClient(api_key="...", url="...") as client:
+            tools = await client.get_langchain_tools()
+            agent = create_agent(llm, tools, ...)
+            await agent.ainvoke(...)
     """
+    
+    def __init__(self, api_key: Optional[str] = None, base_url: str = "http://localhost:8000"):
+        self.api_key = api_key or os.getenv("SENTINEL_API_KEY")
+        if not self.api_key:
+            raise ValueError("SENTINEL_API_KEY must be provided")
+        
+        self.base_url = base_url.rstrip("/")
+        self.session_id: Optional[str] = None
+        self.http_client = httpx.AsyncClient(
+            base_url=self.base_url,
+            headers={"X-Sentinel-Key": self.api_key},
+            timeout=30.0
+        )
 
-    def __init__(self, message: str, tool_name: str, reason: str):
-        # The 'message' is what the LLM will see.
-        super().__init__(f"Tool '{tool_name}' was blocked by a security policy. Reason: {reason}")
-        self.tool_name = tool_name
-        self.reason = reason
+    async def __aenter__(self):
+        await self.start_session()
+        return self
 
-
-class SentinelSecureTool(BaseTool):
-    """
-    A robust tool wrapper that correctly handles multiple LangChain invocation patterns.
-    """
-    name: str = Field(..., description="The name of the tool.")
-    description: str = Field(..., description="A description of the tool.")
-    args_schema: Optional[type[BaseModel]] = Field(None, description="The Pydantic model for the tool's arguments.")
-
-    # These are managed internally and are not part of the Pydantic model state.
-    _api_key: Optional[str]
-    _interceptor_url: str
-    _session_id: Optional[str]
-
-    def __init__(self, **data: Any):
-        super().__init__(**data)
-        # Use object.__setattr__ to set these attributes without triggering Pydantic validation
-        object.__setattr__(self, "_api_key", os.getenv("SENTINEL_API_KEY"))
-        object.__setattr__(self, "_interceptor_url", os.getenv("SENTINEL_URL", "http://localhost:8000"))
-        object.__setattr__(self, "_session_id", None)
-        if not self._api_key:
-            raise ValueError("Environment Error: SENTINEL_API_KEY is missing or not set.")
-
-    def set_session_id(self, session_id: str):
-        object.__setattr__(self, "_session_id", session_id)
-
-    def _parse_input(self, *args: Any, **kwargs: Any) -> dict:
-        """
-        Universally handles arguments, whether they are passed positionally
-        (as a single dict or JSON string) or as keyword arguments.
-        """
-        if kwargs:
-            return kwargs
-        if args:
-            tool_input = args[0]
-            if isinstance(tool_input, dict):
-                return tool_input
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        if self.session_id:
             try:
-                # Agent is passing a JSON string
-                return json.loads(tool_input)
-            except (json.JSONDecodeError, TypeError):
-                # Agent is passing a raw string, wrap it in the schema
-                if self.args_schema and len(self.args_schema.__fields__) == 1:
-                    field_name = list(self.args_schema.__fields__.keys())[0]
-                    return {field_name: tool_input}
-                else:
-                    raise ValueError(f"Received a non-JSON string '{tool_input}' and could not map it to the tool schema.")
-        return {}
+                await self.stop_session()
+            except Exception as e:
+                logger.error(f"Failed to stop session: {e}", exc_info=True)
+                # Don't suppress exception
 
-    def _run(self, *args: Any, **kwargs: Any) -> str:
-        if self._session_id is None:
-            raise ValueError("Session ID must be set before running the tool.")
-
+    async def start_session(self) -> str:
+        """Start a new secure session."""
         try:
-            args_dict = self._parse_input(*args, **kwargs)
-        except ValueError as e:
-            return f"Input Parsing Error: {e}"
+            response = await self.http_client.post("/v1/session/start")
+            response.raise_for_status()
+            data = response.json()
+            self.session_id = data["session_id"]
+            logger.info(f"Sentinel session started: {self.session_id}")
+            return self.session_id
+        except httpx.HTTPError as e:
+            logger.error(f"Failed to start session: {e}")
+            raise
 
-        payload = {"session_id": self._session_id, "tool_name": self.name, "args": args_dict}
-        headers = {"X-API-Key": self._api_key, "Content-Type": "application/json"}
-
+    async def stop_session(self):
+        """Stop the current session."""
+        if not self.session_id:
+            return
+            
         try:
-            with httpx.Client() as client:
-                response = client.post(f"{self._interceptor_url}/v1/proxy-execute", json=payload, headers=headers, timeout=10)  # timeout is 10 seconds. let's do a default, with user-configurable timeout.
-                response.raise_for_status()
-                
-                # Check if response has content
-                if not response.content:
-                    logger.error(f"Empty response from interceptor for tool '{self.name}'")
-                    return "Result: Empty response from server"
-                
-                # Parse JSON response
-                try:
-                    response_data = response.json()
-                    # Handle both direct result and wrapped result formats
-                    if isinstance(response_data, dict) and "result" in response_data:
-                        return str(response_data["result"])
-                    return str(response_data)
-                except json.JSONDecodeError as e:
-                    logger.error(f"Invalid JSON response from interceptor for tool '{self.name}': {response.text}")
-                    return f"Result: Invalid JSON response from server: {response.text[:200]}"
-                    
-        except httpx.HTTPStatusError as e:
-            try:
-                detail = e.response.json().get('detail', e.response.text) if e.response.content else "Unknown error"
-            except:
-                detail = e.response.text if e.response.content else "Unknown error"
-            logger.warning(f"Access Denied for tool '{self.name}': {detail}")
-            raise SecurityBlockException(
-                message=f"Tool '{self.name}' was blocked by a security policy.",
-                tool_name=self.name,
-                reason=detail
+            await self.http_client.post("/v1/session/stop", json={"session_id": self.session_id})
+            logger.info(f"Sentinel session stopped: {self.session_id}")
+            self.session_id = None
+        except httpx.HTTPError as e:
+            logger.error(f"Failed to stop session: {e}")
+            raise
+
+    async def get_tools_config(self) -> List[Dict[str, Any]]:
+        """Fetch raw tool configurations allowed for this session."""
+        if not self.session_id:
+            raise RuntimeError("Session not started")
+            
+        response = await self.http_client.post("/v1/tools/list", json={"session_id": self.session_id})
+        response.raise_for_status()
+        data = response.json()
+        return data.get("tools", [])
+
+    async def execute_tool(self, tool_name: str, args: Dict[str, Any]) -> Any:
+        """Execute a tool via the Sentinel Proxy."""
+        if not self.session_id:
+            raise RuntimeError("Session not started")
+            
+        payload = {
+            "session_id": self.session_id,
+            "tool_name": tool_name,
+            "args": args
+        }
+        
+        response = await self.http_client.post("/v1/proxy-execute", json=payload)
+        response.raise_for_status()
+        result = response.json()
+        return result.get("result")
+
+    # --- Integrations ---
+
+    async def get_langchain_tools(self):
+        """Convert Sentinel tools to LangChain compatible tools."""
+        try:
+            from langchain_core.tools import StructuredTool
+        except ImportError:
+            raise ImportError("langchain-core is required for get_langchain_tools")
+
+        configs = await self.get_tools_config()
+        tools = []
+        
+        for config in configs:
+            name = config["name"]
+            description = config["description"]
+            
+            # Create a closure to capture the tool name
+            async def _tool_func(tool_name=name, **kwargs):
+                return await self.execute_tool(tool_name, kwargs)
+            
+            # Pydantic schema generation from JSON Schema is complex dynamically.
+            # LangChain's StructuredTool expects a Pydantic model for args_schema.
+            # We can use the JSON schema directly if we infer a dynamic model,
+            # or we rely on LangChain's ability to infer from function signature (which is **kwargs here, so weak).
+            
+            # Better approach: Create a dynamic Pydantic model from the input_schema.
+            # Minimal implementation:
+            args_schema = self._create_pydantic_model(name, config.get("inputSchema", {}))
+            
+            tool = StructuredTool.from_function(
+                coroutine=_tool_func,
+                name=name,
+                description=description,
+                args_schema=args_schema,
             )
-        except Exception as e:
-            logger.error(f"An unexpected system error occurred while running tool '{self.name}': {e}", exc_info=True)
-            return f"Result: SYSTEM_ERROR: {str(e)}"
+            tools.append(tool)
+            
+        return tools
 
-    async def _arun(self, *args: Any, **kwargs: Any) -> str:
-        if self._session_id is None:
-            raise ValueError("Session ID must be set before running the tool.")
-
+    def _create_pydantic_model(self, name: str, json_schema: Dict[str, Any]):
         try:
-            args_dict = self._parse_input(*args, **kwargs)
-        except ValueError as e:
-            return f"Input Parsing Error: {e}"
+            from pydantic import create_model, Field
+        except ImportError:
+             raise ImportError("pydantic is required for tool schema generation")
 
-        payload = {"session_id": self._session_id, "tool_name": self.name, "args": args_dict}
-        headers = {"X-API-Key": self._api_key, "Content-Type": "application/json"}
+        fields = {}
+        properties = json_schema.get("properties", {})
+        required = set(json_schema.get("required", []))
+        
+        for field_name, field_info in properties.items():
+            field_type = str
+            if field_info.get("type") == "integer":
+                field_type = int
+            elif field_info.get("type") == "boolean":
+                field_type = bool
+            elif field_info.get("type") == "number":
+                field_type = float
+            elif field_info.get("type") == "array":
+                field_type = list
+            elif field_info.get("type") == "object":
+                field_type = dict
 
-        try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(f"{self._interceptor_url}/v1/proxy-execute", json=payload, headers=headers, timeout=10)
-                response.raise_for_status()
-                
-                # Check if response has content
-                if not response.content:
-                    logger.error(f"Empty response from interceptor for tool '{self.name}'")
-                    return "Result: Empty response from server"
-                
-                # Parse JSON response
-                try:
-                    response_data = response.json()
-                    # Handle both direct result and wrapped result formats
-                    if isinstance(response_data, dict) and "result" in response_data:
-                        return str(response_data["result"])
-                    return str(response_data)
-                except json.JSONDecodeError as e:
-                    logger.error(f"Invalid JSON response from interceptor for tool '{self.name}': {response.text}")
-                    return f"Result: Invalid JSON response from server: {response.text[:200]}"
-                    
-        except httpx.HTTPStatusError as e:
-            try:
-                detail = e.response.json().get('detail', e.response.text) if e.response.content else "Unknown error"
-            except:
-                detail = e.response.text if e.response.content else "Unknown error"
-            logger.warning(f"(Async) Access Denied for tool '{self.name}': {detail}")
-            raise SecurityBlockException(
-                message=f"Tool '{self.name}' was blocked by a security policy.",
-                tool_name=self.name,
-                reason=detail
-            )
-        except Exception as e:
-            logger.error(f"(Async) An unexpected system error occurred while running tool '{self.name}': {e}", exc_info=True)
-            return f"Result: SYSTEM_ERROR: {str(e)}"
+            is_required = field_name in required
+            default = ... if is_required else None
+            
+            fields[field_name] = (field_type, Field(default=default, description=field_info.get("description", "")))
+        
+        return create_model(f"{name}Schema", **fields)

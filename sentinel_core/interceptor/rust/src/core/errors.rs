@@ -9,6 +9,18 @@ pub enum InterceptorError {
     #[error("Invalid API Key")]
     InvalidApiKey,
 
+    /// Authentication error (HTTP 401)
+    #[error("Authentication error: {0}")]
+    AuthenticationError(String),
+
+    /// Validation error (HTTP 400)
+    #[error("Validation error: {0}")]
+    ValidationError(String),
+
+    /// Infrastructure error (HTTP 503)
+    #[error("Infrastructure error: {0}")]
+    InfrastructureError(String),
+
     /// Policy violation (HTTP 403)
     #[error("Policy violation: {0}")]
     PolicyViolation(String),
@@ -65,6 +77,9 @@ impl InterceptorError {
     pub fn status_code(&self) -> u16 {
         match self {
             InterceptorError::InvalidApiKey => 401,
+            InterceptorError::AuthenticationError(_) => 401,
+            InterceptorError::ValidationError(_) => 400,
+            InterceptorError::InfrastructureError(_) => 503,
             InterceptorError::PolicyViolation(_) => 403,
             InterceptorError::CryptoError(_) => 500,
             InterceptorError::McpProxyError(_) => 502,
@@ -79,6 +94,9 @@ impl InterceptorError {
     pub fn user_message(&self) -> String {
         match self {
             InterceptorError::InvalidApiKey => "Invalid API Key".to_string(),
+            InterceptorError::AuthenticationError(reason) => format!("Authentication failed: {}", reason),
+            InterceptorError::ValidationError(reason) => format!("Validation failed: {}", reason),
+            InterceptorError::InfrastructureError(_) => "Service unavailable".to_string(),
             InterceptorError::PolicyViolation(reason) => format!("Policy violation: {}", reason),
             InterceptorError::CryptoError(_) => "Internal error".to_string(),
             InterceptorError::McpProxyError(_) => "Service unavailable".to_string(),

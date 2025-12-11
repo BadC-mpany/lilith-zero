@@ -60,6 +60,10 @@ pub struct Config {
     pub body_size_limit_bytes: usize,
     pub rate_limit_per_minute: u32,
     
+    // Supabase configuration
+    pub supabase_project_url: String,
+    pub supabase_service_role_key: String,
+
     // Logging configuration
     pub log_level: String,
     pub log_format: String, // "json" or "text"
@@ -108,6 +112,8 @@ impl Config {
             request_timeout_secs: Self::parse_u64_or_default("REQUEST_TIMEOUT_SECS", 30)?,
             body_size_limit_bytes: Self::parse_usize_or_default("BODY_SIZE_LIMIT_BYTES", 2 * 1024 * 1024)?,
             rate_limit_per_minute: Self::parse_u32_or_default("RATE_LIMIT_PER_MINUTE", 100)?,
+            supabase_project_url: Self::get_env_or_default("SUPABASE_PROJECT_URL", "")?,
+            supabase_service_role_key: Self::get_env_or_default("SUPABASE_SERVICE_ROLE_KEY", "")?,
             log_level: Self::get_env_or_default("LOG_LEVEL", "info")?,
             log_format: Self::get_env_or_default("LOG_FORMAT", "json")?,
         };
@@ -385,6 +391,12 @@ impl Config {
                 "Either DATABASE_URL or POLICIES_YAML_PATH must be set".to_string()
             ));
         }
+
+        // Validate Supabase config if set (it might be optional if we fallback to YAML, but user wants migration)
+        // For now, let's make it optional validation logic-wise but required for new flow.
+        if !self.supabase_project_url.is_empty() {
+             Self::validate_url(&self.supabase_project_url, "Supabase Project URL")?;
+        }
         
         // Validate log level
         Self::validate_log_level(&self.log_level)?;
@@ -479,6 +491,8 @@ impl Config {
             request_timeout_secs: 30,
             body_size_limit_bytes: 2 * 1024 * 1024,
             rate_limit_per_minute: 100,
+            supabase_project_url: "https://example.supabase.co".to_string(),
+            supabase_service_role_key: "mock_key".to_string(),
             log_level: "info".to_string(),
             log_format: "json".to_string(),
         }
