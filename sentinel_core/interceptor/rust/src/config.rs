@@ -44,9 +44,8 @@ pub struct Config {
     
 
     
-    // Policy and tool registry paths
+    // Policy paths (YAML fallback)
     pub policies_yaml_path: Option<PathBuf>,
-    pub tool_registry_yaml_path: PathBuf,
     
     // MCP Proxy configuration
     pub mcp_proxy_timeout_secs: u64,
@@ -101,13 +100,18 @@ impl Config {
             redis_connection_timeout_secs: Self::detect_redis_connection_timeout(&redis_mode)?,
             redis_operation_timeout_secs: Self::detect_redis_operation_timeout(&redis_mode)?,
             policies_yaml_path: Self::get_optional_path("POLICIES_YAML_PATH")?,
-            tool_registry_yaml_path: Self::get_required_path("TOOL_REGISTRY_YAML_PATH")?,
             mcp_proxy_timeout_secs: Self::parse_u64_or_default("MCP_PROXY_TIMEOUT_SECS", 30)?, // Increased from 5 to 30 seconds for tool execution
             request_timeout_secs: Self::parse_u64_or_default("REQUEST_TIMEOUT_SECS", 30)?,
             body_size_limit_bytes: Self::parse_usize_or_default("BODY_SIZE_LIMIT_BYTES", 2 * 1024 * 1024)?,
             rate_limit_per_minute: Self::parse_u32_or_default("RATE_LIMIT_PER_MINUTE", 100)?,
-            supabase_project_url: Self::get_env_or_default("SUPABASE_PROJECT_URL", "")?,
-            supabase_service_role_key: Self::get_env_or_default("SUPABASE_SERVICE_ROLE_KEY", "")?,
+            supabase_project_url: env::var("SUPABASE_PROJECT_URL")
+                .map_err(|_| InterceptorError::ConfigurationError(
+                    "SUPABASE_PROJECT_URL not set - required for Supabase integration".to_string()
+                ))?,
+            supabase_service_role_key: env::var("SUPABASE_SERVICE_ROLE_KEY")
+                .map_err(|_| InterceptorError::ConfigurationError(
+                    "SUPABASE_SERVICE_ROLE_KEY not set - required for Supabase integration".to_string()
+                ))?,
             log_level: Self::get_env_or_default("LOG_LEVEL", "info")?,
             log_format: Self::get_env_or_default("LOG_FORMAT", "json")?,
         };
@@ -124,22 +128,6 @@ impl Config {
     }
     
 
-    
-    /// Get required file path from environment variable
-    fn get_required_path(key: &str) -> Result<PathBuf, InterceptorError> {
-        let value = env::var(key)
-            .map_err(|_| InterceptorError::ConfigurationError(
-                format!("{} not set", key)
-            ))?;
-        
-        if value.is_empty() {
-            return Err(InterceptorError::ConfigurationError(
-                format!("{} is empty", key)
-            ));
-        }
-        
-        Ok(PathBuf::from(value))
-    }
     
     /// Get optional file path from environment variable
     fn get_optional_path(key: &str) -> Result<Option<PathBuf>, InterceptorError> {
@@ -358,9 +346,6 @@ impl Config {
             ));
         }
         
-        // Validate required file paths
-        Self::validate_file_path(&self.tool_registry_yaml_path, "Tool registry file")?;
-        
         
         // Validate optional file paths
         if let Some(ref path) = self.policies_yaml_path {
@@ -449,7 +434,6 @@ impl Config {
     /// This bypasses environment variable loading and file validation
     /// for use in tests that don't need real configuration.
     pub fn test_config() -> Self {
-        use std::path::PathBuf;
         Self {
             bind_address: "0.0.0.0".to_string(),
             port: 8000,
@@ -462,7 +446,6 @@ impl Config {
             redis_connection_timeout_secs: 5, // Test default (Docker)
             redis_operation_timeout_secs: 2,
             policies_yaml_path: None,
-            tool_registry_yaml_path: PathBuf::from("/tmp/test_tools.yaml"),
             mcp_proxy_timeout_secs: 5,
             request_timeout_secs: 30,
             body_size_limit_bytes: 2 * 1024 * 1024,

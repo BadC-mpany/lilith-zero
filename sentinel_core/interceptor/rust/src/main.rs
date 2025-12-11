@@ -9,7 +9,7 @@ use sentinel_interceptor::core::models::{HistoryEntry, PolicyDefinition, ToolCon
 use sentinel_interceptor::loader::policy_loader::PolicyLoader;
 use sentinel_interceptor::infra::supabase::SupabaseClient; // Import SupabaseClient
 use sentinel_interceptor::infra::supabase_store::SupabaseStore; // Import SupabaseStore
-use sentinel_interceptor::loader::tool_registry::ToolRegistry as ToolRegistryImpl;
+use sentinel_interceptor::infra::supabase_tool_registry::SupabaseToolRegistry; // Import Supabase Tool Registry
 use sentinel_interceptor::proxy::ProxyClientImpl;
 use sentinel_interceptor::state::redis_store::RedisStore as RedisStoreImpl;
 use sentinel_interceptor::state::policy_cache::MokaPolicyCache;
@@ -94,15 +94,15 @@ impl ApiRedisStore for RedisStoreAdapter {
     }
 }
 
-/// Adapter to convert ToolRegistry struct to ToolRegistry trait
+/// Adapter to convert SupabaseToolRegistry to ToolRegistry trait
 struct ToolRegistryAdapter {
-    inner: Arc<ToolRegistryImpl>,
+    inner: Arc<SupabaseToolRegistry>,
 }
 
 #[async_trait::async_trait]
 impl ToolRegistry for ToolRegistryAdapter {
     async fn get_tool_classes(&self, tool_name: &str) -> Result<Vec<String>, InterceptorError> {
-        Ok(self.inner.get_tool_classes(tool_name))
+        self.inner.get_tool_classes(tool_name).await
     }
 }
 
@@ -240,20 +240,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     
 
     
-    // 8. Initialize tool registry
-    let tool_registry_impl = Arc::new(
-        ToolRegistryImpl::from_file(&config.tool_registry_yaml_path)
-            .map_err(|e| {
-                error!(error = %e, path = ?config.tool_registry_yaml_path, "Failed to load tool registry");
-                e
-            })?
-    );
+    // 8. Initialize Supabase Client & Store (moved earlier to use in tool registry)
+    let supabase_client = Arc::new(SupabaseClient::new(
+        config.supabase_project_url.clone(),
+        config.supabase_service_role_key.clone(),
+    ));
+    info!("Supabase client initialized");
+
+    let supabase_store = Arc::new(SupabaseStore::new(supabase_client.clone()));
+    let customer_store: Arc<dyn sentinel_interceptor::api::CustomerStore + Send + Sync> = supabase_store.clone();
+    let policy_store: Arc<dyn sentinel_interceptor::api::PolicyStore + Send + Sync> = supabase_store.clone();
+    info!("Supabase store initialized (Customer + Policy)");
+
+    // 9. Initialize Supabase-based tool registry
+    let tool_registry_impl = Arc::new(SupabaseToolRegistry::new());
     
     let tool_registry = Arc::new(ToolRegistryAdapter {
         inner: tool_registry_impl,
     });
     
-    info!("Tool registry initialized");
+    info!("Tool registry initialized (Supabase-based)");
     
     // 10. Initialize policy evaluator adapter
     let evaluator = Arc::new(
@@ -273,17 +279,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     info!("Proxy client initialized");
     
-    // 11.5 Initialize Supabase Client & Store
-    let supabase_client = Arc::new(SupabaseClient::new(
-        config.supabase_project_url.clone(),
-        config.supabase_service_role_key.clone(),
-    ));
-    info!("Supabase client initialized");
-
-    let supabase_store = Arc::new(SupabaseStore::new(supabase_client.clone()));
-    let customer_store: Arc<dyn sentinel_interceptor::api::CustomerStore + Send + Sync> = supabase_store.clone();
-    let policy_store: Arc<dyn sentinel_interceptor::api::PolicyStore + Send + Sync> = supabase_store.clone();
-    info!("Supabase store initialized (Customer + Policy)");
     
     // 12. Initialize policy cache (Moka-based with 60s TTL, 1000 capacity)
     let policy_cache = Arc::new(
