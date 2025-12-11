@@ -1,38 +1,68 @@
 # Run the Sentinel Conversational Agent
-# This script sets up the environment and runs the agent.
+# This script sets up the environment (venv + .env), installs local packages if needed, and runs the agent.
 
-# 1. Configuration - Set these or use existing env vars
-$env:SENTINEL_URL = "http://localhost:8000"
-# $env:SENTINEL_API_KEY = "..." # user should set this or we prompt?
-# $env:OPENROUTER_API_KEY = "..." 
+$ErrorActionPreference = "Stop"
 
-# Check for API Keys
-if (-not $env:SENTINEL_API_KEY) {
-    Write-Host "Error: SENTINEL_API_KEY environment variable is not set." -ForegroundColor Red
-    Write-Host "Please set it: `$env:SENTINEL_API_KEY = 'your_key'"
+$scriptPath = $MyInvocation.MyCommand.Path
+$scriptDir = Split-Path -Parent $scriptPath
+$projectRoot = Split-Path -Parent $scriptDir
+
+# 1. Import Utils & Load Environment
+$envUtils = Join-Path $projectRoot "scripts\utils\env_utils.ps1"
+if (-not (Test-Path $envUtils)) {
+    Write-Error "env_utils.ps1 not found at $envUtils"
     exit 1
 }
+. $envUtils
 
-if (-not $env:OPENROUTER_API_KEY) {
-    Write-Host "Warning: OPENROUTER_API_KEY is not set. The agent might fail if LLM requires it." -ForegroundColor Yellow
+Write-Host "=== Sentinel Agent Launcher ===" -ForegroundColor Cyan
+
+# Load .env
+$envFile = Join-Path $projectRoot ".env"
+if (Test-Path $envFile) {
+    Load-EnvFile -Path $envFile
+} else {
+    Write-Warning ".env file not found at $envFile. Relying on existing environment variables."
 }
 
-# 2. Check dependencies
-# Assuming virtual env is active or packages installed
-# python -c "import sentinel_sdk"
+# 2. Run in Python Environment
+Invoke-WithEnvironment -ScriptBlock {
+    # 2a. Check/Install Local Packages
+    Write-Host "Checking local package installation..." -ForegroundColor Gray
+    
+    $sdkDir = Join-Path $projectRoot "sentinel_sdk"
+    $agentDir = Join-Path $projectRoot "sentinel_agent"
 
-# 3. access the example agent
-# path relative to script
-$ScriptDir = Split-Path $MyInvocation.MyCommand.Path
-$ProjectRoot = (Get-Item $ScriptDir).Parent.FullName
-$AgentScript = "$ProjectRoot\sentinel_agent\examples\conversational_agent.py"
+    # Check SDK
+    python -c "import sentinel_sdk" 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "Installing sentinel_sdk (editable)..." -ForegroundColor Yellow
+        pip install -e $sdkDir
+    }
 
-Write-Host "Starting Sentinel Agent..." -ForegroundColor Green
-Write-Host "Sentinel URL: $env:SENTINEL_URL"
-Write-Host "Agent Script: $AgentScript"
+    # Check Agent
+    python -c "import sentinel_agent" 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "Installing sentinel_agent (editable)..." -ForegroundColor Yellow
+        pip install -e $agentDir
+    }
+    
+    # 2b. Check API Keys
+    if (-not $env:SENTINEL_API_KEY) {
+        Write-Error "SENTINEL_API_KEY is not set. Please add it to .env or set it in your shell."
+        exit 1
+    }
+    
+    if (-not $env:OPENROUTER_API_KEY) {
+        Write-Warning "OPENROUTER_API_KEY is not set. LLM capabilities may fail."
+    }
 
-# Add src to pythonpath so it can find sentinel_agent package if not installed editable
-$env:PYTHONPATH = "$ProjectRoot;$ProjectRoot\sentinel_sdk\src;$env:PYTHONPATH"
-
-# Run
-python $AgentScript -v
+    # 3. Run Agent
+    $AgentScript = "$agentDir\examples\conversational_agent.py"
+    
+    Write-Host "Starting Agent..." -ForegroundColor Green
+    Write-Host "  Script: $AgentScript"
+    Write-Host "  URL: $($env:SENTINEL_URL -replace '/$','')"
+    
+    python $AgentScript -v
+}

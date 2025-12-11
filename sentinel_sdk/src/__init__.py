@@ -1,7 +1,7 @@
 """
 Sentinel SDK - Secure tool wrapper for AI agents.
 """
-from .sentinel_sdk import SentinelSecureTool, SecurityBlockException
+from .sentinel_sdk import SentinelClient
 
-__all__ = ["SentinelSecureTool", "SecurityBlockException"]
+__all__ = ["SentinelClient"]
 

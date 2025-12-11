@@ -809,13 +809,14 @@ impl RedisStore {
     // if I can help it. The tool `multi_replace` allows me to target specific chunks.
     // I will target the end of `add_taint` and insert new methods.
     
-    /// Initialize a session with policy configuration and tools
-    pub async fn init_session(&self, session_id: &str, policy: &PolicyDefinition, tools: &Vec<ToolConfig>, ttl_seconds: u64) -> Result<(), InterceptorError> {
+    /// Initialize a session with policy configuration, tools, and ephemeral private key
+    pub async fn init_session(&self, session_id: &str, policy: &PolicyDefinition, tools: &Vec<ToolConfig>, private_key: &str, ttl_seconds: u64) -> Result<(), InterceptorError> {
         let mut conn = self.get_connection().await?;
         
         // Keys
         let policy_key = format!("session:{}:policy", session_id);
         let tools_key = format!("session:{}:tools", session_id);
+        let crypto_key = format!("session:{}:key", session_id);
         
         // Serialize
         let policy_json = serde_json::to_string(policy)
@@ -823,19 +824,35 @@ impl RedisStore {
         let tools_json = serde_json::to_string(tools)
             .map_err(|e| InterceptorError::StateError(format!("Failed to serialize tools: {}", e)))?;
             
-        // Pipeline: Set Policy + Tools + Expire
+        // Pipeline: Set Policy + Tools + Key + Expire
         let mut pipe = bb8_redis::redis::pipe();
         pipe.atomic()
             .set(&policy_key, policy_json)
             .expire(&policy_key, ttl_seconds as usize)
             .set(&tools_key, tools_json)
-            .expire(&tools_key, ttl_seconds as usize);
+            .expire(&tools_key, ttl_seconds as usize)
+            .set(&crypto_key, private_key)
+            .expire(&crypto_key, ttl_seconds as usize);
             
         pipe.query_async::<_, ()>(&mut *conn)
             .await
             .map_err(|e| InterceptorError::StateError(format!("Failed to init session: {}", e)))?;
             
         Ok(())
+    }
+
+    /// Retrieve the session's ephemeral private key
+    pub async fn get_session_private_key(&self, session_id: &str) -> Result<String, InterceptorError> {
+        let mut conn = self.get_connection().await?;
+        let crypto_key = format!("session:{}:key", session_id);
+        
+        let key: Option<String> = bb8_redis::redis::cmd("GET")
+            .arg(&crypto_key)
+            .query_async(&mut *conn)
+            .await
+            .map_err(|e| InterceptorError::InfrastructureError(format!("Redis error: {}", e)))?;
+            
+        key.ok_or_else(|| InterceptorError::AuthenticationError(format!("Session key not found: {}", session_id)))
     }
 
     /// Invalidate a session (logout)

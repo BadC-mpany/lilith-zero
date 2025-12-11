@@ -74,8 +74,8 @@ impl ApiRedisStore for RedisStoreAdapter {
         self.inner.ping().await
     }
     
-    async fn init_session(&self, session_id: &str, policy: &PolicyDefinition, tools: &Vec<ToolConfig>, ttl_seconds: u64) -> Result<(), InterceptorError> {
-        self.inner.init_session(session_id, policy, tools, ttl_seconds).await
+    async fn init_session(&self, session_id: &str, policy: &PolicyDefinition, tools: &Vec<ToolConfig>, private_key: &str, ttl_seconds: u64) -> Result<(), InterceptorError> {
+        self.inner.init_session(session_id, policy, tools, private_key, ttl_seconds).await
     }
     
     async fn invalidate_session(&self, session_id: &str) -> Result<(), InterceptorError> {
@@ -88,6 +88,10 @@ impl ApiRedisStore for RedisStoreAdapter {
 
     async fn get_session_tools(&self, session_id: &str) -> Result<Option<Vec<ToolConfig>>, InterceptorError> {
         self.inner.get_session_tools(session_id).await
+    }
+
+    async fn get_session_private_key(&self, session_id: &str) -> Result<String, InterceptorError> {
+        self.inner.get_session_private_key(session_id).await
     }
 }
 

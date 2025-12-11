@@ -42,12 +42,15 @@ pub async fn auth_middleware(
             (StatusCode::UNAUTHORIZED, Json(error))
         })?;
 
-    // 2. Hash API key
-    let api_key = ApiKey::new(&api_key_str);
-    let api_key_hash = api_key.hash();
-
-    // 3. Lookup customer (try database, fallback to YAML)
-    let customer_config = match auth_state.customer_store.lookup_customer(api_key_hash.as_str()).await {
+    // 2. Lookup customer (try database, fallback to YAML)
+    // We use the raw key for lookup because Supabase DB stores the raw key (or we instruct Supabase store to hash it if needed, but per plan we use raw key).
+    // The "hash" variable name in lookup_customer signature is misleading now, it's just a lookup key.
+    
+    // Hash primarily for logging/audit to avoid logging raw keys
+    let api_key_obj = ApiKey::new(&api_key_str);
+    let log_only = api_key_obj.hash();
+    
+    let customer_config = match auth_state.customer_store.lookup_customer(&api_key_str).await {
         Ok(Some(config)) => config,
         Ok(None) => {
             // Try YAML fallback if configured
@@ -57,7 +60,7 @@ pub async fn auth_middleware(
                 } else {
                     auth_state.audit_logger.log_auth_event(
                         AuthEvent::AuthFailure { reason: "Invalid API key".to_string() },
-                        Some(&api_key_hash),
+                        Some(&log_only),
                         extract_ip_address(&request).as_deref(),
                         extract_user_agent(&request).as_deref(),
                     );
@@ -69,7 +72,7 @@ pub async fn auth_middleware(
             } else {
                 auth_state.audit_logger.log_auth_event(
                     AuthEvent::AuthFailure { reason: "Invalid API key".to_string() },
-                    Some(&api_key_hash),
+                    Some(&log_only),
                     extract_ip_address(&request).as_deref(),
                     extract_user_agent(&request).as_deref(),
                 );
@@ -112,7 +115,7 @@ pub async fn auth_middleware(
     // 5. Log success
     auth_state.audit_logger.log_auth_event(
         AuthEvent::AuthSuccess,
-        Some(&api_key_hash),
+        Some(&log_only),
         extract_ip_address(&request).as_deref(),
         extract_user_agent(&request).as_deref(),
     );
@@ -128,7 +131,7 @@ pub async fn auth_middleware(
 /// Extract API key from request headers
 fn extract_api_key(headers: &HeaderMap) -> Option<String> {
     headers
-        .get("X-API-Key")
+        .get("X-Sentinel-Key")
         .and_then(|v| v.to_str().ok())
         .map(|s| s.to_string())
 }

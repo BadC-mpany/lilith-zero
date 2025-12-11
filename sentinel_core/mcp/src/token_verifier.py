@@ -97,40 +97,54 @@ def verify_sentinel_token(
     return True
 
 
+# Ephemeral Session Keys Storage (Session ID -> Public Key Object)
+SESSION_KEYS: Dict[str, Any] = {}
+
+def register_session_key(session_id: str, public_key_b64: str):
+    """Register a new ephemeral session key."""
+    import base64
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+    
+    try:
+        # Pad base64 if needed (URL safe)
+        public_key_b64 = public_key_b64.strip()
+        padding = 4 - (len(public_key_b64) % 4)
+        if padding != 4:
+            public_key_b64 += "=" * padding
+            
+        key_bytes = base64.urlsafe_b64decode(public_key_b64)
+        public_key = Ed25519PublicKey.from_public_bytes(key_bytes)
+        SESSION_KEYS[session_id] = public_key
+        logger.info(f"Registered ephemeral key for session: {session_id}")
+    except Exception as e:
+        logger.error(f"Failed to register session key: {e}")
+        raise ValueError(f"Invalid public key format: {e}")
+
 def verify_token_direct(token: str, tool_name: str, arguments: Dict[str, Any]) -> None:
     """
-    Stateless token verification function (non-FastAPI dependency version).
-    NO Redis dependency - fully stateless verification.
-    
-    Verifies:
-    1. Cryptographic signature (Ed25519) - prevents tampering
-    2. Parameter integrity hash (p_hash) - prevents parameter tampering
-    3. Scope match (tool name) - ensures token is for correct tool
-    4. Expiration (handled by jwt.decode) - tokens expire in 5 seconds
-    
-    Replay protection removed - tokens expire in 5 seconds and are single-use per request.
-    This makes MCP server fully stateless and independent of Redis.
-    
-    Raises HTTPException on failure.
+    Stateless token verification using Ephemeral Session Keys.
     """
-    logger.debug(f"Starting stateless token verification for tool: {tool_name}")
-    
-    # Load public key
-    try:
-        with open(settings.mcp_public_key_path, "rb") as f:
-            verify_key = f.read()
-    except FileNotFoundError:
-        logger.error(f"Public key file not found at: {settings.mcp_public_key_path}")
-        raise HTTPException(status_code=500, detail="Public key file not found")
-    except Exception as e:
-        logger.error(f"Error reading public key file: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Error reading public key")
+    logger.debug(f"Starting verification for tool: {tool_name}")
 
-    # 1. CRYPTOGRAPHIC VERIFICATION (Ed25519) + EXPIRATION CHECK
-    logger.debug("Verifying JWT token signature and expiration")
+    # 1. Extract Session ID (Unverified) to find the key
+    try:
+        unverified_payload = jwt.decode(token, options={"verify_signature": False})
+        session_id = unverified_payload.get("sub")
+        if not session_id:
+            raise HTTPException(status_code=401, detail="Token missing subject (session_id)")
+    except jwt.DecodeError:
+        raise HTTPException(status_code=401, detail="Malformed Token")
+
+    # 2. Lookup Session Key
+    verify_key = SESSION_KEYS.get(session_id)
+    if not verify_key:
+        logger.warning(f"Unknown session ID: {session_id}")
+        raise HTTPException(status_code=401, detail="Unknown or Expired Session")
+
+    # 3. CRYPTOGRAPHIC VERIFICATION
+    logger.debug(f"Verifying signature for session: {session_id}")
     try:
         payload = jwt.decode(token, verify_key, algorithms=["EdDSA"], issuer="sentinel-interceptor")
-        logger.debug(f"Token verified successfully, jti: {payload.get('jti')}")
     except jwt.ExpiredSignatureError:
         logger.warning("Token expired")
         raise HTTPException(status_code=401, detail="Token Expired")
@@ -138,25 +152,21 @@ def verify_token_direct(token: str, tool_name: str, arguments: Dict[str, Any]) -
         logger.warning(f"Invalid token signature: {e}")
         raise HTTPException(status_code=401, detail="Invalid Signature")
 
-    # 2. SCOPE CHECK
+    # 4. SCOPE CHECK
     expected_scope = f"tool:{tool_name}"
     actual_scope = payload.get("scope")
-    logger.debug(f"Checking scope: expected={expected_scope}, actual={actual_scope}")
     if actual_scope != expected_scope:
-        logger.warning(f"Scope mismatch: expected={expected_scope}, actual={actual_scope}")
+        logger.warning(f"Scope mismatch: {actual_scope} != {expected_scope}")
         raise HTTPException(status_code=403, detail="Token Scope Mismatch")
 
-    # 3. PARAMETER INTEGRITY CHECK (Anti-TOCTOU)
-    logger.debug("Verifying parameter integrity hash")
+    # 5. PARAMETER INTEGRITY CHECK
     received_hash = CryptoUtils.hash_params(arguments)
     expected_hash = payload.get("p_hash")
     if received_hash != expected_hash:
-        logger.warning(f"Parameter hash mismatch: received={received_hash}, expected={expected_hash}")
-        raise HTTPException(
-            status_code=403, detail="Integrity Violation: Parameters Altered in Transit")
+        logger.warning(f"Hash mismatch: {received_hash} != {expected_hash}")
+        raise HTTPException(status_code=403, detail="Integrity Violation: Parameters Altered")
     
-    logger.info(f"Token verification successful for tool: {tool_name}")
-    # Note: Replay protection removed - tokens expire in 5 seconds and are single-use per request
+    logger.info(f"Token verified for session {session_id}, tool {tool_name}")
 
 
 def verify_sentinel_token_mcp(

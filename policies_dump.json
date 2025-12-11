@@ -1,0 +1,42 @@
+[
+  {
+    "name": "default_policy",
+    "taintRules": [
+      {
+        "error": "Security Policy: Direct exfiltration pattern detected (read sensitive \u2192 external write).",
+        "action": "BLOCK_SECOND",
+        "pattern": {
+          "type": "sequence",
+          "steps": [
+            {
+              "class": "SENSITIVE_READ"
+            },
+            {
+              "class": "CONSEQUENTIAL_WRITE"
+            }
+          ]
+        },
+        "tool_class": "CONSEQUENTIAL_WRITE"
+      },
+      {
+        "tag": "sensitive_data",
+        "action": "ADD_TAINT",
+        "tool_class": "SENSITIVE_READ"
+      },
+      {
+        "error": "Exfiltration blocked: sanitize sensitive data before external write.",
+        "action": "CHECK_TAINT",
+        "tool_class": "CONSEQUENTIAL_WRITE",
+        "forbidden_tags": [
+          "sensitive_data"
+        ]
+      }
+    ],
+    "staticRules": {
+      "read_file": "ALLOW",
+      "send_email": "ALLOW",
+      "web_search": "ALLOW",
+      "read_database": "ALLOW"
+    }
+  }
+]

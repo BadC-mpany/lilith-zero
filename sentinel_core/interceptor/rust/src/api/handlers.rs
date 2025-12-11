@@ -12,10 +12,11 @@ use tracing::{debug, error, info, warn};
 
 use crate::api::responses::{ApiError, HealthResponse, ProxyResponse};
 use crate::api::{AppState, PolicyDefinition};
+use base64::{Engine as _, engine::general_purpose::URL_SAFE};
 use crate::core::errors::InterceptorError;
 use crate::core::models::{CustomerConfig, Decision, ProxyRequest, SessionId};
-use crate::auth::api_key::ApiKey;
 use serde_json::json;
+use reqwest;
 
 /// Main handler for proxy execute endpoint
 /// 
@@ -190,9 +191,27 @@ pub async fn proxy_execute_handler(
         }
     }
 
-    // Mint JWT token
-    let token = app_state
-        .crypto_signer
+    // Get ephemeral private key
+    let private_key_b64 = app_state.redis_store.get_session_private_key(&request.session_id).await
+        .map_err(|e| ApiError::from_interceptor_error_with_id(e, request_id.clone()))?;
+
+    let private_key_bytes = base64::engine::general_purpose::URL_SAFE.decode(&private_key_b64)
+        .map_err(|e| ApiError::from_interceptor_error_with_id(
+            InterceptorError::CryptoError(crate::core::errors::CryptoError::KeyLoadError(e.to_string())),
+            request_id.clone()
+        ))?;
+        
+    let key_array: [u8; 32] = private_key_bytes.try_into()
+        .map_err(|_| ApiError::from_interceptor_error_with_id(
+            InterceptorError::CryptoError(crate::core::errors::CryptoError::KeyLoadError("Invalid key length".to_string())),
+            request_id.clone()
+        ))?;
+
+    let signing_key = ed25519_dalek::SigningKey::from_bytes(&key_array);
+    let signer = crate::core::crypto::CryptoSigner::from_signing_key(signing_key);
+
+    // Mint token with ephemeral signer
+    let token = signer
         .mint_token(&request.session_id, &request.tool_name, &request.args)
         .map_err(|e| {
             error!(error = ?e, request_id = %request_id, "Failed to mint token");
@@ -418,28 +437,62 @@ pub async fn start_session_handler(
             )
         })?;
 
-    // 2. Hash API Key & Lookup Project in Supabase
-    let api_key_obj = ApiKey::new(api_key);
-    let api_key_hash = api_key_obj.hash();
-
-    let project = app_state.supabase_client.get_project_config(api_key_hash.as_str()).await
+    // 2. Lookup Project in Supabase (Raw Key)
+    let project = app_state.supabase_client.get_project_config(api_key).await
         .map_err(|e| ApiError::from_interceptor_error_with_id(e, request_id.clone()))?;
 
-    // 3. Generate Session ID
+    // 3. Generate Session ID & Ephemeral Keys
     let session_id = SessionId::generate();
     let session_id_str: String = session_id.into();
 
-    // 4. Determine Policy (First one or default)
-    let active_policy = project.policies.first().ok_or_else(|| {
-        ApiError::from_interceptor_error_with_id(
-            InterceptorError::ConfigurationError("No policies found for project".to_string()),
-            request_id.clone(),
-        )
-    })?;
+    let mut csprng = rand::rngs::OsRng;
+    let signing_key = ed25519_dalek::SigningKey::generate(&mut csprng);
+    let verifying_key = signing_key.verifying_key();
 
-    // 5. Initialize Session in Redis (TTL 1 hour)
-    app_state.redis_store.init_session(&session_id_str, active_policy, &project.tools, 3600).await
-        .map_err(|e| ApiError::from_interceptor_error_with_id(e, request_id.clone()))?;
+    let private_key_b64 = base64::engine::general_purpose::URL_SAFE.encode(signing_key.to_bytes());
+    let public_key_b64 = base64::engine::general_purpose::URL_SAFE.encode(verifying_key.to_bytes());
+
+    // 4. Initialize Session in Redis (Policy + Tools + Private Key)
+    // Use first policy or default
+    let active_policy = project.policies.first().cloned().unwrap_or_else(|| {
+        let p = PolicyDefinition {
+            name: "default".to_string(),
+            static_rules: std::collections::HashMap::new(),
+            taint_rules: vec![],
+        };
+        p
+    });
+
+    app_state.redis_store.init_session(
+        &session_id_str,
+        &active_policy,
+        &project.tools,
+        &private_key_b64,
+        3600, // 1 hour TTL
+    ).await.map_err(|e| ApiError::from_interceptor_error_with_id(e, request_id.clone()))?;
+
+    // 5. Handshake with MCP (Send Public Key)
+    let mcp_url = "http://localhost:9000"; // Should come from config/DB ideally
+    let handshake_url = format!("{}/session/init", mcp_url);
+    let handshake_body = serde_json::json!({
+        "session_id": session_id_str,
+        "public_key": public_key_b64
+    });
+
+    let client = reqwest::Client::new();
+    client.post(&handshake_url)
+        .json(&handshake_body)
+        .send()
+        .await
+        .map_err(|e| ApiError::from_interceptor_error_with_id(
+            InterceptorError::InfrastructureError(format!("MCP handshake failed: {}", e)),
+            request_id.clone()
+        ))?
+        .error_for_status()
+        .map_err(|e| ApiError::from_interceptor_error_with_id(
+            InterceptorError::InfrastructureError(format!("MCP handshake error: {}", e)),
+            request_id.clone()
+        ))?;
 
     info!(session_id = %session_id_str, "Session started");
 

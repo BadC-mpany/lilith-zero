@@ -145,8 +145,10 @@ impl PolicyRule {
 pub struct PolicyDefinition {
     pub name: String,
     /// Static rules: tool_name -> "ALLOW" or "DENY"
+    #[serde(rename = "staticRules")]
     pub static_rules: HashMap<String, String>,
     /// Dynamic taint rules
+    #[serde(rename = "taintRules")]
     pub taint_rules: Vec<PolicyRule>,
 }
 

@@ -53,6 +53,8 @@ class SentinelClient:
             return self.session_id
         except httpx.HTTPError as e:
             logger.error(f"Failed to start session: {e}")
+            if hasattr(e, 'response') and e.response is not None:
+                 logger.error(f"Response Body: {e.response.text}")
             raise
 
     async def stop_session(self):
@@ -123,6 +125,12 @@ class SentinelClient:
             # Minimal implementation:
             args_schema = self._create_pydantic_model(name, config.get("inputSchema", {}))
             
+            # Debugging Pydantic mismatch
+            from pydantic import BaseModel as PydanticBaseModel
+            # logger.info(f"Model type: {type(args_schema)}")
+            # logger.info(f"Is subclass of PydanticBaseModel: {issubclass(args_schema, PydanticBaseModel)}")
+            # logger.info(f"PydanticBaseModel id: {id(PydanticBaseModel)}")
+            
             tool = StructuredTool.from_function(
                 coroutine=_tool_func,
                 name=name,
@@ -135,7 +143,11 @@ class SentinelClient:
 
     def _create_pydantic_model(self, name: str, json_schema: Dict[str, Any]):
         try:
-            from pydantic import create_model, Field
+            # Prefer Pydantic V1 for LangChain compatibility if available
+            try:
+                from pydantic.v1 import create_model, Field
+            except ImportError:
+                from pydantic import create_model, Field
         except ImportError:
              raise ImportError("pydantic is required for tool schema generation")
 

@@ -48,10 +48,11 @@ pub trait RedisStore: Send + Sync {
     async fn ping(&self) -> Result<(), InterceptorError>;
     
     // Session Lifecycle Methods
-    async fn init_session(&self, session_id: &str, policy: &PolicyDefinition, tools: &Vec<ToolConfig>, ttl_seconds: u64) -> Result<(), InterceptorError>;
+    async fn init_session(&self, session_id: &str, policy: &PolicyDefinition, tools: &Vec<ToolConfig>, private_key: &str, ttl_seconds: u64) -> Result<(), InterceptorError>;
     async fn invalidate_session(&self, session_id: &str) -> Result<(), InterceptorError>;
     async fn get_session_policy(&self, session_id: &str) -> Result<Option<PolicyDefinition>, InterceptorError>;
     async fn get_session_tools(&self, session_id: &str) -> Result<Option<Vec<ToolConfig>>, InterceptorError>;
+    async fn get_session_private_key(&self, session_id: &str) -> Result<String, InterceptorError>;
 }
 
 /// Trait for policy cache operations

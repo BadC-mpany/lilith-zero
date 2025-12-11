@@ -13,7 +13,9 @@ pub struct ProjectConfig {
     pub name: String,
     pub api_key: String,
     // policies and tools are stored as JSONB in DB, so we deserialize them directly
+    #[serde(default)]
     pub policies: Vec<PolicyDefinition>,
+    #[serde(default)]
     pub tools: Vec<ToolConfig>,
     pub public_key: Option<String>,
     pub private_key: Option<String>,
@@ -33,6 +35,8 @@ impl SupabaseClient {
             .build()
             .unwrap_or_else(|_| Client::new());
 
+        let project_url = project_url.trim_end_matches('/').to_string();
+
         Self {
             client,
             project_url,
@@ -47,7 +51,8 @@ impl SupabaseClient {
     pub async fn get_project_config(&self, api_key: &str) -> Result<ProjectConfig, InterceptorError> {
         let url = format!("{}/rest/v1/projects?api_key=eq.{}&select=*", self.project_url, api_key);
         
-        info!("Fetching project config from Supabase for key ending in ...{}", &api_key[api_key.len().min(4)..]);
+        let start_index = api_key.len().saturating_sub(4);
+        info!("Fetching project config from Supabase for key ending in ...{}", &api_key[start_index..]);
 
         let response = self.client.get(&url)
             .header("apikey", &self.service_role_key)

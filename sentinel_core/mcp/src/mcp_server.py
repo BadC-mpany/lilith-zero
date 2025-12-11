@@ -8,7 +8,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Dict, Any, Optional
 
 # Import from src package (when running as python -m uvicorn src.mcp_server:app)
-from src.token_verifier import verify_sentinel_token, verify_sentinel_token_mcp, ToolRequest, MCPCallParams
+from src.token_verifier import verify_sentinel_token, verify_sentinel_token_mcp, ToolRequest, MCPCallParams, register_session_key
 from src.tool_executor import execute_tool_logic
 from src.tool_registry_loader import get_tool_registry_loader
 
@@ -305,6 +305,25 @@ def execute_tool(
     """
     logger.warning("Legacy /execute endpoint called. Consider migrating to JSON-RPC 2.0 endpoint.")
     return execute_tool_logic(req.tool, req.args)
+
+
+class SessionInitRequest(BaseModel):
+    session_id: str
+    public_key: str
+
+@app.post("/session/init")
+async def init_session(req: SessionInitRequest):
+    """
+    Initialize a secure session by registering the session's ephemeral public key.
+    Called by the Interceptor during session start.
+    """
+    try:
+        logger.info(f"Received session init request for: {req.session_id}")
+        register_session_key(req.session_id, req.public_key)
+        return {"status": "ok", "session_id": req.session_id}
+    except Exception as e:
+        logger.error(f"Failed to init session: {e}", exc_info=True)
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 if __name__ == "__main__":

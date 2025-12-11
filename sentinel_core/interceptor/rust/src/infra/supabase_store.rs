@@ -7,6 +7,7 @@ use std::sync::Arc;
 use moka::future::Cache;
 use tokio::sync::RwLock;
 use std::collections::HashMap;
+use tracing::{debug, error};
 
 /// Supabase-backed store that combines Customer and Policy lookups
 /// Policies are embedded in the Project configuration in Supabase.
@@ -68,7 +69,7 @@ impl CustomerStore for SupabaseStore {
 
                 let config = CustomerConfig {
                     owner: proj.id.clone(), // Use Project ID as owner for now
-                    mcp_upstream_url: "http://localhost:9000".to_string(), // TODO: Where does this come from? DB schema didn't show it explicitly but user said "structure...". Maybe strictly Supabase doesn't have it yet?
+                    mcp_upstream_url: std::env::var("MCP_UPSTREAM_URL").unwrap_or_else(|_| "http://localhost:9000".to_string()),
                     // User Request Schema: "id", "user_id", "name", "description", "tools", "policies", "api_key", ...
                     // It does NOT have mcp_upstream_url.
                     // I will default it or look for it in description? 
@@ -93,8 +94,14 @@ impl CustomerStore for SupabaseStore {
             }
             // If error is specific to "Not Found", return None?
             // SupabaseClient returns Error if not found.
-            Err(InterceptorError::AuthenticationError(_)) => Ok(None),
-            Err(e) => Err(e),
+            Err(InterceptorError::AuthenticationError(_)) => {
+                debug!("Supabase: Project not found or invalid key for key: {}", api_key_hash);
+                Ok(None)
+            },
+            Err(e) => {
+                error!(error = %e, "Supabase lookup failed");
+                Err(e)
+            },
         }
     }
 }

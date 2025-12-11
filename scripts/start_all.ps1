@@ -54,14 +54,33 @@ if ($redisMode -eq "wsl") {
     }
 }
 
-# 3. PostgreSQL (Service check)
-# Keeping existing simple logic or relying on Verify later.
-# Let's keep the quick check.
-$pgOk = Get-Service "postgresql*" -ErrorAction SilentlyContinue | Where-Object Status -eq 'Running'
-if ($pgOk) {
-    Write-Host "  [OK] PostgreSQL is running" -ForegroundColor Green
+# 3. Supabase Connection Check
+$envFile = Join-Path $projectRoot ".env"
+if (Test-Path $envFile) {
+    # Extract SUPABASE_PROJECT_URL from .env
+    $supabaseUrl = Get-Content $envFile | Where-Object { $_ -match "^SUPABASE_PROJECT_URL=(.+)" } | ForEach-Object { $matches[1] }
+    
+    if ($supabaseUrl) {
+        Write-Host "  Checking Supabase connectivity..." -NoNewline
+        try {
+            # Use Head request to check connectivity/DNS
+            $check = Invoke-WebRequest -Uri $supabaseUrl -Method Head -TimeoutSec 10 -ErrorAction Stop
+            Write-Host " [OK]" -ForegroundColor Green
+        } catch {
+            if ($_.Exception.Response.StatusCode.value__ -eq 404 -or $_.Exception.Message -match "404") {
+                 # 404 means we reached the server, it just didn't like the root path. Good enough!
+                 Write-Host " [OK] (Server responded)" -ForegroundColor Green
+            } else {
+                Write-Host " [WARN]" -ForegroundColor Yellow
+                Write-Host "    Could not reach Supabase at $supabaseUrl" -ForegroundColor Yellow
+                Write-Host "    Error: $($_.Exception.Message)" -ForegroundColor Gray
+            }
+        }
+    } else {
+        Write-Host "  [INFO] SUPABASE_PROJECT_URL not found in .env, skipping check." -ForegroundColor Gray
+    }
 } else {
-    Write-Host "  [WARN] PostgreSQL service not detected running" -ForegroundColor Yellow
+    Write-Host "  [WARN] .env file not found at $envFile" -ForegroundColor Yellow
 }
 
 # 4. Start Services (New Windows)
