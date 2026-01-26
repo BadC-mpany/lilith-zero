@@ -1,7 +1,0 @@
-fastapi
-uvicorn
-pydantic-settings
-pyjwt
-cryptography
-pydantic
-pyyaml

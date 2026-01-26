@@ -1,7 +1,0 @@
-[flake8]
-# Ignore line too long errors (E501)
-ignore = E501
-
-[pycodestyle]
-# Ignore line too long errors (E501)
-ignore = E501

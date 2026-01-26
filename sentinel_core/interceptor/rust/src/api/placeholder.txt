@@ -1,2 +1,0 @@
-// I will append new handlers here.
-// But first I need to see auth_middleware.rs content.
