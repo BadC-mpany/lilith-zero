@@ -43,12 +43,12 @@ class SentinelClient:
     
     def __init__(self, 
                  upstream_cmd: str, 
-                 upstream_args: List[str] = [],
+                 upstream_args: Optional[List[str]] = None,
                  binary_path: Optional[str] = None,
                  policy_path: Optional[str] = None):
         
         self.upstream_cmd = upstream_cmd
-        self.upstream_args = upstream_args
+        self.upstream_args = upstream_args if upstream_args is not None else []
         self.binary_path = binary_path or os.getenv(ENV_BINARY_PATH, get_binary_name())
         self.policy_path = policy_path or os.getenv(ENV_POLICY_PATH)
         
