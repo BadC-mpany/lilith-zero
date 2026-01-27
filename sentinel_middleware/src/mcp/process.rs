@@ -1,25 +1,25 @@
 //! Upstream process management.
-//! 
+//!
 //! This module handles spawning and supervising the upstream MCP server process.
-//! On Windows, it uses Job Objects to ensure the child process is terminated 
+//! On Windows, it uses Job Objects to ensure the child process is terminated
 //! if the middleware dies.
 
-use tokio::process::{Child, Command};
+use anyhow::{Context, Result};
 use std::process::Stdio;
-use anyhow::{Result, Context};
+use tokio::process::{Child, Command};
 use tracing::info;
 
 #[cfg(windows)]
-use win32job::{Job, ExtendedLimitInfo};
+use win32job::{ExtendedLimitInfo, Job};
 
 #[cfg(unix)]
 use std::os::unix::process::CommandExt;
 
 /// Process supervisor that ensures child process lifecycle is bound to parent.
-/// 
+///
 /// On Windows: Uses Job Objects with JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE.
 /// On Linux: Uses PR_SET_PDEATHSIG to send SIGKILL when parent dies.
-/// 
+///
 /// The `job` field is intentionally never read after construction because
 /// the Job Object's cleanup happens automatically when it is dropped.
 /// Dropping the Job (when ProcessSupervisor is dropped) triggers the
@@ -39,10 +39,12 @@ impl ProcessSupervisor {
 
         #[cfg(windows)]
         let job = {
-            let job = Job::create().map_err(|e| anyhow::anyhow!("Failed to create Job Object: {}", e))?;
+            let job =
+                Job::create().map_err(|e| anyhow::anyhow!("Failed to create Job Object: {}", e))?;
             let mut limits = ExtendedLimitInfo::new();
             limits.limit_kill_on_job_close();
-            job.set_extended_limit_info(&mut limits).map_err(|e| anyhow::anyhow!("Failed to set job limits: {}", e))?;
+            job.set_extended_limit_info(&mut limits)
+                .map_err(|e| anyhow::anyhow!("Failed to set job limits: {}", e))?;
             job
         };
 
@@ -80,7 +82,8 @@ impl ProcessSupervisor {
             // Assign process to job object for lifecycle binding
             if let Some(h) = child.raw_handle() {
                 let handle = h as isize;
-                job.assign_process(handle).map_err(|e| anyhow::anyhow!("Failed to assign process to job: {}", e))?;
+                job.assign_process(handle)
+                    .map_err(|e| anyhow::anyhow!("Failed to assign process to job: {}", e))?;
             }
         }
 
@@ -92,8 +95,10 @@ impl ProcessSupervisor {
     }
 
     pub async fn kill(&mut self) -> Result<()> {
-        self.child.kill().await.context("Failed to kill child process")?;
+        self.child
+            .kill()
+            .await
+            .context("Failed to kill child process")?;
         Ok(())
     }
 }
-

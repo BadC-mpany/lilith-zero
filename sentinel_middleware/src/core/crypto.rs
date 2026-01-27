@@ -1,13 +1,13 @@
 //! Cryptographic utilities for session management and integrity.
-//! 
-//! This module provides the `CryptoSigner` which handles HMAC-based session ID 
+//!
+//! This module provides the `CryptoSigner` which handles HMAC-based session ID
 //! generation and validation, ensuring that session identifiers are tamper-proof.
 
-use hmac::{Hmac, Mac};
-use sha2::Sha256;
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
+use hmac::{Hmac, Mac};
+use ring::rand::{SecureRandom, SystemRandom};
+use sha2::Sha256;
 use uuid::Uuid;
-use ring::rand::{SystemRandom, SecureRandom};
 
 use crate::constants::crypto;
 
@@ -22,7 +22,8 @@ impl CryptoSigner {
     pub fn new() -> Self {
         let rng = SystemRandom::new();
         let mut secret = [0u8; crypto::SECRET_KEY_LENGTH];
-        rng.fill(&mut secret).expect("Failed to generate secure random secret");
+        rng.fill(&mut secret)
+            .expect("Failed to generate secure random secret");
         Self { secret }
     }
 
@@ -31,15 +32,16 @@ impl CryptoSigner {
     pub fn generate_session_id(&self) -> String {
         let uuid = Uuid::new_v4();
         let uuid_bytes = uuid.as_bytes();
-        
-        let mut mac = HmacSha256::new_from_slice(&self.secret).expect("HMAC can take key of any size");
+
+        let mut mac =
+            HmacSha256::new_from_slice(&self.secret).expect("HMAC can take key of any size");
         mac.update(uuid_bytes);
         let result = mac.finalize();
         let signature = result.into_bytes();
-        
+
         let uuid_b64 = URL_SAFE_NO_PAD.encode(uuid_bytes);
         let sig_b64 = URL_SAFE_NO_PAD.encode(signature);
-        
+
         format!("{}.{}.{}", crypto::SESSION_ID_VERSION, uuid_b64, sig_b64)
     }
 
@@ -47,7 +49,7 @@ impl CryptoSigner {
     pub fn validate_session_id(&self, session_id: &str) -> bool {
         let parts: Vec<&str> = session_id.split('.').collect();
         if parts.len() != 3 {
-             return false;
+            return false;
         }
 
         // Check version
@@ -65,13 +67,14 @@ impl CryptoSigner {
         };
 
         // Re-compute HMAC
-        let mut mac = HmacSha256::new_from_slice(&self.secret).expect("HMAC can take key of any size");
+        let mut mac =
+            HmacSha256::new_from_slice(&self.secret).expect("HMAC can take key of any size");
         mac.update(&uuid_bytes);
-        
+
         // Decode provided signature
         let provided_sig = match URL_SAFE_NO_PAD.decode(sig_b64) {
-             Ok(b) => b,
-             Err(_) => return false,
+            Ok(b) => b,
+            Err(_) => return false,
         };
 
         // Constant-time verify

@@ -1,5 +1,5 @@
 //! Pattern matching engine for dynamic rules.
-//! 
+//!
 //! This module provides the `PatternMatcher` which evaluates logic conditions
 //! and sequences against the current tool call and session history.
 
@@ -20,7 +20,15 @@ impl PatternMatcher {
         current_taints: &HashSet<String>,
         args: &Value,
     ) -> Result<bool, InterceptorError> {
-        Self::evaluate_condition_with_args(pattern, history, current_tool, current_classes, current_taints, args).await
+        Self::evaluate_condition_with_args(
+            pattern,
+            history,
+            current_tool,
+            current_classes,
+            current_taints,
+            args,
+        )
+        .await
     }
 
     pub async fn evaluate_condition_with_args(
@@ -33,8 +41,10 @@ impl PatternMatcher {
     ) -> Result<bool, InterceptorError> {
         // Simple condition matcher for MVP
         // In the future, this would evaluate complex JSON logic (e.g. {"==": [{"var": "tool"}, "read_file"]})
-        if condition.is_null() { return Ok(true); }
-        
+        if condition.is_null() {
+            return Ok(true);
+        }
+
         // For now, always return false for unknown complex patterns to fail safe
         Ok(false)
     }

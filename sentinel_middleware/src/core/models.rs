@@ -1,5 +1,5 @@
 //! Domain models for the Sentinel interceptor.
-//! 
+//!
 //! This module contains pure data structures representing policies, rules,
 //! tool calls, and decisions. It is designed to be free of I/O side effects.
 

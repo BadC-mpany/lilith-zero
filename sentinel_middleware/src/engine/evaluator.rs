@@ -1,6 +1,6 @@
 //! Policy evaluation engine.
-//! 
-//! This module implements the `PolicyEvaluator` which applies static and dynamic 
+//!
+//! This module implements the `PolicyEvaluator` which applies static and dynamic
 //! rules to tool calls based on the active policy and session context.
 
 // Static and dynamic rule evaluation
@@ -22,8 +22,12 @@ impl PolicyEvaluator {
         tool_args: &Value,
     ) -> Result<Decision, InterceptorError> {
         // 1. Static rules (ACL)
-        let permission = policy.static_rules.get(tool_name).map(|s| s.as_str()).unwrap_or("DENY");
-        
+        let permission = policy
+            .static_rules
+            .get(tool_name)
+            .map(|s| s.as_str())
+            .unwrap_or("DENY");
+
         if permission == "DENY" {
             return Ok(Decision::Denied {
                 reason: format!("Tool '{}' is forbidden by static policy", tool_name),
@@ -49,7 +53,10 @@ impl PolicyEvaluator {
                 if pattern_matched {
                     match rule.action.as_str() {
                         "BLOCK" => {
-                            let error_msg = rule.error.clone().unwrap_or_else(|| "Pattern block".to_string());
+                            let error_msg = rule
+                                .error
+                                .clone()
+                                .unwrap_or_else(|| "Pattern block".to_string());
                             return Ok(Decision::Denied { reason: error_msg });
                         }
                         _ => {}
@@ -63,25 +70,44 @@ impl PolicyEvaluator {
                                 if current_taints.contains(forbidden_tag) {
                                     // Check exceptions
                                     if let Some(ref exceptions) = rule.exceptions {
-                                        if Self::check_exceptions(exceptions, session_history, tool_name, tool_classes, current_taints, tool_args).await? {
+                                        if Self::check_exceptions(
+                                            exceptions,
+                                            session_history,
+                                            tool_name,
+                                            tool_classes,
+                                            current_taints,
+                                            tool_args,
+                                        )
+                                        .await?
+                                        {
                                             continue;
                                         }
                                     }
-                                    let error_msg = rule.error.clone().unwrap_or_else(|| "Forbidden taint detected".to_string());
+                                    let error_msg = rule
+                                        .error
+                                        .clone()
+                                        .unwrap_or_else(|| "Forbidden taint detected".to_string());
                                     return Ok(Decision::Denied { reason: error_msg });
                                 }
                             }
                         }
                     }
                     "ADD_TAINT" => {
-                        if let Some(ref tag) = rule.tag { taints_to_add.push(tag.clone()); }
+                        if let Some(ref tag) = rule.tag {
+                            taints_to_add.push(tag.clone());
+                        }
                     }
                     "REMOVE_TAINT" => {
-                        if let Some(ref tag) = rule.tag { taints_to_remove.push(tag.clone()); }
+                        if let Some(ref tag) = rule.tag {
+                            taints_to_remove.push(tag.clone());
+                        }
                     }
                     "BLOCK" => {
-                         let error_msg = rule.error.clone().unwrap_or_else(|| "Tool block".to_string());
-                         return Ok(Decision::Denied { reason: error_msg });
+                        let error_msg = rule
+                            .error
+                            .clone()
+                            .unwrap_or_else(|| "Tool block".to_string());
+                        return Ok(Decision::Denied { reason: error_msg });
                     }
                     _ => {}
                 }
@@ -91,7 +117,10 @@ impl PolicyEvaluator {
         if taints_to_add.is_empty() && taints_to_remove.is_empty() {
             Ok(Decision::Allowed)
         } else {
-            Ok(Decision::AllowedWithSideEffects { taints_to_add, taints_to_remove })
+            Ok(Decision::AllowedWithSideEffects {
+                taints_to_add,
+                taints_to_remove,
+            })
         }
     }
 
@@ -104,7 +133,16 @@ impl PolicyEvaluator {
         tool_args: &Value,
     ) -> Result<bool, InterceptorError> {
         for exception in exceptions {
-            if PatternMatcher::evaluate_condition_with_args(&exception.condition, session_history, tool_name, tool_classes, current_taints, tool_args).await? {
+            if PatternMatcher::evaluate_condition_with_args(
+                &exception.condition,
+                session_history,
+                tool_name,
+                tool_classes,
+                current_taints,
+                tool_args,
+            )
+            .await?
+            {
                 return Ok(true);
             }
         }

@@ -15,7 +15,7 @@ impl SecurityEngine {
             .take(spotlight::RANDOM_ID_LENGTH)
             .map(char::from)
             .collect();
-        
+
         format!(
             "{}{}{}\n{}\n{}{}{}",
             spotlight::DATA_START_PREFIX,
@@ -28,4 +28,3 @@ impl SecurityEngine {
         )
     }
 }
-

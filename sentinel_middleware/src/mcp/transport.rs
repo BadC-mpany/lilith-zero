@@ -1,12 +1,12 @@
 //! JSON-RPC 2.0 transport for MCP.
-//! 
-//! This module provides the `StdioTransport` for reading and writing 
+//!
+//! This module provides the `StdioTransport` for reading and writing
 //! MCP messages over standard I/O, as well as the core JSON-RPC types.
 
+use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, Stdin, Stdout};
-use anyhow::{Result, Context};
 use tracing::debug;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -48,15 +48,20 @@ impl StdioTransport {
     /// Read the next JSON-RPC message from Stdin.
     pub async fn read_message(&mut self) -> Result<Option<JsonRpcRequest>> {
         let mut line = String::new();
-        let bytes = self.reader.read_line(&mut line).await.context("Failed to read from stdin")?;
-        
+        let bytes = self
+            .reader
+            .read_line(&mut line)
+            .await
+            .context("Failed to read from stdin")?;
+
         if bytes == 0 {
             return Ok(None); // EOF
         }
 
         debug!("Received: {}", line.trim());
 
-        let req: JsonRpcRequest = serde_json::from_str(&line).context("Failed to parse JSON-RPC request")?;
+        let req: JsonRpcRequest =
+            serde_json::from_str(&line).context("Failed to parse JSON-RPC request")?;
         Ok(Some(req))
     }
 
@@ -64,7 +69,7 @@ impl StdioTransport {
     pub async fn write_response(&mut self, response: JsonRpcResponse) -> Result<()> {
         let json = serde_json::to_string(&response).context("Failed to serialize response")?;
         debug!("Sending: {}", json);
-        
+
         self.writer.write_all(json.as_bytes()).await?;
         self.writer.write_all(b"\n").await?;
         self.writer.flush().await?;

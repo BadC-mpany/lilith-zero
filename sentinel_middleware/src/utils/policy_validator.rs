@@ -22,7 +22,7 @@ impl PolicyValidator {
         // Policy must have a non-empty name
         if policy.name.is_empty() {
             return Err(InterceptorError::ConfigurationError(
-                "Policy name cannot be empty".to_string()
+                "Policy name cannot be empty".to_string(),
             ));
         }
 
@@ -44,13 +44,14 @@ impl PolicyValidator {
     ) -> Result<(), InterceptorError> {
         for (tool_name, permission) in static_rules {
             if tool_name.is_empty() {
-                return Err(InterceptorError::ConfigurationError(
-                    format!("Policy '{}': static rule has empty tool name", policy_name)
-                ));
+                return Err(InterceptorError::ConfigurationError(format!(
+                    "Policy '{}': static rule has empty tool name",
+                    policy_name
+                )));
             }
 
             match permission.as_str() {
-                "ALLOW" | "DENY" => {},
+                "ALLOW" | "DENY" => {}
                 other => {
                     return Err(InterceptorError::ConfigurationError(
                         format!(
@@ -75,14 +76,16 @@ impl PolicyValidator {
         // Rule must have exactly one of: tool OR tool_class (not both, not neither)
         match (&rule.tool, &rule.tool_class) {
             (None, None) => {
-                return Err(InterceptorError::ConfigurationError(
-                    format!("{}: rule must specify either 'tool' or 'tool_class'", rule_context)
-                ));
+                return Err(InterceptorError::ConfigurationError(format!(
+                    "{}: rule must specify either 'tool' or 'tool_class'",
+                    rule_context
+                )));
             }
             (Some(_), Some(_)) => {
-                return Err(InterceptorError::ConfigurationError(
-                    format!("{}: rule cannot specify both 'tool' and 'tool_class'", rule_context)
-                ));
+                return Err(InterceptorError::ConfigurationError(format!(
+                    "{}: rule cannot specify both 'tool' and 'tool_class'",
+                    rule_context
+                )));
             }
             _ => {} // Exactly one is set - valid
         }
@@ -96,14 +99,15 @@ impl PolicyValidator {
         // Validate pattern if present
         if let Some(ref pattern) = rule.pattern {
             Self::validate_pattern(pattern, &rule_context)?;
-            
+
             // Check for tool_args_match in logic patterns (same constraint as exceptions)
             if let Some(pattern_type) = pattern.get("type").and_then(|v| v.as_str()) {
                 if pattern_type == "logic" {
                     if let Some(condition) = pattern.get("condition") {
                         if Self::condition_contains_tool_args_match(condition)
-                            && rule.tool_class.is_some() {
-                                return Err(InterceptorError::ConfigurationError(
+                            && rule.tool_class.is_some()
+                        {
+                            return Err(InterceptorError::ConfigurationError(
                                     format!(
                                         "{}: tool_args_match in logic patterns is only valid for tool-specific rules (not tool_class rules). \
                                         Tool classes have heterogeneous argument schemas.",
@@ -136,34 +140,37 @@ impl PolicyValidator {
         ];
 
         if !VALID_ACTIONS.contains(&action) {
-            return Err(InterceptorError::ConfigurationError(
-                format!(
-                    "{}: unknown action '{}'. Valid actions: {}",
-                    context,
-                    action,
-                    VALID_ACTIONS.join(", ")
-                )
-            ));
+            return Err(InterceptorError::ConfigurationError(format!(
+                "{}: unknown action '{}'. Valid actions: {}",
+                context,
+                action,
+                VALID_ACTIONS.join(", ")
+            )));
         }
 
         Ok(())
     }
 
     /// Validate action-specific requirements
-    fn validate_action_requirements(rule: &PolicyRule, context: &str) -> Result<(), InterceptorError> {
+    fn validate_action_requirements(
+        rule: &PolicyRule,
+        context: &str,
+    ) -> Result<(), InterceptorError> {
         match rule.action.as_str() {
             "CHECK_TAINT" => {
                 // CHECK_TAINT requires forbidden_tags
                 match &rule.forbidden_tags {
                     None => {
-                        return Err(InterceptorError::ConfigurationError(
-                            format!("{}: CHECK_TAINT action requires 'forbidden_tags'", context)
-                        ));
+                        return Err(InterceptorError::ConfigurationError(format!(
+                            "{}: CHECK_TAINT action requires 'forbidden_tags'",
+                            context
+                        )));
                     }
                     Some(tags) if tags.is_empty() => {
-                        return Err(InterceptorError::ConfigurationError(
-                            format!("{}: CHECK_TAINT 'forbidden_tags' cannot be empty", context)
-                        ));
+                        return Err(InterceptorError::ConfigurationError(format!(
+                            "{}: CHECK_TAINT 'forbidden_tags' cannot be empty",
+                            context
+                        )));
                     }
                     _ => {}
                 }
@@ -171,9 +178,10 @@ impl PolicyValidator {
             "ADD_TAINT" | "REMOVE_TAINT" => {
                 // ADD_TAINT and REMOVE_TAINT require tag
                 if rule.tag.is_none() {
-                    return Err(InterceptorError::ConfigurationError(
-                        format!("{}: {} action requires 'tag'", context, rule.action)
-                    ));
+                    return Err(InterceptorError::ConfigurationError(format!(
+                        "{}: {} action requires 'tag'",
+                        context, rule.action
+                    )));
                 }
             }
             "BLOCK" | "BLOCK_CURRENT" | "BLOCK_SECOND" => {
@@ -192,20 +200,21 @@ impl PolicyValidator {
         let pattern_type = pattern
             .get("type")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| InterceptorError::ConfigurationError(
-                format!("{}: pattern missing 'type' field", context)
-            ))?;
+            .ok_or_else(|| {
+                InterceptorError::ConfigurationError(format!(
+                    "{}: pattern missing 'type' field",
+                    context
+                ))
+            })?;
 
         match pattern_type {
             "sequence" => Self::validate_sequence_pattern(pattern, context)?,
             "logic" => Self::validate_logic_pattern(pattern, context)?,
             other => {
-                return Err(InterceptorError::ConfigurationError(
-                    format!(
-                        "{}: unknown pattern type '{}' (must be 'sequence' or 'logic')",
-                        context, other
-                    )
-                ));
+                return Err(InterceptorError::ConfigurationError(format!(
+                    "{}: unknown pattern type '{}' (must be 'sequence' or 'logic')",
+                    context, other
+                )));
             }
         }
 
@@ -218,22 +227,28 @@ impl PolicyValidator {
         let steps = pattern
             .get("steps")
             .and_then(|v| v.as_array())
-            .ok_or_else(|| InterceptorError::ConfigurationError(
-                format!("{}: sequence pattern missing 'steps' array", context)
-            ))?;
+            .ok_or_else(|| {
+                InterceptorError::ConfigurationError(format!(
+                    "{}: sequence pattern missing 'steps' array",
+                    context
+                ))
+            })?;
 
         if steps.is_empty() {
-            return Err(InterceptorError::ConfigurationError(
-                format!("{}: sequence pattern 'steps' cannot be empty", context)
-            ));
+            return Err(InterceptorError::ConfigurationError(format!(
+                "{}: sequence pattern 'steps' cannot be empty",
+                context
+            )));
         }
 
         // Validate each step
         for (idx, step) in steps.iter().enumerate() {
             let step_obj = step.as_object().ok_or_else(|| {
-                InterceptorError::ConfigurationError(
-                    format!("{}: sequence step #{} must be an object", context, idx + 1)
-                )
+                InterceptorError::ConfigurationError(format!(
+                    "{}: sequence step #{} must be an object",
+                    context,
+                    idx + 1
+                ))
             })?;
 
             // Each step must have either 'tool' or 'class'
@@ -241,13 +256,11 @@ impl PolicyValidator {
             let has_class = step_obj.contains_key("class");
 
             if !has_tool && !has_class {
-                return Err(InterceptorError::ConfigurationError(
-                    format!(
-                        "{}: sequence step #{} must have either 'tool' or 'class'",
-                        context,
-                        idx + 1
-                    )
-                ));
+                return Err(InterceptorError::ConfigurationError(format!(
+                    "{}: sequence step #{} must have either 'tool' or 'class'",
+                    context,
+                    idx + 1
+                )));
             }
         }
 
@@ -257,11 +270,12 @@ impl PolicyValidator {
     /// Validate logic pattern
     fn validate_logic_pattern(pattern: &Value, context: &str) -> Result<(), InterceptorError> {
         // Must have 'condition' field
-        let condition = pattern
-            .get("condition")
-            .ok_or_else(|| InterceptorError::ConfigurationError(
-                format!("{}: logic pattern missing 'condition' field", context)
-            ))?;
+        let condition = pattern.get("condition").ok_or_else(|| {
+            InterceptorError::ConfigurationError(format!(
+                "{}: logic pattern missing 'condition' field",
+                context
+            ))
+        })?;
 
         // Validate condition structure
         Self::validate_condition(condition, context)?;
@@ -272,17 +286,19 @@ impl PolicyValidator {
     /// Validate condition structure (recursive)
     fn validate_condition(condition: &Value, context: &str) -> Result<(), InterceptorError> {
         let obj = condition.as_object().ok_or_else(|| {
-            InterceptorError::ConfigurationError(
-                format!("{}: condition must be an object", context)
-            )
+            InterceptorError::ConfigurationError(format!(
+                "{}: condition must be an object",
+                context
+            ))
         })?;
 
         // Check for logical operators
         if let Some(and_array) = obj.get("AND").and_then(|v| v.as_array()) {
             if and_array.is_empty() {
-                return Err(InterceptorError::ConfigurationError(
-                    format!("{}: AND operator cannot have empty array", context)
-                ));
+                return Err(InterceptorError::ConfigurationError(format!(
+                    "{}: AND operator cannot have empty array",
+                    context
+                )));
             }
             for item in and_array {
                 Self::validate_condition(item, context)?;
@@ -292,9 +308,10 @@ impl PolicyValidator {
 
         if let Some(or_array) = obj.get("OR").and_then(|v| v.as_array()) {
             if or_array.is_empty() {
-                return Err(InterceptorError::ConfigurationError(
-                    format!("{}: OR operator cannot have empty array", context)
-                ));
+                return Err(InterceptorError::ConfigurationError(format!(
+                    "{}: OR operator cannot have empty array",
+                    context
+                )));
             }
             for item in or_array {
                 Self::validate_condition(item, context)?;
@@ -334,22 +351,18 @@ impl PolicyValidator {
             .collect();
 
         if matching_keys.is_empty() {
-            return Err(InterceptorError::ConfigurationError(
-                format!(
-                    "{}: condition must contain one of: {}",
-                    context,
-                    VALID_ATOMIC_CONDITIONS.join(", ")
-                )
-            ));
+            return Err(InterceptorError::ConfigurationError(format!(
+                "{}: condition must contain one of: {}",
+                context,
+                VALID_ATOMIC_CONDITIONS.join(", ")
+            )));
         }
 
         if matching_keys.len() > 1 {
-            return Err(InterceptorError::ConfigurationError(
-                format!(
-                    "{}: condition has multiple atomic keys: {:?}",
-                    context, matching_keys
-                )
-            ));
+            return Err(InterceptorError::ConfigurationError(format!(
+                "{}: condition has multiple atomic keys: {:?}",
+                context, matching_keys
+            )));
         }
 
         Ok(())
@@ -381,12 +394,10 @@ impl PolicyValidator {
 
                 // Also verify rule.tool is Some (should already be guaranteed by earlier checks)
                 if rule.tool.is_none() {
-                    return Err(InterceptorError::ConfigurationError(
-                        format!(
-                            "{}: tool_args_match requires rule to specify 'tool' field",
-                            exc_context
-                        )
-                    ));
+                    return Err(InterceptorError::ConfigurationError(format!(
+                        "{}: tool_args_match requires rule to specify 'tool' field",
+                        exc_context
+                    )));
                 }
             }
         }
@@ -404,11 +415,15 @@ impl PolicyValidator {
 
             // Check AND/OR/NOT operators recursively
             if let Some(and_array) = obj.get("AND").and_then(|v| v.as_array()) {
-                return and_array.iter().any(Self::condition_contains_tool_args_match);
+                return and_array
+                    .iter()
+                    .any(Self::condition_contains_tool_args_match);
             }
 
             if let Some(or_array) = obj.get("OR").and_then(|v| v.as_array()) {
-                return or_array.iter().any(Self::condition_contains_tool_args_match);
+                return or_array
+                    .iter()
+                    .any(Self::condition_contains_tool_args_match);
             }
 
             if let Some(not_value) = obj.get("NOT") {
@@ -428,16 +443,14 @@ impl PolicyValidator {
             for (idx, rule) in policy.taint_rules.iter().enumerate() {
                 if let Some(ref class) = rule.tool_class {
                     if !known_classes.contains(class) {
-                        return Err(InterceptorError::ConfigurationError(
-                            format!(
-                                "Policy '{}', rule #{}: unknown tool class '{}'. \
+                        return Err(InterceptorError::ConfigurationError(format!(
+                            "Policy '{}', rule #{}: unknown tool class '{}'. \
                                 Known classes: {:?}",
-                                policy.name,
-                                idx + 1,
-                                class,
-                                known_classes
-                            )
-                        ));
+                            policy.name,
+                            idx + 1,
+                            class,
+                            known_classes
+                        )));
                     }
                 }
 
@@ -462,16 +475,14 @@ impl PolicyValidator {
             for step in steps {
                 if let Some(class_name) = step.get("class").and_then(|v| v.as_str()) {
                     if !known_classes.contains(class_name) {
-                        return Err(InterceptorError::ConfigurationError(
-                            format!(
-                                "Policy '{}', rule #{}: unknown tool class '{}' in pattern. \
+                        return Err(InterceptorError::ConfigurationError(format!(
+                            "Policy '{}', rule #{}: unknown tool class '{}' in pattern. \
                                 Known classes: {:?}",
-                                policy_name,
-                                rule_idx + 1,
-                                class_name,
-                                known_classes
-                            )
-                        ));
+                            policy_name,
+                            rule_idx + 1,
+                            class_name,
+                            known_classes
+                        )));
                     }
                 }
             }
@@ -495,18 +506,16 @@ mod tests {
         let policy = PolicyDefinition {
             name: "test_policy".to_string(),
             static_rules,
-            taint_rules: vec![
-                PolicyRule {
-                    tool: Some("read_file".to_string()),
-                    tool_class: None,
-                    action: "ADD_TAINT".to_string(),
-                    tag: Some("sensitive".to_string()),
-                    forbidden_tags: None,
-                    error: None,
-                    pattern: None,
-                    exceptions: None,
-                },
-            ],
+            taint_rules: vec![PolicyRule {
+                tool: Some("read_file".to_string()),
+                tool_class: None,
+                action: "ADD_TAINT".to_string(),
+                tag: Some("sensitive".to_string()),
+                forbidden_tags: None,
+                error: None,
+                pattern: None,
+                exceptions: None,
+            }],
         };
 
         assert!(PolicyValidator::validate_policy(&policy).is_ok());
@@ -517,23 +526,24 @@ mod tests {
         let policy = PolicyDefinition {
             name: "test".to_string(),
             static_rules: HashMap::new(),
-            taint_rules: vec![
-                PolicyRule {
-                    tool: None,
-                    tool_class: None, // Missing both!
-                    action: "ADD_TAINT".to_string(),
-                    tag: Some("test".to_string()),
-                    forbidden_tags: None,
-                    error: None,
-                    pattern: None,
-                    exceptions: None,
-                },
-            ],
+            taint_rules: vec![PolicyRule {
+                tool: None,
+                tool_class: None, // Missing both!
+                action: "ADD_TAINT".to_string(),
+                tag: Some("test".to_string()),
+                forbidden_tags: None,
+                error: None,
+                pattern: None,
+                exceptions: None,
+            }],
         };
 
         let result = PolicyValidator::validate_policy(&policy);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("must specify either 'tool' or 'tool_class'"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("must specify either 'tool' or 'tool_class'"));
     }
 
     #[test]
@@ -541,23 +551,24 @@ mod tests {
         let policy = PolicyDefinition {
             name: "test".to_string(),
             static_rules: HashMap::new(),
-            taint_rules: vec![
-                PolicyRule {
-                    tool: Some("test_tool".to_string()),
-                    tool_class: None,
-                    action: "CHECK_TAINT".to_string(),
-                    tag: None,
-                    forbidden_tags: None, // Missing!
-                    error: None,
-                    pattern: None,
-                    exceptions: None,
-                },
-            ],
+            taint_rules: vec![PolicyRule {
+                tool: Some("test_tool".to_string()),
+                tool_class: None,
+                action: "CHECK_TAINT".to_string(),
+                tag: None,
+                forbidden_tags: None, // Missing!
+                error: None,
+                pattern: None,
+                exceptions: None,
+            }],
         };
 
         let result = PolicyValidator::validate_policy(&policy);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("requires 'forbidden_tags'"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("requires 'forbidden_tags'"));
     }
 
     #[test]
@@ -567,25 +578,21 @@ mod tests {
         let policy = PolicyDefinition {
             name: "test".to_string(),
             static_rules: HashMap::new(),
-            taint_rules: vec![
-                PolicyRule {
-                    tool: None,
-                    tool_class: Some("CONSEQUENTIAL_WRITE".to_string()),
-                    action: "CHECK_TAINT".to_string(),
-                    tag: None,
-                    forbidden_tags: Some(vec!["sensitive".to_string()]),
-                    error: None,
-                    pattern: None,
-                    exceptions: Some(vec![
-                        RuleException {
-                            condition: json!({
-                                "tool_args_match": {"destination": "internal_*"}
-                            }),
-                            reason: Some("test".to_string()),
-                        },
-                    ]),
-                },
-            ],
+            taint_rules: vec![PolicyRule {
+                tool: None,
+                tool_class: Some("CONSEQUENTIAL_WRITE".to_string()),
+                action: "CHECK_TAINT".to_string(),
+                tag: None,
+                forbidden_tags: Some(vec!["sensitive".to_string()]),
+                error: None,
+                pattern: None,
+                exceptions: Some(vec![RuleException {
+                    condition: json!({
+                        "tool_args_match": {"destination": "internal_*"}
+                    }),
+                    reason: Some("test".to_string()),
+                }]),
+            }],
         };
 
         let result = PolicyValidator::validate_policy(&policy);
@@ -602,28 +609,23 @@ mod tests {
         let policy = PolicyDefinition {
             name: "test".to_string(),
             static_rules: HashMap::new(),
-            taint_rules: vec![
-                PolicyRule {
-                    tool: Some("send_email".to_string()),
-                    tool_class: None,
-                    action: "CHECK_TAINT".to_string(),
-                    tag: None,
-                    forbidden_tags: Some(vec!["sensitive".to_string()]),
-                    error: None,
-                    pattern: None,
-                    exceptions: Some(vec![
-                        RuleException {
-                            condition: json!({
-                                "tool_args_match": {"to": "*@company.com"}
-                            }),
-                            reason: Some("Internal emails allowed".to_string()),
-                        },
-                    ]),
-                },
-            ],
+            taint_rules: vec![PolicyRule {
+                tool: Some("send_email".to_string()),
+                tool_class: None,
+                action: "CHECK_TAINT".to_string(),
+                tag: None,
+                forbidden_tags: Some(vec!["sensitive".to_string()]),
+                error: None,
+                pattern: None,
+                exceptions: Some(vec![RuleException {
+                    condition: json!({
+                        "tool_args_match": {"to": "*@company.com"}
+                    }),
+                    reason: Some("Internal emails allowed".to_string()),
+                }]),
+            }],
         };
 
         assert!(PolicyValidator::validate_policy(&policy).is_ok());
     }
 }
-

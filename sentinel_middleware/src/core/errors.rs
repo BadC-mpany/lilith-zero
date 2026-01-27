@@ -94,7 +94,9 @@ impl InterceptorError {
     pub fn user_message(&self) -> String {
         match self {
             InterceptorError::InvalidApiKey => "Invalid API Key".to_string(),
-            InterceptorError::AuthenticationError(reason) => format!("Authentication failed: {}", reason),
+            InterceptorError::AuthenticationError(reason) => {
+                format!("Authentication failed: {}", reason)
+            }
             InterceptorError::ValidationError(reason) => format!("Validation failed: {}", reason),
             InterceptorError::InfrastructureError(_) => "Service unavailable".to_string(),
             InterceptorError::PolicyViolation(reason) => format!("Policy violation: {}", reason),

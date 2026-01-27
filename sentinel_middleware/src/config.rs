@@ -13,7 +13,7 @@ pub struct Config {
 impl Config {
     pub fn from_env() -> Result<Self, InterceptorError> {
         // dotenv support removed for stdio middleware cleanliness
-        
+
         Ok(Self {
             policies_yaml_path: env::var("POLICIES_YAML_PATH").ok().map(PathBuf::from),
             log_level: env::var("LOG_LEVEL").unwrap_or_else(|_| "info".to_string()),
