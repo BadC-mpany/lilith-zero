@@ -194,6 +194,13 @@ class SentinelClient:
             pass
         except Exception as e:
             logger.error(f"Error in read loop: {e}")
+        finally:
+            # Mark all pending requests as failed if the loop ends
+            # This prevents _send_request from hanging indefinitely
+            for req_id, future in list(self._pending_requests.items()):
+                if not future.done():
+                    future.set_exception(RuntimeError("Sentinel process terminated unexpectedly"))
+            self._pending_requests.clear()
 
     async def _send_notification(self, method: str, params: Dict[str, Any]):
         """Sent a JSON-RPC notification (no ID) to the middleware."""
@@ -243,7 +250,13 @@ class SentinelClient:
             self.process.stdin.write(data.encode())
             await self.process.stdin.drain()
             
-        return await future
+        try:
+            return await asyncio.wait_for(future, timeout=30.0)
+        except asyncio.TimeoutError:
+            # Clean up pending request on timeout
+            if req_id in self._pending_requests:
+                del self._pending_requests[req_id]
+            raise RuntimeError(f"Sentinel request '{method}' timed out after 30 seconds")
 
     async def get_tools_config(self) -> List[Dict[str, Any]]:
         """

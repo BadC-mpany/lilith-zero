@@ -104,7 +104,9 @@ jobs:
           python-version: '3.12'
       
       - name: Install Python SDK
-        run: pip install -e sentinel_sdk
+        run: |
+          pip install fastmcp
+          pip install -e sentinel_sdk
       
       - name: Run integration tests
         env:
