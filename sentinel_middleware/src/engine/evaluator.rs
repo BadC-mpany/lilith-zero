@@ -50,17 +50,12 @@ impl PolicyEvaluator {
                 )
                 .await?;
 
-                if pattern_matched {
-                    match rule.action.as_str() {
-                        "BLOCK" => {
-                            let error_msg = rule
-                                .error
-                                .clone()
-                                .unwrap_or_else(|| "Pattern block".to_string());
-                            return Ok(Decision::Denied { reason: error_msg });
-                        }
-                        _ => {}
-                    }
+                if pattern_matched && rule.action == "BLOCK" {
+                    let error_msg = rule
+                        .error
+                        .clone()
+                        .unwrap_or_else(|| "Pattern block".to_string());
+                    return Ok(Decision::Denied { reason: error_msg });
                 }
             } else if rule.matches_tool(tool_name, tool_classes) {
                 match rule.action.as_str() {

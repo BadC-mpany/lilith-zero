@@ -17,6 +17,12 @@ pub struct CryptoSigner {
     secret: [u8; crypto::SECRET_KEY_LENGTH],
 }
 
+impl Default for CryptoSigner {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CryptoSigner {
     /// Create a new signer with a secure random ephemeral key
     pub fn new() -> Self {

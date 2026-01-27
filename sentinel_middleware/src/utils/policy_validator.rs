@@ -504,7 +504,10 @@ mod tests {
         static_rules.insert("read_file".to_string(), "ALLOW".to_string());
 
         let policy = PolicyDefinition {
+            id: "test-policy".to_string(),
+            customer_id: "test-customer".to_string(),
             name: "test_policy".to_string(),
+            version: 1,
             static_rules,
             taint_rules: vec![PolicyRule {
                 tool: Some("read_file".to_string()),
@@ -516,6 +519,7 @@ mod tests {
                 pattern: None,
                 exceptions: None,
             }],
+            created_at: "2024-01-01T00:00:00Z".to_string(),
         };
 
         assert!(PolicyValidator::validate_policy(&policy).is_ok());
@@ -524,7 +528,10 @@ mod tests {
     #[test]
     fn test_rule_needs_tool_or_class() {
         let policy = PolicyDefinition {
+            id: "test-policy".to_string(),
+            customer_id: "test-customer".to_string(),
             name: "test".to_string(),
+            version: 1,
             static_rules: HashMap::new(),
             taint_rules: vec![PolicyRule {
                 tool: None,
@@ -536,6 +543,7 @@ mod tests {
                 pattern: None,
                 exceptions: None,
             }],
+            created_at: "2024-01-01T00:00:00Z".to_string(),
         };
 
         let result = PolicyValidator::validate_policy(&policy);
@@ -549,7 +557,10 @@ mod tests {
     #[test]
     fn test_check_taint_requires_forbidden_tags() {
         let policy = PolicyDefinition {
+            id: "test-policy".to_string(),
+            customer_id: "test-customer".to_string(),
             name: "test".to_string(),
+            version: 1,
             static_rules: HashMap::new(),
             taint_rules: vec![PolicyRule {
                 tool: Some("test_tool".to_string()),
@@ -561,6 +572,7 @@ mod tests {
                 pattern: None,
                 exceptions: None,
             }],
+            created_at: "2024-01-01T00:00:00Z".to_string(),
         };
 
         let result = PolicyValidator::validate_policy(&policy);
@@ -576,7 +588,10 @@ mod tests {
         use crate::core::models::RuleException;
 
         let policy = PolicyDefinition {
+            id: "test-policy".to_string(),
+            customer_id: "test-customer".to_string(),
             name: "test".to_string(),
+            version: 1,
             static_rules: HashMap::new(),
             taint_rules: vec![PolicyRule {
                 tool: None,
@@ -593,6 +608,7 @@ mod tests {
                     reason: Some("test".to_string()),
                 }]),
             }],
+            created_at: "2024-01-01T00:00:00Z".to_string(),
         };
 
         let result = PolicyValidator::validate_policy(&policy);
@@ -607,7 +623,10 @@ mod tests {
         use crate::core::models::RuleException;
 
         let policy = PolicyDefinition {
+            id: "test-policy".to_string(),
+            customer_id: "test-customer".to_string(),
             name: "test".to_string(),
+            version: 1,
             static_rules: HashMap::new(),
             taint_rules: vec![PolicyRule {
                 tool: Some("send_email".to_string()),
@@ -624,6 +643,7 @@ mod tests {
                     reason: Some("Internal emails allowed".to_string()),
                 }]),
             }],
+            created_at: "2024-01-01T00:00:00Z".to_string(),
         };
 
         assert!(PolicyValidator::validate_policy(&policy).is_ok());
