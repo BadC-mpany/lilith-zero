@@ -12,7 +12,6 @@ use tracing::info;
 #[cfg(windows)]
 use win32job::{ExtendedLimitInfo, Job};
 
-
 /// Process supervisor that ensures child process lifecycle is bound to parent.
 ///
 /// On Windows: Uses Job Objects with JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE.
