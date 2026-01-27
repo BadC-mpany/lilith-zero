@@ -31,7 +31,16 @@ from .src.constants import (
 )
 from .src.prompts import get_default_prompt, get_full_prompt
 
-__all__ = ["Sentinel", "SentinelClient", "__version__"]
+__all__ = [
+    "Sentinel",
+    "SentinelClient",
+    "__version__",
+    "SECURITY_LEVEL_LOW",
+    "SECURITY_LEVEL_MEDIUM", 
+    "SECURITY_LEVEL_HIGH",
+    "ENV_BINARY_PATH",
+    "ENV_POLICY_PATH",
+]
 
 
 def _find_binary() -> Optional[str]:

@@ -17,7 +17,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from sentinel_sdk import Sentinel, SentinelClient
 
 # Setup logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger("IntegrationTest")
 
 # Test configuration - relative paths
@@ -38,8 +38,8 @@ class TestSentinelIntegration(unittest.TestCase):
     async def run_integration_test(self):
         logger.info("Initializing Sentinel Client...")
         
-        # Build upstream command
-        upstream_cmd = f"{sys.executable} {UPSTREAM_SCRIPT}"
+        # Build upstream command - use -u for unbuffered I/O
+        upstream_cmd = f"{sys.executable} -u {UPSTREAM_SCRIPT}"
         
         try:
             client = Sentinel.start(

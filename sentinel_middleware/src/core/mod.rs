@@ -1,4 +1,7 @@
-// Core domain kernel (pure Rust, no I/O)
+//! Core domain kernel.
+//! 
+//! This module contains the fundamental data structures and logic 
+//! that are independent of any specific transport or external service.
 
 pub mod models;
 pub mod crypto;

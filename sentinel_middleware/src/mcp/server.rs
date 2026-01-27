@@ -1,3 +1,9 @@
+//! MCP Middleware implementation.
+//! 
+//! This module implements the main `McpMiddleware` which acts as a proxy
+//! between an MCP client (like Claude Desktop) and an upstream MCP server.
+//! It enforces security policies on tool calls and resources.
+
 use crate::mcp::transport::{StdioTransport, JsonRpcRequest, JsonRpcResponse};
 use crate::mcp::process::ProcessSupervisor;
 use crate::mcp::security::SecurityEngine;
@@ -135,12 +141,16 @@ impl McpMiddleware {
         // OR expect SDK to send it even here.
         // Let's be strict but allow if params is missing (rare for initialize).
         
-        let mut supervisor = ProcessSupervisor::spawn(&self.upstream_cmd, &self.upstream_args)?;
+        info!("Spawning upstream: {} {:?}", self.upstream_cmd, self.upstream_args);
+        let mut supervisor = ProcessSupervisor::spawn(&self.upstream_cmd, &self.upstream_args).context("Failed to spawn upstream")?;
+        info!("Upstream spawned successfully");
         self.upstream_stdin = supervisor.child.stdin.take();
         self.upstream_stdout = supervisor.child.stdout.take().map(BufReader::new);
         self.upstream = Some(supervisor);
 
+        info!("Transacting initialize with upstream...");
         let resp = self.transact_upstream(req).await?;
+        info!("Initialize transaction complete");
         self.transport.write_response(resp).await?;
         Ok(())
     }
@@ -302,8 +312,10 @@ impl McpMiddleware {
         stdin.write_all(b"\n").await?;
         stdin.flush().await?;
 
+        info!("Reading line from upstream stdout...");
         let mut line = String::new();
-        stdout.read_line(&mut line).await?;
+        stdout.read_line(&mut line).await.context("Failed to read line from upstream")?;
+        info!("Received line from upstream: {}", line.trim());
         
         // Handle empty line (EOF or crash)?
         if line.trim().is_empty() {

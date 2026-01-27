@@ -1,3 +1,8 @@
+//! JSON-RPC 2.0 transport for MCP.
+//! 
+//! This module provides the `StdioTransport` for reading and writing 
+//! MCP messages over standard I/O, as well as the core JSON-RPC types.
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, Stdin, Stdout};

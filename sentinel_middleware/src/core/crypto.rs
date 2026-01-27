@@ -1,3 +1,8 @@
+//! Cryptographic utilities for session management and integrity.
+//! 
+//! This module provides the `CryptoSigner` which handles HMAC-based session ID 
+//! generation and validation, ensuring that session identifiers are tamper-proof.
+
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};

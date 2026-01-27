@@ -1,3 +1,8 @@
+//! Pattern matching engine for dynamic rules.
+//! 
+//! This module provides the `PatternMatcher` which evaluates logic conditions
+//! and sequences against the current tool call and session history.
+
 use crate::core::errors::InterceptorError;
 use crate::core::models::HistoryEntry;
 use serde_json::Value;

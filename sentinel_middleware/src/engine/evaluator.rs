@@ -1,3 +1,8 @@
+//! Policy evaluation engine.
+//! 
+//! This module implements the `PolicyEvaluator` which applies static and dynamic 
+//! rules to tool calls based on the active policy and session context.
+
 // Static and dynamic rule evaluation
 use crate::core::errors::InterceptorError;
 use crate::core::models::{Decision, HistoryEntry, PolicyDefinition};

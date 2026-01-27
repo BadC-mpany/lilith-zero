@@ -1,3 +1,9 @@
+//! Upstream process management.
+//! 
+//! This module handles spawning and supervising the upstream MCP server process.
+//! On Windows, it uses Job Objects to ensure the child process is terminated 
+//! if the middleware dies.
+
 use tokio::process::{Child, Command};
 use std::process::Stdio;
 use anyhow::{Result, Context};

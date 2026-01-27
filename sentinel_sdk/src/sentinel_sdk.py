@@ -3,9 +3,7 @@ import logging
 import json
 import asyncio
 import uuid
-import platform
-from typing import List, Optional, Any, Dict, Union
-from contextlib import asynccontextmanager
+from typing import List, Optional, Any, Dict
 
 # Handle imports whether running as package or directly
 try:
@@ -118,7 +116,11 @@ class SentinelClient:
         await self._send_notification("notifications/initialized", {})
 
     async def stop_session(self):
-        """Terminate the Sentinel process."""
+        """
+        Terminate the Sentinel process and cleanup resources.
+        
+        This method cancels the reader tasks and terminates the subprocess.
+        """
         if self._reader_task:
             self._reader_task.cancel()
             
@@ -131,53 +133,70 @@ class SentinelClient:
         self.session_id = None
 
     async def _process_stderr(self):
-        """Read stderr to extract logs and Session ID."""
+        """
+        Internal task to read stderr for logs and session handshake.
+        
+        Extracts 'SENTINEL_SESSION_ID' printed by the middleware on startup.
+        """
         if not self.process or not self.process.stderr:
             return
             
-        while True:
-            line = await self.process.stderr.readline()
-            if not line:
-                break
-            
-            line_str = line.decode().strip()
-            # Check for Session ID handshake
-            if line_str.startswith("SENTINEL_SESSION_ID="):
-                self.session_id = line_str.split("=", 1)[1]
-                logger.info(f"Captured Session ID: {self.session_id}")
-            else:
-                # Forward other logs to python logger
-                logger.debug(f"[Sentinel Stderr] {line_str}")
+        try:
+            while True:
+                line = await self.process.stderr.readline()
+                if not line:
+                    break
+                
+                line_str = line.decode().strip()
+                # Check for Session ID handshake
+                if line_str.startswith("SENTINEL_SESSION_ID="):
+                    self.session_id = line_str.split("=", 1)[1]
+                    logger.info(f"Captured Session ID: {self.session_id}")
+                else:
+                    # Forward other logs to python logger
+                    logger.debug(f"[Sentinel Stderr] {line_str}")
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            logger.error(f"Error reading stderr: {e}")
 
     async def _read_stdout_loop(self):
-        """Read JSON-RPC responses from stdout."""
+        """
+        Internal loop to read JSON-RPC responses from the middleware's stdout.
+        
+        Dispatches responses to pending request futures.
+        """
         if not self.process or not self.process.stdout:
             return
 
-        while True:
-            line = await self.process.stdout.readline()
-            if not line:
-                break
-            
-            try:
-                msg = json.loads(line.decode())
+        try:
+            while True:
+                line = await self.process.stdout.readline()
+                if not line:
+                    break
                 
-                # Handle Response
-                if "id" in msg:
-                    req_id = str(msg["id"])
-                    if req_id in self._pending_requests:
-                        future = self._pending_requests.pop(req_id)
-                        if not future.done():
-                            if "error" in msg and msg["error"] is not None:
-                                future.set_exception(RuntimeError(f"Sentinel Error: {msg['error']}"))
-                            else:
-                                future.set_result(msg.get("result", {}))
-            except json.JSONDecodeError:
-                logger.error(f"Failed to decode JSON from Sentinel: {line}")
-            except Exception as e:
-                logger.error(f"Error in read loop: {e}")
+                try:
+                    msg = json.loads(line.decode())
+                    
+                    # Handle Response
+                    if "id" in msg:
+                        req_id = str(msg["id"])
+                        if req_id in self._pending_requests:
+                            future = self._pending_requests.pop(req_id)
+                            if not future.done():
+                                if "error" in msg and msg["error"] is not None:
+                                    future.set_exception(RuntimeError(f"Sentinel RPC Error: {msg['error']}"))
+                                else:
+                                    future.set_result(msg.get("result", {}))
+                except json.JSONDecodeError:
+                    logger.error(f"Failed to decode JSON from Sentinel: {line}")
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            logger.error(f"Error in read loop: {e}")
 
     async def _send_notification(self, method: str, params: Dict[str, Any]):
+        """Sent a JSON-RPC notification (no ID) to the middleware."""
         if not self.process or not self.process.stdin:
             raise RuntimeError("Sentinel process not running")
             
@@ -192,7 +211,12 @@ class SentinelClient:
             self.process.stdin.write(data.encode())
             await self.process.stdin.drain()
 
-    async def _send_request(self, method: str, params: Dict[str, Any]) -> Any:
+    async def _send_request(self, method: str, params: Optional[Dict[str, Any]]) -> Any:
+        """
+        Send a JSON-RPC request and wait for the response.
+        
+        Automatically injects the session ID into the parameters.
+        """
         if not self.process or not self.process.stdin:
             raise RuntimeError("Sentinel process not running")
 
@@ -207,7 +231,7 @@ class SentinelClient:
         request = {
             "jsonrpc": "2.0",
             "method": method,
-            "params": params,
+            "params": params or {},
             "id": req_id
         }
         
@@ -222,25 +246,31 @@ class SentinelClient:
         return await future
 
     async def get_tools_config(self) -> List[Dict[str, Any]]:
-        """Fetch raw tool configurations."""
+        """
+        Fetch the list of available tools from the upstream server through Sentinel.
+        
+        Returns:
+            List of tool configuration dictionaries.
+        """
         response = await self._send_request("tools/list", {})
         return response.get("tools", [])
 
     async def execute_tool(self, tool_name: str, args: Dict[str, Any]) -> Any:
-        """Execute a tool via the Sentinel Middleware."""
+        """
+        Execute a tool call through the Sentinel Middleware.
+        
+        Args:
+            tool_name: The name of the tool to call.
+            args: Dictionary of arguments for the tool.
+            
+        Returns:
+            The MCP result object (often containing a 'content' key).
+        """
         payload = {
             "name": tool_name,
             "arguments": args
         }
-        result = await self._send_request("tools/call", payload)
-        
-        # Unpack result content if standard MCP
-        # "content": [{"type":"text", "text":"..."}]
-        if "content" in result:
-             # Just return the raw structure for now, let Agent handle parsing
-             # Or helper to extract text?
-             pass
-        return result
+        return await self._send_request("tools/call", payload)
 
     # --- Integrations ---
 
