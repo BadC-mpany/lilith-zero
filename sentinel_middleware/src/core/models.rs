@@ -123,10 +123,10 @@ pub struct PolicyDefinition {
     pub name: String,
     pub version: u32,
     /// Static rules: tool_name -> "ALLOW" or "DENY"
-    #[serde(rename = "staticRules")]
+    #[serde(rename = "staticRules", alias = "static_rules")]
     pub static_rules: std::collections::HashMap<String, String>,
     /// Dynamic taint rules
-    #[serde(rename = "taintRules")]
+    #[serde(rename = "taintRules", alias = "taint_rules")]
     pub taint_rules: Vec<PolicyRule>,
     pub created_at: String,
 }

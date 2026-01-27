@@ -1,0 +1,68 @@
+# Sentinel Security Policy for Mock Enterprise Tools
+# Demonstrates tiered access control and taint tracking
+
+id: "enterprise-security-policy"
+customer_id: "acme-corp"
+name: "Enterprise Security Policy"
+version: 1
+created_at: "2024-01-27T00:00:00Z"
+
+# Static Rules: Explicit ALLOW/DENY per tool
+static_rules:
+  # Safe operations - Always allowed
+  get_current_time: "ALLOW"
+  calculate: "ALLOW"
+  format_text: "ALLOW"
+  summarize_text: "ALLOW"
+  
+  # Data sources - Allowed but will be taint-tracked
+  get_user_profile: "ALLOW"
+  query_database: "ALLOW"
+  read_file: "ALLOW"
+  
+  # External sinks - Conditionally allowed (taint rules apply)
+  send_email: "ALLOW"
+  post_to_slack: "ALLOW"
+  upload_to_s3: "ALLOW"
+  call_external_api: "ALLOW"
+  
+  # Administrative tools - BLOCKED
+  execute_shell: "DENY"
+  modify_user_permissions: "DENY"
+  delete_records: "DENY"
+
+# Dynamic Taint Rules
+taint_rules:
+  # Rule 1: Reading PII sources adds taint
+  - tool: "get_user_profile"
+    action: "ADD_TAINT"
+    tag: "PII"
+    
+  - tool: "query_database"
+    action: "ADD_TAINT"
+    tag: "INTERNAL_DATA"
+    
+  - tool: "read_file"
+    action: "ADD_TAINT"
+    tag: "INTERNAL_DATA"
+
+  # Rule 2: Block external sinks if tainted with PII
+  - tool: "send_email"
+    action: "CHECK_TAINT"
+    forbidden_tags: ["PII"]
+    error: "Cannot send email after accessing PII data"
+
+  - tool: "post_to_slack"
+    action: "CHECK_TAINT"
+    forbidden_tags: ["PII", "INTERNAL_DATA"]
+    error: "Cannot post to Slack after accessing sensitive data"
+
+  - tool: "upload_to_s3"
+    action: "CHECK_TAINT"
+    forbidden_tags: ["PII", "INTERNAL_DATA"]
+    error: "Cannot upload to S3 after accessing sensitive data"
+
+  - tool: "call_external_api"
+    action: "CHECK_TAINT"
+    forbidden_tags: ["PII", "INTERNAL_DATA"]
+    error: "Cannot call external API after accessing sensitive data"

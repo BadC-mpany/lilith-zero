@@ -6,12 +6,18 @@ use tracing::info;
 use sentinel_interceptor::config::Config;
 use sentinel_interceptor::mcp::server::McpMiddleware;
 
+use std::path::PathBuf;
+
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Cli {
     /// Upstream tool command (e.g., "python")
     #[arg(short, long)]
     upstream_cmd: String,
+
+    /// Path to policy YAML file
+    #[arg(long)]
+    policy: Option<PathBuf>,
 
     /// Upstream tool arguments (e.g. "tools.py")
     #[arg(last = true)]
@@ -26,10 +32,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     install_panic_hook();
 
     // Load config and init tracing
-    let config = Config::from_env().unwrap_or_else(|e| {
+    let mut config = Config::from_env().unwrap_or_else(|e| {
         eprintln!("Warning: Failed to load config from env, using defaults: {}", e);
         Config::default()
     });
+
+    // Override policy from CLI
+    if let Some(p) = cli.policy {
+        config.policies_yaml_path = Some(p);
+    }
     
     if let Err(e) = init_tracing(&config) {
         eprintln!("Failed to init tracing: {}", e);
@@ -82,7 +93,8 @@ fn init_tracing(config: &Config) -> Result<(), Box<dyn std::error::Error>> {
     let subscriber = fmt()
         .with_env_filter(filter)
         .with_target(false)
-        .with_thread_ids(false);
+        .with_thread_ids(false)
+        .with_writer(std::io::stderr);
     
     if config.log_format == "json" {
         subscriber.json().init();

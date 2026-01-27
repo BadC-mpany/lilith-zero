@@ -4,11 +4,26 @@ use anyhow::{Result, Context};
 use tracing::info;
 
 #[cfg(windows)]
-use win32job::{JobObject, ExtendedLimitInfo, JobInformationLimit};
+use win32job::{Job, ExtendedLimitInfo};
 
+#[cfg(unix)]
+use std::os::unix::process::CommandExt;
+
+/// Process supervisor that ensures child process lifecycle is bound to parent.
+/// 
+/// On Windows: Uses Job Objects with JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE.
+/// On Linux: Uses PR_SET_PDEATHSIG to send SIGKILL when parent dies.
+/// 
+/// The `job` field is intentionally never read after construction because
+/// the Job Object's cleanup happens automatically when it is dropped.
+/// Dropping the Job (when ProcessSupervisor is dropped) triggers the
+/// JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE behavior, terminating all assigned processes.
 pub struct ProcessSupervisor {
+    /// Windows Job Object handle. Kept alive to maintain process binding.
+    /// When dropped, all processes in the job are terminated.
     #[cfg(windows)]
-    job: JobObject,
+    #[allow(dead_code)]
+    job: Job,
     pub child: Child,
 }
 
@@ -18,13 +33,34 @@ impl ProcessSupervisor {
 
         #[cfg(windows)]
         let job = {
-            let job = JobObject::new().map_err(|e| anyhow::anyhow!("Failed to create Job Object: {}", e))?;
+            let job = Job::create().map_err(|e| anyhow::anyhow!("Failed to create Job Object: {}", e))?;
             let mut limits = ExtendedLimitInfo::new();
             limits.limit_kill_on_job_close();
             job.set_extended_limit_info(&mut limits).map_err(|e| anyhow::anyhow!("Failed to set job limits: {}", e))?;
             job
         };
 
+        #[cfg(unix)]
+        let child = {
+            // On Unix, use pre_exec to set PR_SET_PDEATHSIG before exec
+            // This ensures the child receives SIGKILL if the parent dies
+            unsafe {
+                Command::new(cmd)
+                    .args(args)
+                    .stdin(Stdio::piped())
+                    .stdout(Stdio::piped())
+                    .stderr(Stdio::piped())
+                    .pre_exec(|| {
+                        // PR_SET_PDEATHSIG = 1, SIGKILL = 9
+                        libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL);
+                        Ok(())
+                    })
+                    .spawn()
+                    .context("Failed to spawn upstream tool process")?
+            }
+        };
+
+        #[cfg(windows)]
         let child = Command::new(cmd)
             .args(args)
             .stdin(Stdio::piped())
@@ -35,20 +71,11 @@ impl ProcessSupervisor {
 
         #[cfg(windows)]
         {
-             // On Windows, we need to assign the process to the job object.
-             // tokio::process::Child doesn't directly expose the raw handle easily in a cross-platform way,
-             // but strictly speaking we need std::os::windows::io::AsRawHandle.
-             // However, win32job's assign_process takes a handle.
-             // Let's use the underlying std child if possible, or assume OS handle is available.
-             
-             // Workaround: tokio Child has `raw_handle()` if the unstable feature is enabled, 
-             // but normally we might need to rely on the fact that we can get the PID or handle.
-             
-             // Ideally we'd use `child.raw_handle()` but tokio 1.x hides it well.
-             // Standard approach: JobObject::assign_process takes &impl AsRawHandle.
-             // tokio::process::Child implements AsRawHandle on Windows.
-             
-             job.assign_process(&child).map_err(|e| anyhow::anyhow!("Failed to assign process to job: {}", e))?;
+            // Assign process to job object for lifecycle binding
+            if let Some(h) = child.raw_handle() {
+                let handle = h as isize;
+                job.assign_process(handle).map_err(|e| anyhow::anyhow!("Failed to assign process to job: {}", e))?;
+            }
         }
 
         Ok(Self {
@@ -63,3 +90,4 @@ impl ProcessSupervisor {
         Ok(())
     }
 }
+

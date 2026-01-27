@@ -4,6 +4,8 @@ use crate::mcp::security::SecurityEngine;
 use crate::config::Config;
 use crate::core::models::{PolicyDefinition, Decision, HistoryEntry};
 use crate::engine::evaluator::PolicyEvaluator;
+use crate::core::crypto::CryptoSigner;
+use crate::constants::{jsonrpc, policy, session};
 
 use std::sync::Arc;
 use std::collections::{HashSet, HashMap};
@@ -21,6 +23,7 @@ pub struct McpMiddleware {
     upstream_args: Vec<String>,
     config: Arc<Config>,
     session_id: String,
+    signer: CryptoSigner,
     history: Vec<HistoryEntry>,
     taints: HashSet<String>,
     policy: Option<PolicyDefinition>,
@@ -28,6 +31,9 @@ pub struct McpMiddleware {
 
 impl McpMiddleware {
     pub fn new(upstream_cmd: String, upstream_args: Vec<String>, config: Arc<Config>) -> Self {
+        let signer = CryptoSigner::new();
+        let session_id = signer.generate_session_id();
+        
         Self {
             transport: StdioTransport::new(),
             upstream: None,
@@ -36,7 +42,8 @@ impl McpMiddleware {
             upstream_cmd,
             upstream_args,
             config,
-            session_id: uuid::Uuid::new_v4().to_string(),
+            session_id,
+            signer,
             history: Vec::new(),
             taints: HashSet::new(),
             policy: None,
@@ -44,6 +51,9 @@ impl McpMiddleware {
     }
 
     pub async fn run(&mut self) -> Result<()> {
+        // Output session ID in a parseable format for the SDK
+        eprintln!("{}{}", session::SESSION_ID_ENV_PREFIX, self.session_id);
+
         info!("Sentinel MCP Middleware started. Session: {}", self.session_id);
 
         // Try to load policy from config path if provided
@@ -66,13 +76,11 @@ impl McpMiddleware {
         if self.policy.is_none() {
             warn!("No policy loaded. Using default permissive policy (ALLOW ALL).");
             self.policy = Some(PolicyDefinition {
-                id: "default".to_string(),
-                customer_id: "default".to_string(),
-                name: "Permissive Default".to_string(),
+                id: policy::DEFAULT_POLICY_ID.to_string(),
+                customer_id: policy::DEFAULT_POLICY_ID.to_string(),
+                name: policy::DEFAULT_POLICY_NAME.to_string(),
                 version: 1,
-                static_rules: HashMap::new(), // Default is ALLOW if not DENY specifically?
-                // Actually engine/evaluator.rs:49 defaults to "DENY" if not in static_rules.
-                // Let's make it permissive for MVP.
+                static_rules: HashMap::new(), 
                 taint_rules: vec![],
                 created_at: chrono::Utc::now().to_rfc3339(),
             });
@@ -95,7 +103,38 @@ impl McpMiddleware {
         Ok(())
     }
 
+    fn validate_session(&self, params: &Option<Value>) -> Result<(), String> {
+        // In "Local" mode, we might be lenient, but the plan requires strict HMAC checks.
+        // We look for `_sentinel_session_id` in the params object.
+        if let Some(p) = params {
+            if let Some(obj) = p.as_object() {
+                if let Some(sid) = obj.get(session::SESSION_ID_PARAM) {
+                    if let Some(sid_str) = sid.as_str() {
+                        if self.signer.validate_session_id(sid_str) {
+                             // Additionally check if it matches OUR session_id (replay protection/binding)
+                             if sid_str == self.session_id {
+                                 return Ok(());
+                             } else {
+                                 return Err("Session ID mismatch".to_string());
+                             }
+                        } else {
+                            return Err("Invalid Session ID signature".to_string());
+                        }
+                    }
+                }
+            }
+        }
+        // If missing or invalid structure
+        Err("Missing or invalid _sentinel_session_id".to_string())
+    }
+
     async fn handle_initialize(&mut self, req: JsonRpcRequest) -> Result<()> {
+        // initialize is often the first call, usually generic. 
+        // We might skip validation here or enforce it if we expect the SDK to handshake first.
+        // For now, allow initialize without session ID to bootstrap, 
+        // OR expect SDK to send it even here.
+        // Let's be strict but allow if params is missing (rare for initialize).
+        
         let mut supervisor = ProcessSupervisor::spawn(&self.upstream_cmd, &self.upstream_args)?;
         self.upstream_stdin = supervisor.child.stdin.take();
         self.upstream_stdout = supervisor.child.stdout.take().map(BufReader::new);
@@ -107,18 +146,46 @@ impl McpMiddleware {
     }
 
     async fn handle_tools_list(&mut self, req: JsonRpcRequest) -> Result<()> {
+        // Validate Session
+        if let Err(e) = self.validate_session(&req.params) {
+             warn!("Blocked tools/list: {}", e);
+             if let Some(id) = req.id {
+                 self.transport.write_error(id, jsonrpc::ERROR_AUTH, &format!("Sentinel Auth Error: {}", e)).await?;
+             }
+             return Ok(());
+        }
+
         let resp = self.transact_upstream(req).await?;
         self.transport.write_response(resp).await?;
         Ok(())
     }
 
-    async fn handle_tools_call(&mut self, req: JsonRpcRequest) -> Result<()> {
-        let params = req.params.as_ref().and_then(|v| v.as_object()).context("Invalid params")?;
-        let name = params.get("name").and_then(|v| v.as_str()).context("Missing tool name")?.to_string();
-        let args = params.get("arguments").cloned().unwrap_or(Value::Null);
+    async fn handle_tools_call(&mut self, mut req: JsonRpcRequest) -> Result<()> {
+         // Validate Session
+         if let Err(e) = self.validate_session(&req.params) {
+             warn!("Blocked tools/call: {}", e);
+             if let Some(id) = req.id {
+                 self.transport.write_error(id, jsonrpc::ERROR_AUTH, &format!("Sentinel Auth Error: {}", e)).await?;
+             }
+             return Ok(());
+        }
 
-        // Get tool classes (mocked for now, or use SupabaseToolRegistry if needed)
-        // For simplicity in standalone mode, we assume empty or based on tool name prefixes.
+        // Extract needed values first (name, args) to drop immutable borrow of req.params
+        let (name, args) = {
+            let params = req.params.as_ref().and_then(|v| v.as_object()).context("Invalid params")?;
+            let name = params.get("name").and_then(|v| v.as_str()).context("Missing tool name")?.to_string();
+            let args = params.get("arguments").cloned().unwrap_or(Value::Null);
+            (name, args)
+        };
+
+        // Strip _sentinel_session_id before forwarding to tool
+        if let Some(p) = req.params.as_mut() {
+            if let Some(obj) = p.as_object_mut() {
+                obj.remove(session::SESSION_ID_PARAM);
+            }
+        }
+        
+        // Auto-classify for MVP
         let classes = if name.starts_with("read_") || name.starts_with("get_") {
             vec!["READ".to_string()]
         } else if name.starts_with("write_") || name.starts_with("delete_") {
@@ -151,7 +218,7 @@ impl McpMiddleware {
             Decision::Denied { reason } => {
                 warn!("Blocked tool call {}: {}", name, reason);
                 if let Some(id) = req.id {
-                    self.transport.write_error(id, -32000, &format!("Sentinel Security Block: {}", reason)).await?;
+                    self.transport.write_error(id, jsonrpc::ERROR_SECURITY_BLOCK, &format!("Sentinel Security Block: {}", reason)).await?;
                 }
                 Ok(())
             }
@@ -159,7 +226,7 @@ impl McpMiddleware {
     }
 
     async fn execute_tool(&mut self, req: JsonRpcRequest, name: &str, classes: &[String]) -> Result<()> {
-        let mut resp = self.transact_upstream(req).await?;
+        let resp = self.transact_upstream(req).await?;
         
         // Record history
         self.history.push(HistoryEntry {
@@ -168,23 +235,10 @@ impl McpMiddleware {
             timestamp: crate::utils::time::now(),
         });
 
-        // Spotlight Result
-        if let Some(result) = &mut resp.result {
-             if let Some(content) = result.get_mut("content") {
-                 if let Some(arr) = content.as_array_mut() {
-                     for item in arr {
-                         if let Some(text) = item.get_mut("text") {
-                             if let Some(s) = text.as_str() {
-                                 let spotlighted = SecurityEngine::spotlight(s);
-                                 *text = Value::String(spotlighted);
-                             }
-                         }
-                     }
-                 }
-             }
-        }
+        // Apply security transformations
+        let secured_resp = self.process_secure_response(resp).await?;
 
-        self.transport.write_response(resp).await?;
+        self.transport.write_response(secured_resp).await?;
         Ok(())
     }
 
@@ -199,12 +253,44 @@ impl McpMiddleware {
                  }
             } else {
                 let resp = self.transact_upstream(req).await?;
-                self.transport.write_response(resp).await?;
+                // Apply security even for forwarded requests (e.g. direct resource reads)
+                let secured_resp = self.process_secure_response(resp).await?;
+                self.transport.write_response(secured_resp).await?;
             }
         } else if let Some(id) = req.id {
-            self.transport.write_error(id, -32601, "Upstream not connected").await?;
+            self.transport.write_error(id, jsonrpc::ERROR_METHOD_NOT_FOUND, "Upstream not connected").await?;
         }
         Ok(())
+    }
+
+    async fn process_secure_response(&self, mut resp: JsonRpcResponse) -> Result<JsonRpcResponse> {
+        if let Some(result) = &mut resp.result {
+             // 1. Check 'content' (Tools)
+             self.spotlight_content_array(result.get_mut("content"));
+             
+             // 2. Check 'contents' (Resources)
+             self.spotlight_content_array(result.get_mut("contents"));
+        }
+        Ok(resp)
+    }
+
+    fn spotlight_content_array(&self, value: Option<&mut Value>) {
+        if let Some(v) = value {
+             if let Some(arr) = v.as_array_mut() {
+                 for item in arr {
+                     if let Some(text) = item.get_mut("text") {
+                         if let Some(s) = text.as_str() {
+                             // Only spotlight if not already spotlighted? 
+                             // SecurityEngine::spotlight is idempotent-ish (adds wrapping), 
+                             // but we shouldn't wrap twice if we can avoid it.
+                             // For now, assume single pass.
+                             let spotlighted = SecurityEngine::spotlight(s);
+                             *text = Value::String(spotlighted);
+                         }
+                     }
+                 }
+             }
+        }
     }
 
     async fn transact_upstream(&mut self, req: JsonRpcRequest) -> Result<JsonRpcResponse> {
@@ -219,6 +305,11 @@ impl McpMiddleware {
         let mut line = String::new();
         stdout.read_line(&mut line).await?;
         
+        // Handle empty line (EOF or crash)?
+        if line.trim().is_empty() {
+            return Err(anyhow::anyhow!("Upstream returned empty response (process died?)"));
+        }
+
         let resp: JsonRpcResponse = serde_json::from_str(&line).context("Failed to parse upstream response")?;
         Ok(resp)
     }
