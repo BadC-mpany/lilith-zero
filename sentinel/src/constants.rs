@@ -65,3 +65,9 @@ pub mod methods {
     pub const TOOLS_LIST: &str = "tools/list";
     pub const TOOLS_CALL: &str = "tools/call";
 }
+
+/// Transport Limits (DoS Protection)
+pub mod limits {
+    /// Maximum allowed JSON-RPC message size (10 MB)
+    pub const MAX_MESSAGE_SIZE_BYTES: u64 = 10 * 1024 * 1024;
+}

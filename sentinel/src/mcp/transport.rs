@@ -52,18 +52,26 @@ impl StdioTransport {
     }
 
     /// Read the next JSON-RPC message from Stdin.
+    /// Uses a bounded read to prevent DoS attacks via huge lines.
     pub async fn read_message(&mut self) -> Result<Option<JsonRpcRequest>> {
-        let mut line = String::new();
-        let bytes = self
-            .reader
-            .read_line(&mut line)
-            .await
-            .context("Failed to read from stdin")?;
-
-        if bytes == 0 {
+        use crate::constants::limits;
+        
+        let mut buf = Vec::new();
+        // read_until reads until the delimiter is found or EOF
+        let bytes_read = self.reader.read_until(b'\n', &mut buf).await?;
+        
+        if bytes_read == 0 {
             return Ok(None); // EOF
         }
-
+        
+        if bytes_read as u64 > limits::MAX_MESSAGE_SIZE_BYTES {
+            return Err(anyhow::anyhow!(
+                "Message exceeded size limit of {} bytes", 
+                limits::MAX_MESSAGE_SIZE_BYTES
+            ));
+        }
+        
+        let line = String::from_utf8(buf).context("Invalid UTF-8 in request")?;
         debug!("Received: {}", line.trim());
 
         let req: JsonRpcRequest =

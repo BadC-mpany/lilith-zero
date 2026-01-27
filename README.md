@@ -2,7 +2,7 @@
 
 Deterministic security enforcement for MCP tool calls.
 
-[![CI](https://github.com/yourusername/sentinel/actions/workflows/ci.yml/badge.svg)](https://github.com/yourusername/sentinel/actions)
+[![CI](https://github.com/peti12352/sentinel/actions/workflows/ci.yml/badge.svg)](https://github.com/peti12352/sentinel/actions)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
 ## Problem

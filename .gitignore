@@ -88,3 +88,5 @@ target/CACHEDIR.TAG
 target/.rustc_info.json
 target\.future-incompat-report.json
 target/*
+
+docs/

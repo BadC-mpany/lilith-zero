@@ -12,4 +12,4 @@ classifiers = ["Programming Language :: Python :: 3"]
 dependencies = []
 
 [project.urls]
-Homepage = "https://github.com/yourusername/sentinel"
+Homepage = "https://github.com/peti12352/sentinel"

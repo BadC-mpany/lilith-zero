@@ -19,7 +19,7 @@ use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 pub struct McpMiddleware {
     transport: StdioTransport,
@@ -193,6 +193,20 @@ impl McpMiddleware {
         info!("Upstream spawned successfully");
         self.upstream_stdin = supervisor.child.stdin.take();
         self.upstream_stdout = supervisor.child.stdout.take().map(BufReader::new);
+        
+        // Deadlock Fix: Drain stderr to prevent pipe buffer filling
+        if let Some(stderr) = supervisor.child.stderr.take() {
+            tokio::spawn(async move {
+                let mut reader = BufReader::new(stderr);
+                let mut line = String::new();
+                while let Ok(bytes) = reader.read_line(&mut line).await {
+                    if bytes == 0 { break; }
+                    debug!("[Upstream Stderr] {}", line.trim());
+                    line.clear();
+                }
+            });
+        }
+        
         self.upstream = Some(supervisor);
 
         info!("Transacting initialize with upstream...");
@@ -275,7 +289,7 @@ impl McpMiddleware {
             vec![]
         };
 
-        let policy = self.policy.as_ref().unwrap();
+        let policy = self.policy.as_ref().context("Policy not initialized")?;
 
         // Evaluate
         let decision = PolicyEvaluator::evaluate_with_args(
