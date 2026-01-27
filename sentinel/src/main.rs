@@ -3,8 +3,8 @@ use clap::Parser;
 use std::sync::Arc;
 use tracing::info;
 
-use sentinel_interceptor::config::Config;
-use sentinel_interceptor::mcp::server::McpMiddleware;
+use sentinel::config::Config;
+use sentinel::mcp::server::McpMiddleware;
 
 use std::path::PathBuf;
 

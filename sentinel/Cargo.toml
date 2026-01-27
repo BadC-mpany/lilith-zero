@@ -1,5 +1,5 @@
 [package]
-name = "sentinel-interceptor"
+name = "sentinel"
 version = "0.1.0"
 edition = "2021"
 
@@ -34,6 +34,7 @@ hmac = "0.12"
 ring = "0.17"
 rand = "0.8"
 base64 = "0.21"
+jsonwebtoken = "10.3.0"
 
 # Process Isolation
 [target.'cfg(windows)'.dependencies]

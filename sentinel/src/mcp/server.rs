@@ -5,13 +5,14 @@
 //! It enforces security policies on tool calls and resources.
 
 use crate::config::Config;
-use crate::constants::{jsonrpc, policy, session};
+use crate::constants::{jsonrpc, policy, session, methods};
 use crate::core::crypto::CryptoSigner;
 use crate::core::models::{Decision, HistoryEntry, PolicyDefinition};
 use crate::engine::evaluator::PolicyEvaluator;
 use crate::mcp::process::ProcessSupervisor;
 use crate::mcp::security::SecurityEngine;
 use crate::mcp::transport::{JsonRpcRequest, JsonRpcResponse, StdioTransport};
+use crate::utils::audit_logger::{AuditLogger, AuditEntry, AuditEventType};
 
 use anyhow::{Context, Result};
 use serde_json::Value;
@@ -60,8 +61,25 @@ impl McpMiddleware {
         // Output session ID in a parseable format for the SDK
         eprintln!("{}{}", session::SESSION_ID_ENV_PREFIX, self.session_id);
 
+        // Emit session start audit log
+        AuditLogger::log(AuditEntry {
+            timestamp: AuditLogger::now(),
+            session_id: self.session_id.clone(),
+            event_type: AuditEventType::SessionStart,
+            tool: None,
+            decision: None,
+            details: None,
+        });
+
         info!(
             "Sentinel MCP Middleware started. Session: {}",
+            self.session_id
+        );
+
+        // Print Sentinel Banner
+        eprintln!(
+            "Sentinel Security Middleware v{} (Session: {})",
+            env!("CARGO_PKG_VERSION"),
             self.session_id
         );
 
@@ -101,9 +119,9 @@ impl McpMiddleware {
             let req = req_opt.unwrap();
 
             match req.method.as_str() {
-                "initialize" => self.handle_initialize(req).await?,
-                "tools/list" => self.handle_tools_list(req).await?,
-                "tools/call" => self.handle_tools_call(req).await?,
+                methods::INITIALIZE => self.handle_initialize(req).await?,
+                methods::TOOLS_LIST => self.handle_tools_list(req).await?,
+                methods::TOOLS_CALL => self.handle_tools_call(req).await?,
                 _ => self.forward_or_error(req).await?,
             }
         }
@@ -136,11 +154,35 @@ impl McpMiddleware {
     }
 
     async fn handle_initialize(&mut self, req: JsonRpcRequest) -> Result<()> {
-        // initialize is often the first call, usually generic.
-        // We might skip validation here or enforce it if we expect the SDK to handshake first.
-        // For now, allow initialize without session ID to bootstrap,
-        // OR expect SDK to send it even here.
-        // Let's be strict but allow if params is missing (rare for initialize).
+        // Initialize is often the first call.
+        
+        // Audience Binding (Phase 3.1)
+        if let Some(expected) = &self.config.expected_audience {
+            let token = req.params.as_ref()
+                .and_then(|v| v.as_object())
+                .and_then(|obj| obj.get("_sentinel_token"))
+                .and_then(|v| v.as_str());
+
+            if let Some(token_str) = token {
+                if let Err(e) = crate::core::auth::validate_audience_claim(token_str, expected) {
+                    warn!("Audience binding failed: {}", e);
+                     self.transport.write_error(
+                        req.id.unwrap_or(serde_json::Value::Null),
+                        jsonrpc::ERROR_AUTH,
+                        &format!("Audience Binding Error: {}", e),
+                    ).await?;
+                    return Ok(()); // Abort initialization
+                }
+            } else {
+                 warn!("Missing required _sentinel_token for audience binding");
+                 self.transport.write_error(
+                    req.id.unwrap_or(serde_json::Value::Null),
+                    jsonrpc::ERROR_AUTH,
+                    "Missing required _sentinel_token for audience binding",
+                ).await?;
+                return Ok(());
+            }
+        }
 
         info!(
             "Spawning upstream: {} {:?}",
@@ -181,6 +223,7 @@ impl McpMiddleware {
         Ok(())
     }
 
+    #[tracing::instrument(skip(self, req), fields(method = %req.method, id = ?req.id, tool_name, decision, user = %self.config.owner))]
     async fn handle_tools_call(&mut self, mut req: JsonRpcRequest) -> Result<()> {
         // Validate Session
         if let Err(e) = self.validate_session(&req.params) {
@@ -212,6 +255,9 @@ impl McpMiddleware {
             let args = params.get("arguments").cloned().unwrap_or(Value::Null);
             (name, args)
         };
+        
+        // Record tool name in current span
+        tracing::Span::current().record("tool_name", &name);
 
         // Strip _sentinel_session_id before forwarding to tool
         if let Some(p) = req.params.as_mut() {
@@ -243,11 +289,33 @@ impl McpMiddleware {
         .await?;
 
         match decision {
-            Decision::Allowed => self.execute_tool(req, &name, &classes).await,
+            Decision::Allowed => {
+                AuditLogger::log(AuditEntry {
+                    timestamp: AuditLogger::now(),
+                    session_id: self.session_id.clone(),
+                    event_type: AuditEventType::Decision,
+                    tool: Some(name.clone()),
+                    decision: Some("ALLOWED".to_string()),
+                    details: None,
+                });
+                self.execute_tool(req, &name, &classes).await
+            }
             Decision::AllowedWithSideEffects {
                 taints_to_add,
                 taints_to_remove,
             } => {
+                let details = serde_json::json!({
+                    "taints_added": taints_to_add,
+                    "taints_removed": taints_to_remove
+                });
+                AuditLogger::log(AuditEntry {
+                    timestamp: AuditLogger::now(),
+                    session_id: self.session_id.clone(),
+                    event_type: AuditEventType::Decision,
+                    tool: Some(name.clone()),
+                    decision: Some("ALLOWED_WITH_SIDE_EFFECTS".to_string()),
+                    details: Some(details),
+                });
                 for t in taints_to_add {
                     self.taints.insert(t);
                 }
@@ -258,6 +326,14 @@ impl McpMiddleware {
             }
             Decision::Denied { reason } => {
                 warn!("Blocked tool call {}: {}", name, reason);
+                AuditLogger::log(AuditEntry {
+                    timestamp: AuditLogger::now(),
+                    session_id: self.session_id.clone(),
+                    event_type: AuditEventType::Decision,
+                    tool: Some(name.clone()),
+                    decision: Some("DENIED".to_string()),
+                    details: Some(serde_json::json!({"reason": reason})),
+                });
                 if let Some(id) = req.id {
                     self.transport
                         .write_error(

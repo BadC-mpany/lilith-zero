@@ -58,3 +58,10 @@ pub mod session {
     /// Session ID field name in JSON-RPC params
     pub const SESSION_ID_PARAM: &str = "_sentinel_session_id";
 }
+
+/// MCP Protocol Methods
+pub mod methods {
+    pub const INITIALIZE: &str = "initialize";
+    pub const TOOLS_LIST: &str = "tools/list";
+    pub const TOOLS_CALL: &str = "tools/call";
+}

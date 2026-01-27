@@ -15,7 +15,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     defaults:
       run:
-        working-directory: sentinel_middleware
+        working-directory: sentinel
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest]
@@ -35,7 +35,7 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            sentinel_middleware/target
+            sentinel/target
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
       
       - name: Check formatting
@@ -44,6 +44,12 @@ jobs:
       - name: Clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
       
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@cargo-audit
+
+      - name: Audit dependencies
+        run: cargo audit
+
       - name: Build
         run: cargo build --release
       
@@ -95,7 +101,7 @@ jobs:
           toolchain: stable
       
       - name: Build Rust binary
-        working-directory: sentinel_middleware
+        working-directory: sentinel
         run: cargo build --release
       
       - name: Set up Python
@@ -110,5 +116,5 @@ jobs:
       
       - name: Run integration tests
         env:
-          SENTINEL_BINARY_PATH: sentinel_middleware/target/release/sentinel-interceptor.exe
+          SENTINEL_BINARY_PATH: sentinel/target/release/sentinel.exe
         run: python tests/test_integration.py

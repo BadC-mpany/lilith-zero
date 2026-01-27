@@ -82,13 +82,13 @@ Sentinel runs as a transparent proxy. No agent or tool modifications required.
 
 ```bash
 # Build interceptor
-cd sentinel_middleware && cargo build --release
+cd sentinel && cargo build --release
 
 # Install SDK
 pip install -e sentinel_sdk
 
 # Set binary path
-export SENTINEL_BINARY_PATH="./sentinel_middleware/target/release/sentinel-interceptor"
+export SENTINEL_BINARY_PATH="./sentinel/target/release/sentinel"
 ```
 
 ## Verification
@@ -120,7 +120,7 @@ TOTAL: 6/6 features verified
 
 ## Documentation
 
-- [sentinel_middleware/](sentinel_middleware/) — Rust interceptor
+- [sentinel/](sentinel/) — Rust interceptor
 - [sentinel_sdk/](sentinel_sdk/) — Python SDK
 - [examples/](examples/) — Demo scripts and policies
 - [SECURITY.md](SECURITY.md) — Vulnerability disclosure

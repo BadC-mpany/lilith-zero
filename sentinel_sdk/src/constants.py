@@ -31,8 +31,8 @@ SESSION_TIMEOUT_ITERATIONS = int(SESSION_TIMEOUT_SEC / SESSION_POLL_INTERVAL_SEC
 # Binary Discovery
 # =============================================================================
 
-BINARY_NAME_WINDOWS = "sentinel-interceptor.exe"
-BINARY_NAME_UNIX = "sentinel-interceptor"
+BINARY_NAME_WINDOWS = "sentinel.exe"
+BINARY_NAME_UNIX = "sentinel"
 
 def get_binary_name() -> str:
     """Returns the appropriate binary name for the current platform."""
@@ -48,7 +48,7 @@ ENV_SESSION_VALIDATION = "SENTINEL_SESSION_VALIDATION"
 
 # Relative paths to search for binary (in order of preference)
 BINARY_SEARCH_PATHS = [
-    "sentinel_middleware/target/release/",
+    "sentinel/target/release/",
     "target/release/",
     "./",
 ]
