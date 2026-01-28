@@ -166,17 +166,17 @@ impl McpMiddleware {
             if let Some(token_str) = token {
                 if let Err(e) = crate::core::auth::validate_audience_claim(token_str, expected) {
                     warn!("Audience binding failed: {}", e);
-                     self.transport.write_error(
-                        req.id.unwrap_or(serde_json::Value::Null),
+                    self.transport.write_error(
+                        req.id.clone().unwrap_or(serde_json::Value::Null),
                         jsonrpc::ERROR_AUTH,
                         &format!("Audience Binding Error: {}", e),
                     ).await?;
                     return Ok(()); // Abort initialization
                 }
             } else {
-                 warn!("Missing required _sentinel_token for audience binding");
-                 self.transport.write_error(
-                    req.id.unwrap_or(serde_json::Value::Null),
+                warn!("Missing required _sentinel_token for audience binding");
+                self.transport.write_error(
+                    req.id.clone().unwrap_or(serde_json::Value::Null),
                     jsonrpc::ERROR_AUTH,
                     "Missing required _sentinel_token for audience binding",
                 ).await?;

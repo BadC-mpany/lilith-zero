@@ -25,8 +25,22 @@ Sentinel intercepts MCP traffic via stdio, applying:
 | **Session Integrity** | HMAC-SHA256 signed session IDs, constant-time validation |
 | **Policy Enforcement** | Static ALLOW/DENY rules per tool |
 | **Taint Tracking** | Block sinks (email, APIs) after accessing sources (PII, databases) |
-| **Spotlighting** | Wrap outputs in randomized delimiters to mark untrusted content |
+| **Spotlighting** | Randomized delimiters prevent tool-output prompt injection. |
+| **Observability** | Structured JSON audit logs and OTEL instrumentation. |
 | **Process Binding** | Job Objects (Windows) / PR_SET_PDEATHSIG (Linux) |
+
+## 🚀 Quick Start (Demo)
+
+See the [Comprehensive Demo](./examples/README.md) to see Sentinel in action with:
+1. **FastMCP** tool server.
+2. **LangChain** Agent (OpenRouter/Gemini).
+3. **Audit Logging** & **Taint Tracking**.
+
+```bash
+# Run the demo
+set OPENROUTER_API_KEY=sk-or-...
+python examples/observability_demo.py
+```
 
 ## Usage
 
