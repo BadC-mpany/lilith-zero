@@ -116,19 +116,22 @@ export SENTINEL_BINARY_PATH="./sentinel/target/release/sentinel"
 
 ## Verification
 
+
 ```bash
-python examples/demo.py
+# Run the End-to-End Attack/Defense Demo
+python examples/secure_agent_demo.py
+
+# Run the Comprehensive Hardening Test Suite
+python examples/hardening_test_suite.py
 ```
 
-```
-[PASS] HMAC-signed session IDs
-[PASS] Static ALLOW policy
-[PASS] Static DENY policy
-[PASS] Dynamic taint tracking
-[PASS] Data exfiltration prevention
-[PASS] Spotlighting
-
-TOTAL: 6/6 features verified
+Expected Output (Hardening Suite):
+```text
+TEST: Fail Closed (No Policy) ... Verified Block
+TEST: Static Policy Allow ... Verified Allow
+TEST: Taint Propagation & Blocking ... Verified Taint Block
+TEST: Spotlighting Integrity ... Verified Spotlighting
+OK
 ```
 
 ## Comparison
