@@ -22,7 +22,6 @@ use crate::core::security_core::SecurityCore;
 use crate::mcp::process::ProcessSupervisor;
 use crate::mcp::transport::{JsonRpcRequest, JsonRpcResponse, StdioTransport};
 use crate::mcp::adapter::ProtocolAdapter;
-use crate::mcp::adapters::mcp_2024::Mcp2024Adapter;
 
 pub struct McpMiddleware {
     transport: StdioTransport,
@@ -43,8 +42,17 @@ impl McpMiddleware {
         // Initialize Security Core
         let core = SecurityCore::new(config.clone(), signer);
         
-        // Select Adapter (Default to 2024 for now, could be dynamic based on explicit config)
-        let adapter = Box::new(Mcp2024Adapter);
+        // Select Adapter based on config
+        let adapter: Box<dyn ProtocolAdapter> = match config.mcp_version.as_str() {
+            "2025-06-18" | "2025" => {
+                info!("Initializing with MCP 2025 Adapter");
+                Box::new(crate::mcp::adapters::mcp_2025::Mcp2025Adapter)
+            }
+            _ => {
+                info!("Initializing with MCP 2024 Adapter");
+                Box::new(crate::mcp::adapters::mcp_2024::Mcp2024Adapter)
+            }
+        };
 
         Self {
             transport: StdioTransport::new(),
@@ -113,8 +121,22 @@ impl McpMiddleware {
                     }
                 },
                 SecurityDecision::Allow | SecurityDecision::AllowWithTransforms { .. } => {
-                    // Handle Infrastructure Side Effects (Spawning)
-                    if let SecurityEvent::Handshake { .. } = event {
+                    // Handle Infrastructure Side Effects (Spawning & Negotiation)
+                    if let SecurityEvent::Handshake { protocol_version, .. } = &event {
+                        // 1. Protocol Negotiation (Auto-swap adapter if version differs)
+                        if protocol_version != self.adapter.version() {
+                            info!("Negotiating protocol: Client requested {}, swapping adapter.", protocol_version);
+                            match protocol_version.as_str() {
+                                "2025-06-18" | "2025" => {
+                                    self.adapter = Box::new(crate::mcp::adapters::mcp_2025::Mcp2025Adapter);
+                                },
+                                _ => {
+                                    self.adapter = Box::new(crate::mcp::adapters::mcp_2024::Mcp2024Adapter);
+                                }
+                            }
+                        }
+
+                        // 2. Spawn Upstream
                         if self.upstream.is_none() {
                             if let Err(e) = self.spawn_upstream() {
                                 error!("Failed to spawn upstream: {}", e);

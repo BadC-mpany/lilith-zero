@@ -93,8 +93,17 @@ impl SecurityCore {
                  if self.config.security_level_config().session_validation {
                      match session_token {
                          Some(token) => {
+                             // Strict check: Must match the current session ID exactly.
+                             if token != self.session_id {
+                                  warn!("Session ID mismatch. Expected: {}, Got: {}", self.session_id, token);
+                                  return SecurityDecision::Deny {
+                                      error_code: jsonrpc::ERROR_AUTH,
+                                      reason: "Session ID mismatch".to_string(),
+                                  };
+                             }
+                             
                              if !self.signer.validate_session_id(&token) {
-                                  warn!("Invalid session token: {}", token);
+                                  warn!("Invalid session token signature: {}", token);
                                   return SecurityDecision::Deny {
                                       error_code: jsonrpc::ERROR_AUTH,
                                       reason: "Invalid Session ID".to_string(),
@@ -125,12 +134,20 @@ impl SecurityCore {
                         &arguments
                      ).await
                  } else {
-                     // Default deny if no policy loaded? Or allow if fallback?
-                     // Main.rs currently loads a default ALLOW ALL policy if none found.
-                     // So specific policy logic handles fallback. Here, if None, we assume strictly deny to be safe?
-                     // Actually, main.rs ensures policy is Some. Let's assume safe default Allow for MVP/fallback.
-                     // But strictly speaking, Sentinel should likely have a policy.
-                     Ok(Decision::Allowed)
+                     // Fail Closed unless in AuditOnly mode
+                     // "Google-grade" best practice: Default Deny.
+                     match self.config.security_level {
+                         crate::config::SecurityLevel::AuditOnly => {
+                             warn!("No policy loaded. allowing request due to AuditOnly mode.");
+                             Ok(Decision::Allowed)
+                         },
+                         _ => {
+                             warn!("No policy loaded. Denying request due to strict security settings.");
+                             Ok(Decision::Denied { 
+                                 reason: "No security policy loaded. Sentinel defaults to Deny-All.".to_string() 
+                             })
+                         }
+                     }
                  };
 
                  match evaluator_result {
@@ -138,7 +155,7 @@ impl SecurityCore {
                      Err(e) => {
                          warn!("Policy evaluation internal error: {}", e);
                          SecurityDecision::Deny {
-                             error_code: -32603, // Internal error
+                             error_code: jsonrpc::ERROR_INTERNAL, // Internal error
                              reason: format!("Policy error: {}", e),
                          }
                      }
@@ -309,6 +326,58 @@ mod tests {
                 assert!(reason.contains("Missing Session ID"));
             },
             _ => panic!("Expected Deny for missing session"),
+        }
+
+        // 3. Tool Request (Valid Session, No Policy) -> Should Fail Closed (Default Deny)
+        // We simulate a valid session check pass by mocking or... 
+        // We can't easily mock signature without key.
+        // But we can test `SecurityLevel::AuditOnly` fallback if we could inject config.
+        // Let's create a core with AuditOnly and see if it allows.
+        
+        let mut audit_config = Config::default();
+        audit_config.security_level = crate::config::SecurityLevel::AuditOnly;
+        // Turn off session validation for this test to bypass signature check? 
+        // No, AuditOnly logic in config.rs sets session_validation = true.
+        // So we still need a valid token.
+        // We can generate one if we have the signer. 
+        // Core has a signer. Can we clone it? No, private.
+        // Tests are in `mod tests` inside `src/core/security_core.rs`? 
+        // Yes, `super::*` means we are inside the file.
+        // So we CAN access private fields of `core`!
+        
+        // Fix: core.session_id IS the valid token string. Check equality (which we just enforced).
+        let valid_token = core.session_id.clone();
+        
+        let tool_event = SecurityEvent::ToolRequest {
+            request_id: serde_json::Value::String("2".to_string()),
+            tool_name: "read_file".to_string(),
+            arguments: serde_json::Value::Null,
+            session_token: Some(valid_token),
+        };
+        
+        // With Default Config (BlockParams) -> Should Deny (Fail Closed)
+        let decision = core.evaluate(tool_event.clone()).await;
+        match decision {
+            SecurityDecision::Deny { reason, .. } => {
+                assert!(reason.contains("No security policy loaded"));
+            },
+            _ => panic!("Expected Deny for missing policy (Fail Closed)"),
+        }
+        
+       // With Audit Config -> Should Allow (Log Only)
+       let mut audit_core = SecurityCore::new(Arc::new(audit_config), CryptoSigner::new());
+       let valid_token_audit = audit_core.session_id.clone();
+       let tool_event_audit = SecurityEvent::ToolRequest {
+            request_id: serde_json::Value::String("3".to_string()),
+            tool_name: "read_file".to_string(),
+            arguments: serde_json::Value::Null,
+            session_token: Some(valid_token_audit),
+        };
+        
+        let decision_audit = audit_core.evaluate(tool_event_audit).await;
+        match decision_audit {
+             SecurityDecision::Allow | SecurityDecision::AllowWithTransforms { .. } => {},
+             _ => panic!("Expected Allow for AuditOnly mode"),
         }
     }
 }

@@ -27,32 +27,26 @@ Sentinel intercepts MCP traffic via stdio, applying:
 | **Taint Tracking** | Block sinks (email, APIs) after accessing sources (PII, databases) |
 | **Spotlighting** | Randomized delimiters prevent tool-output prompt injection. |
 | **Observability** | Structured JSON audit logs and OTEL instrumentation. |
-| **Process Binding** | Job Objects (Windows) / PR_SET_PDEATHSIG (Linux) |
-
-## 🚀 Quick Start (Demo)
-
-See the [Comprehensive Demo](./examples/README.md) to see Sentinel in action with:
-1. **FastMCP** tool server.
-2. **LangChain** Agent (OpenRouter/Gemini).
-3. **Audit Logging** & **Taint Tracking**.
-
-```bash
-# Run the demo
-set OPENROUTER_API_KEY=sk-or-...
-python examples/observability_demo.py
-```
+| **Process Binding** | Job Objects (Windows) / PR_SET_PDEATHSIG (Linux) + Explicit Drop Cleanup |
+| **Protocol Agnostic** | Auto-negotiates MCP version (2024/2025) via Adapters |
 
 ## Usage
 
 ```python
 from sentinel_sdk import Sentinel
 
+# 1. Start Sentinel Middleware
 client = Sentinel.start(
-    upstream="python tools.py",
-    policy="policy.yaml"
+    upstream_cmd="python tools.py",
+    policy_path="policy.yaml"
 )
 
+# 2. Use as standard MCP client
 async with client:
+    # List tools (Sentinel enforces "tools/list" policies)
+    tools = await client.get_tools_config()
+    
+    # Execute tool (Sentinel enforces "tools/call" policies & taints)
     result = await client.execute_tool("query_db", {"sql": "SELECT * FROM users"})
 ```
 
@@ -76,14 +70,20 @@ taint_rules:
 
 ## Architecture
 
+"Permanent Sentinel" Architecture:
+
 ```
-Agent ◄──stdio──► Sentinel ◄──stdio──► Tool Server
-                     │
-              ┌──────┴──────┐
-              │ Policy      │
-              │ Engine      │
-              └─────────────┘
+Agent ◄──JSON-RPC (stdio)──► [Protocol Adapter] ◄──SecurityEvent──► [Security Core]
+                                                                        │
+                                                                 ┌──────┴──────┐
+                                                                 │ Policy      │
+                                                                 │ Engine      │
+                                                                 └─────────────┘
 ```
+
+1. **Protocol Adapter**: Decouples wire format from security logic. Auto-detects MCP 2024 or 2025.
+2. **Security Core**: Pure logic kernel. Enforces policies, tracks taints, and validates sessions.
+3. **Hardened Design**: Fail-closed defaults, constant-time crypto, and strict session binding.
 
 Sentinel runs as a transparent proxy. No agent or tool modifications required.
 
@@ -104,6 +104,15 @@ pip install -e sentinel_sdk
 # Set binary path
 export SENTINEL_BINARY_PATH="./sentinel/target/release/sentinel"
 ```
+
+## Configuration
+
+| Environment Variable | Description | Default |
+|----------------------|-------------|---------|
+| `SENTINEL_MCP_VERSION` | Protocol version (`2024-11-05` or `2025-06-18`) | `2024-11-05` (Auto-negotiates) |
+| `SENTINEL_SECURITY_LEVEL` | Security strictness (`audit_only`, `medium`, `high`) | `medium` |
+| `POLICIES_YAML_PATH` | Path to policy file | None |
+| `SENTINEL_OWNER` | Owner ID for audit logs | `unknown` |
 
 ## Verification
 

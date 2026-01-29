@@ -59,6 +59,17 @@ pub mod session {
     pub const SESSION_ID_PARAM: &str = "_sentinel_session_id";
 }
 
+/// Configuration Environment Variables
+pub mod config {
+    pub const ENV_POLICIES_YAML_PATH: &str = "POLICIES_YAML_PATH";
+    pub const ENV_LOG_LEVEL: &str = "LOG_LEVEL";
+    pub const ENV_LOG_FORMAT: &str = "LOG_FORMAT";
+    pub const ENV_OWNER: &str = "SENTINEL_OWNER";
+    pub const ENV_EXPECTED_AUDIENCE: &str = "SENTINEL_EXPECTED_AUDIENCE";
+    pub const ENV_SECURITY_LEVEL: &str = "SENTINEL_SECURITY_LEVEL";
+    pub const ENV_MCP_VERSION: &str = "SENTINEL_MCP_VERSION";
+}
+
 /// MCP Protocol Methods
 pub mod methods {
     pub const INITIALIZE: &str = "initialize";

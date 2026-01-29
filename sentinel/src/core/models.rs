@@ -133,7 +133,8 @@ pub struct PolicyDefinition {
     /// Dynamic taint rules
     #[serde(rename = "taintRules", alias = "taint_rules")]
     pub taint_rules: Vec<PolicyRule>,
-    pub created_at: String,
+    #[serde(alias = "createdAt", default)]
+    pub created_at: Option<String>,
 }
 
 impl PolicyRule {

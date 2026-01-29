@@ -1,16 +1,28 @@
-from fastmcp import FastMCP
+import asyncio
+import sys
 
-mcp = FastMCP("Vulnerable Tools")
+# Minimal vulnerable MCP server for testing Sentinel
+# It exposes two tools:
+# 1. read_user_db: Returns PII
+# 2. export_to_cloud: Exfiltrates data (Security Sink)
+
+try:
+    from mcp.server.fastmcp import FastMCP
+except ImportError:
+    print("Error: 'mcp' package not found. Install it with: pip install mcp[cli]")
+    sys.exit(1)
+
+mcp = FastMCP("Vulnerable Server")
 
 @mcp.tool()
-def read_db(query: str) -> str:
-    """Read from the database. PII Source."""
-    return f"DB Results for {query}: User: Alice, Email: alice@example.com"
+def read_user_db(user_id: str) -> str:
+    """Reads sensitive user profile from the database."""
+    return f"User Profile [{user_id}]: Email=victim@example.com, SSN=123-45-6789"
 
 @mcp.tool()
-def send_slack(msg: str) -> str:
-    """Send to Slack. External Sink."""
-    return f"Sent to Slack: {msg}"
+def export_to_cloud(data: str, destination: str) -> str:
+    """Exports data to an external cloud storage bucket."""
+    return f"Successfully exported {len(data)} bytes to {destination}"
 
 if __name__ == "__main__":
     mcp.run()

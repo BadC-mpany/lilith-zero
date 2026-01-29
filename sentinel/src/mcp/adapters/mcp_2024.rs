@@ -84,7 +84,11 @@ impl ProtocolAdapter for Mcp2024Adapter {
                      for transform in output_transforms {
                          match transform {
                              OutputTransform::Spotlight { .. } => {
-                                 // Apply spotlighting to standard 2024 content locations
+                                 // Apply spotlighting to standard 2024 content locations.
+                                 // NOTE: This implementation aggressively spotlights the entire text field
+                                 // and currently ignores the specific `json_paths` provided in the OutputTransform.
+                                 // This is a "Defense in Depth" choice for MVP: better to over-spotlight than miss a path.
+                                 // Future optimization: Use a JSON pointer walker to target specific paths.
                                  
                                  // 1. tools/call response: { content: [ { type: "text", text: "..." } ] }
                                  if let Some(content) = result.get_mut("content").and_then(|v| v.as_array_mut()) {

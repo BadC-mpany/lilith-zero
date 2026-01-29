@@ -99,3 +99,23 @@ impl ProcessSupervisor {
         Ok(())
     }
 }
+
+impl Drop for ProcessSupervisor {
+    fn drop(&mut self) {
+        // Best effort cleanup.
+        // On Windows, Job Object handles it.
+        // On Unix, PR_SET_PDEATHSIG handles parent death.
+        // But for explicit drops (restarts), we try to kill.
+        
+        let _ = self.child.start_kill(); 
+        
+        #[cfg(unix)]
+        {
+            if let Some(id) = self.child.id() {
+                unsafe {
+                   libc::kill(id as i32, libc::SIGKILL);
+                }
+            }
+        }
+    }
+}

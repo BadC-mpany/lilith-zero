@@ -25,6 +25,7 @@ from .src.constants import (
     ENV_SPOTLIGHTING,
     ENV_STRICT_TAINT,
     ENV_SESSION_VALIDATION,
+    ENV_MCP_VERSION,
     DEFAULT_LOG_LEVEL,
     BINARY_SEARCH_PATHS,
     get_binary_name,
@@ -93,7 +94,8 @@ class Sentinel:
         upstream: str,
         policy: Optional[str] = None,
         security_level: str = DEFAULT_SECURITY_LEVEL,
-        binary_path: Optional[str] = None
+        binary_path: Optional[str] = None,
+        mcp_version: Optional[str] = None
     ) -> SentinelClient:
         """
         Start a Sentinel-protected MCP session.
@@ -103,6 +105,7 @@ class Sentinel:
             policy: Path to policy YAML file. If None, uses default permissive policy.
             security_level: One of "low", "medium", "high".
             binary_path: Optional explicit path to sentinel-interceptor binary.
+            mcp_version: Optional MCP protocol version string (e.g. "2025-06-18")
             
         Returns:
             SentinelClient ready for use as async context manager.
@@ -132,11 +135,15 @@ class Sentinel:
         os.environ[ENV_STRICT_TAINT] = "1" if level_config["strict_taint"] else "0"
         os.environ[ENV_SESSION_VALIDATION] = "1" if level_config["session_validation"] else "0"
         
+        if mcp_version:
+             os.environ[ENV_MCP_VERSION] = mcp_version
+        
         return SentinelClient(
             upstream_cmd=upstream_cmd,
             upstream_args=upstream_args,
             binary_path=resolved_binary,
-            policy_path=policy_path
+            policy_path=policy_path,
+            mcp_version=mcp_version
         )
     
     @staticmethod

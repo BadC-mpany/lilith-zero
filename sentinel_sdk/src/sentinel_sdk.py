@@ -31,30 +31,44 @@ except ImportError:
 
 logger = logging.getLogger("sentinel_sdk")
 
-class SentinelClient:
+class Sentinel:
     """
-    Sentinel Client for secure AI agent sessions (Middleware Mode).
+    Sentinel - Deterministic Security Middleware for AI Agents.
     
-    Manages the lifecycle of the Sentinel sidecar process.
-    Communication happens via Stdio (JSON-RPC 2.0).
+    Wraps an upstream MCP tool server (subprocess) with policy enforcement,
+    session security, and taint tracking.
     """
     
     def __init__(self, 
                  upstream_cmd: str, 
                  upstream_args: Optional[List[str]] = None,
                  binary_path: Optional[str] = None,
-                 policy_path: Optional[str] = None):
+                 policy_path: Optional[str] = None,
+                 mcp_version: Optional[str] = None):
         
         self.upstream_cmd = upstream_cmd
         self.upstream_args = upstream_args if upstream_args is not None else []
-        self.binary_path = binary_path or os.getenv(ENV_BINARY_PATH, get_binary_name())
-        self.policy_path = policy_path or os.getenv(ENV_POLICY_PATH)
+        
+        # Resolve Binary Path
+        _bin_path = binary_path or os.getenv(ENV_BINARY_PATH, get_binary_name())
+        self.binary_path = os.path.abspath(_bin_path)
+        
+        # Resolve Policy Path
+        _pol_path = policy_path or os.getenv(ENV_POLICY_PATH)
+        self.policy_path = os.path.abspath(_pol_path) if _pol_path else None
+        
+        self.mcp_version_preference = mcp_version or MCP_PROTOCOL_VERSION
         
         self.process: Optional[asyncio.subprocess.Process] = None
         self.session_id: Optional[str] = None
         self._lock = asyncio.Lock()
         self._pending_requests: Dict[str, asyncio.Future] = {}
         self._reader_task: Optional[asyncio.Task] = None
+    
+    @classmethod
+    def start(cls, **kwargs):
+        """Legacy/Sugar factory method. Prefer using constructor directly."""
+        return cls(**kwargs)
 
     async def __aenter__(self):
         await self.start_session()
@@ -106,7 +120,7 @@ class SentinelClient:
         # Perform MCP Handshake
         logger.info("Sending initialize request...")
         init_result = await self._send_request("initialize", {
-            "protocolVersion": MCP_PROTOCOL_VERSION, 
+            "protocolVersion": self.mcp_version_preference, 
             "capabilities": {}, 
             "clientInfo": {"name": SDK_NAME, "version": __version__}
         })
@@ -284,69 +298,3 @@ class SentinelClient:
             "arguments": args
         }
         return await self._send_request("tools/call", payload)
-
-    # --- Integrations ---
-
-    async def get_langchain_tools(self):
-        """Convert Sentinel tools to LangChain compatible tools."""
-        try:
-            from langchain_core.tools import StructuredTool
-        except ImportError:
-            raise ImportError("langchain-core is required for get_langchain_tools")
-
-        configs = await self.get_tools_config()
-        tools = []
-        
-        for config in configs:
-            name = config["name"]
-            description = config["description"]
-            
-            # Create a closure to capture the tool name
-            async def _tool_func(tool_name=name, **kwargs):
-                return await self.execute_tool(tool_name, kwargs)
-            
-            args_schema = self._create_pydantic_model(name, config.get("inputSchema", {}))
-            
-            tool = StructuredTool.from_function(
-                coroutine=_tool_func,
-                name=name,
-                description=description,
-                args_schema=args_schema,
-            )
-            tools.append(tool)
-            
-        return tools
-
-    def _create_pydantic_model(self, name: str, json_schema: Dict[str, Any]):
-        try:
-            # Prefer Pydantic V1 for LangChain compatibility if available
-            try:
-                from pydantic.v1 import create_model, Field
-            except ImportError:
-                from pydantic import create_model, Field
-        except ImportError:
-             raise ImportError("pydantic is required for tool schema generation")
-
-        fields = {}
-        properties = json_schema.get("properties", {})
-        required = set(json_schema.get("required", []))
-        
-        for field_name, field_info in properties.items():
-            field_type = str
-            if field_info.get("type") == "integer":
-                field_type = int
-            elif field_info.get("type") == "boolean":
-                field_type = bool
-            elif field_info.get("type") == "number":
-                field_type = float
-            elif field_info.get("type") == "array":
-                field_type = list
-            elif field_info.get("type") == "object":
-                field_type = dict
-
-            is_required = field_name in required
-            default = ... if is_required else None
-            
-            fields[field_name] = (field_type, Field(default=default, description=field_info.get("description", "")))
-        
-        return create_model(f"{name}Schema", **fields)
