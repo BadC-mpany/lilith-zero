@@ -7,5 +7,4 @@ pub mod process;
 pub mod security;
 pub mod server;
 pub mod transport;
-pub mod adapter;
-pub mod adapters;
+

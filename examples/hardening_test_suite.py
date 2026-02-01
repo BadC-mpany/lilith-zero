@@ -39,10 +39,9 @@ class TestSentinelHardening(unittest.IsolatedAsyncioTestCase):
         
         # Start Sentinel WITHOUT a policy
         client = Sentinel.start(
-            upstream_cmd="python",
-            upstream_args=[self.upstream_script],
+            upstream=f"{sys.executable} {self.upstream_script}",
             binary_path=self.binary_path,
-            policy_path=None # Explicitly None
+            policy=None # Explicitly None
         )
 
         async with client:
@@ -61,10 +60,9 @@ class TestSentinelHardening(unittest.IsolatedAsyncioTestCase):
         
         # Start Sentinel WITH policy
         client = Sentinel.start(
-            upstream_cmd="python",
-            upstream_args=[self.upstream_script],
+            upstream=f"{sys.executable} {self.upstream_script}",
             binary_path=self.binary_path,
-            policy_path=self.policy_path
+            policy=self.policy_path
         )
         
         async with client:
@@ -80,10 +78,9 @@ class TestSentinelHardening(unittest.IsolatedAsyncioTestCase):
         logger.info("TEST: Taint Propagation & Blocking")
         
         client = Sentinel.start(
-            upstream_cmd="python",
-            upstream_args=[self.upstream_script],
+            upstream=f"{sys.executable} {self.upstream_script}",
             binary_path=self.binary_path,
-            policy_path=self.policy_path
+            policy=self.policy_path
         )
         
         async with client:
@@ -109,10 +106,9 @@ class TestSentinelHardening(unittest.IsolatedAsyncioTestCase):
         
         # Standard allow setup
         client = Sentinel.start(
-            upstream_cmd="python",
-            upstream_args=[self.upstream_script],
+            upstream=f"{sys.executable} {self.upstream_script}",
             binary_path=self.binary_path,
-            policy_path=self.policy_path
+            policy=self.policy_path
         )
         
         async with client:

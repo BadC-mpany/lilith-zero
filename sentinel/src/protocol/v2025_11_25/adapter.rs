@@ -1,18 +1,25 @@
-//! MCP 2025 Protocol Adapter (Preview).
+//! MCP 2025 Protocol Adapter.
 //!
 //! Implements support for the 2025-06-18 version of the Model Context Protocol.
 //! This includes support for structured tool output and enhanced resource security.
 
 use crate::constants::session;
 use crate::core::events::{SecurityEvent, SecurityDecision, OutputTransform};
-use crate::mcp::adapter::ProtocolAdapter;
-use crate::mcp::transport::{JsonRpcRequest, JsonRpcResponse};
+use crate::protocol::traits::McpSessionHandler;
+use crate::protocol::types::{JsonRpcRequest, JsonRpcResponse};
 use crate::mcp::security::SecurityEngine;
 use serde_json::Value;
 
+#[derive(Debug)]
 pub struct Mcp2025Adapter;
 
-impl ProtocolAdapter for Mcp2025Adapter {
+impl Mcp2025Adapter {
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl McpSessionHandler for Mcp2025Adapter {
     fn version(&self) -> &'static str {
         "2025-06-18"
     }
@@ -26,7 +33,7 @@ impl ProtocolAdapter for Mcp2025Adapter {
                 SecurityEvent::Handshake {
                     protocol_version: self.version().to_string(),
                     client_info: params.get("clientInfo").cloned().unwrap_or(Value::Null),
-                    audience_token: None, // 2025 spec adds formal OAuth, so we'd extract bearer token here
+                    audience_token: None, // 2025 spec adds formal OAuth, so we'd extract bearer token here.
                     capabilities: params.get("capabilities").cloned().unwrap_or(Value::Null),
                 }
             },
@@ -65,7 +72,6 @@ impl ProtocolAdapter for Mcp2025Adapter {
                          match transform {
                              OutputTransform::Spotlight { .. } => {
                                  // 2025 Spec adds "structuredContent". 
-                                 // We recursively search for string fields to spotlight.
                                  if let Some(structured) = result.get_mut("structuredContent") {
                                      self.recursive_spotlight(structured);
                                  }
@@ -112,11 +118,6 @@ impl Mcp2025Adapter {
     fn recursive_spotlight(&self, value: &mut Value) {
         match value {
             Value::String(s) => {
-                 // For structured content, we might not want to spotlight EVERYTHING (like keys).
-                 // But since we are operating on VALUES here, it might be safer.
-                 // However, simpler heuristic: Only spotlight fields named "text", "message", "summary".
-                 // But here we are at a leaf. We don't know the key.
-                 // So we need to traverse from the object level.
                  *s = SecurityEngine::spotlight(s);
             },
             Value::Array(arr) => {
@@ -126,7 +127,6 @@ impl Mcp2025Adapter {
             },
             Value::Object(map) => {
                 for (k, v) in map {
-                    // Smart heuristic: only spotlight fields that look like user-facing text
                     if k == "text" || k == "message" || k == "content" || k == "summary" {
                         if let Value::String(s) = v {
                             *s = SecurityEngine::spotlight(s);

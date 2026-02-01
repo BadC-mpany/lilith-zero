@@ -135,9 +135,7 @@ impl PolicyEvaluator {
                 tool_classes,
                 current_taints,
                 tool_args,
-            )
-            .await?
-            {
+            )? {
                 return Ok(true);
             }
         }

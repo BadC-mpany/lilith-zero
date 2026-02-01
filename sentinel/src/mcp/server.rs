@@ -19,9 +19,12 @@ use crate::constants::{jsonrpc, session};
 use crate::core::crypto::CryptoSigner;
 use crate::core::events::{SecurityEvent, SecurityDecision};
 use crate::core::security_core::SecurityCore;
+use crate::core::session::ActiveSession;
 use crate::mcp::process::ProcessSupervisor;
-use crate::mcp::transport::{JsonRpcRequest, JsonRpcResponse, StdioTransport};
-use crate::mcp::adapter::ProtocolAdapter;
+use crate::protocol::types::{JsonRpcRequest, JsonRpcResponse};
+use crate::protocol::traits::McpSessionHandler;
+use crate::protocol::negotiation::HandshakeManager;
+use crate::mcp::transport::StdioTransport;
 
 pub struct McpMiddleware {
     transport: StdioTransport,
@@ -32,8 +35,8 @@ pub struct McpMiddleware {
     upstream_args: Vec<String>,
     // Core Security Logic
     core: SecurityCore,
-    // Protocol Adapter (Versioned)
-    adapter: Box<dyn ProtocolAdapter>,
+    // Active Protocol Session (Gateway)
+    session: ActiveSession,
 }
 
 impl McpMiddleware {
@@ -42,17 +45,8 @@ impl McpMiddleware {
         // Initialize Security Core
         let core = SecurityCore::new(config.clone(), signer);
         
-        // Select Adapter based on config
-        let adapter: Box<dyn ProtocolAdapter> = match config.mcp_version.as_str() {
-            "2025-06-18" | "2025" => {
-                info!("Initializing with MCP 2025 Adapter");
-                Box::new(crate::mcp::adapters::mcp_2025::Mcp2025Adapter)
-            }
-            _ => {
-                info!("Initializing with MCP 2024 Adapter");
-                Box::new(crate::mcp::adapters::mcp_2024::Mcp2024Adapter)
-            }
-        };
+        // Negotiate/Initialize Session based on config
+        let session = HandshakeManager::negotiate(&config.mcp_version);
 
         Self {
             transport: StdioTransport::new(),
@@ -62,7 +56,7 @@ impl McpMiddleware {
             upstream_cmd,
             upstream_args,
             core,
-            adapter,
+            session,
         }
     }
 
@@ -77,11 +71,6 @@ impl McpMiddleware {
             self.core.session_id
         );
 
-        // Load policy (done in main.rs -> passed in config -> core should load it?)
-        // Actually, main.rs parses config. Policy loading logic was in run().
-        // We need to move that to Core or keep it here and pass to Core.
-        // Let's reload it here or assume config has path and we load it.
-        // The previous run() loaded it. Let's do it here and set on core.
         if let Some(ref path) = self.core.config.policies_yaml_path {
              match std::fs::read_to_string(path.as_path()) {
                 Ok(content) => match serde_yaml::from_str(&content) {
@@ -94,8 +83,6 @@ impl McpMiddleware {
                 Err(e) => error!("Failed to read policy file: {}", e),
             }
         } else {
-             // If implicit default policy needed, Core handles it or we set it here.
-             // We'll leave it as None in Core (Core assumes Allow if None or handles it).
              warn!("No policy loaded. Using default permissive behavior.");
         }
 
@@ -107,7 +94,7 @@ impl McpMiddleware {
             let mut req = req_opt.unwrap();
 
             // 1. Parse Protocol
-            let event = self.adapter.parse_request(&req);
+            let event = self.session.parse_request(&req);
 
             // 2. Evaluate Security
             let decision = self.core.evaluate(event.clone()).await;
@@ -123,17 +110,10 @@ impl McpMiddleware {
                 SecurityDecision::Allow | SecurityDecision::AllowWithTransforms { .. } => {
                     // Handle Infrastructure Side Effects (Spawning & Negotiation)
                     if let SecurityEvent::Handshake { protocol_version, .. } = &event {
-                        // 1. Protocol Negotiation (Auto-swap adapter if version differs)
-                        if protocol_version != self.adapter.version() {
-                            info!("Negotiating protocol: Client requested {}, swapping adapter.", protocol_version);
-                            match protocol_version.as_str() {
-                                "2025-06-18" | "2025" => {
-                                    self.adapter = Box::new(crate::mcp::adapters::mcp_2025::Mcp2025Adapter);
-                                },
-                                _ => {
-                                    self.adapter = Box::new(crate::mcp::adapters::mcp_2024::Mcp2024Adapter);
-                                }
-                            }
+                        // 1. Protocol Negotiation (Gateway Switch)
+                        if protocol_version != self.session.version() {
+                            info!("Negotiating protocol: Client requested {}, upgrading session.", protocol_version);
+                            self.session = HandshakeManager::negotiate(&protocol_version);
                         }
 
                         // 2. Spawn Upstream
@@ -155,25 +135,20 @@ impl McpMiddleware {
                     // Forward to Upstream
                     if self.upstream.is_some() {
                         // Sanitize request (remove internal session tokens)
-                        self.adapter.sanitize_for_upstream(&mut req);
+                        self.session.sanitize_for_upstream(&mut req);
                         
                         match self.transact_upstream(req).await {
                             Ok(resp) => {
                                 // Apply Output Transforms (Spotlighting)
-                                let secured_resp = self.adapter.apply_decision(&decision, resp);
+                                let secured_resp = self.session.apply_decision(&decision, resp);
                                 self.transport.write_response(secured_resp).await?;
                             },
                             Err(e) => {
                                 error!("Upstream transaction failed: {}", e);
-                                // Client might be waiting, send error?
-                                // If req had ID, answer.
-                                // But transact_upstream failing usually means process died.
                                 break;
                             }
                         }
                     } else {
-                         // Should typically not happen if Handshake handled correctly, 
-                         // unless notification came before handshake?
                          if let Some(id) = req.id {
                              self.transport.write_error(
                                  id,
@@ -222,19 +197,7 @@ impl McpMiddleware {
         stdin.write_all(b"\n").await?;
         stdin.flush().await?;
 
-        // If notification, we might not get a response? 
-        // Logic: specific JSON-RPC methods imply response or not.
-        // Sentinel currently treats everything as Request-Response in transact_upstream?
-        // Wait, transport definition: `id: Option<Value>`. If None, it's notification.
-        // If it's a notification, does upstream reply? 
-        // MCP spec: Notifications do NOT expect a response.
-        // So blocking on `read_line` for a notification will DEADLOCK if upstream doesn't send anything back promptly.
-        
         if req.id.is_none() {
-            // It's a notification. Just return a dummy response or handle async?
-            // Current sentinel architecture mostly did request/response.
-            // But notifications (like `notifications/initialized`) are one-way.
-            // We should NOT read from stdout for notifications.
              return Ok(JsonRpcResponse {
                 jsonrpc: "2.0".to_string(),
                 result: None,
@@ -243,14 +206,38 @@ impl McpMiddleware {
             });
         }
 
-        let mut line = String::new();
-        stdout.read_line(&mut line).await.context("Failed to read from upstream")?;
-        
-        if line.trim().is_empty() {
-             return Err(anyhow::anyhow!("Upstream execution returned empty (process died?)"));
-        }
+        // Loop to filter out upstream noise
+        let mut attempts = 0;
+        let max_attempts = 1000; 
 
-        let resp: JsonRpcResponse = serde_json::from_str(&line).context("Failed to parse upstream response")?;
-        Ok(resp)
+        loop {
+            if attempts >= max_attempts {
+                 return Err(anyhow::anyhow!("Upstream unresponsive or flooding noise."));
+            }
+            attempts += 1;
+
+            let mut line = String::new();
+            stdout.read_line(&mut line).await.context("Failed to read from upstream")?;
+            
+            if line.trim().is_empty() {
+                 if line.is_empty() {
+                      return Err(anyhow::anyhow!("Upstream execution returned EOF (process died?)"));
+                 }
+                 continue; 
+            }
+
+            if !line.trim().starts_with('{') {
+                debug!("[Upstream Noise] {}", line.trim());
+                continue;
+            }
+
+            match serde_json::from_str::<JsonRpcResponse>(&line) {
+                Ok(resp) => return Ok(resp),
+                Err(e) => {
+                    warn!("[Upstream Malformed JSON] {} - Error: {}", line.trim(), e);
+                    continue;
+                }
+            }
+        }
     }
 }

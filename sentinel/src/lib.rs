@@ -10,3 +10,4 @@ pub mod core;
 pub mod engine;
 pub mod mcp;
 pub mod utils;
+pub mod protocol;

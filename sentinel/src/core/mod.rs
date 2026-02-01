@@ -9,3 +9,4 @@ pub mod events;
 pub mod models;
 pub mod auth;
 pub mod security_core;
+pub mod session;

@@ -162,7 +162,7 @@ impl SecurityCore {
                  }
             },
             
-            SecurityEvent::ResourceRequest { uri: _, session_token, .. } => {
+            SecurityEvent::ResourceRequest { uri, session_token, .. } => {
                 // Similar session validation
                 if self.config.security_level_config().session_validation {
                      if let Some(token) = session_token {
@@ -180,10 +180,42 @@ impl SecurityCore {
                      }
                 }
                 
-                // For resources, we currently don't have granular policy rules in the MVP models. 
-                // We default to Allow, but apply Output Transformations (Spotlighting).
-                // TODO: Add Resource Rules to PolicyEvaluator
+                // Resource Policy Enforcement (Fail Closed)
+                let mut allow_access = false;
                 
+                if let Some(policy) = &self.policy {
+                    for rule in &policy.resource_rules {
+                         if self.match_resource_pattern(&uri, &rule.uri_pattern) {
+                             if rule.action == "BLOCK" {
+                                 return SecurityDecision::Deny {
+                                     error_code: jsonrpc::ERROR_SECURITY_BLOCK,
+                                     reason: format!("Resource blocked by rule: {}", rule.uri_pattern),
+                                 };
+                             } else if rule.action == "ALLOW" {
+                                 allow_access = true;
+                                 break;
+                             }
+                         }
+                    }
+                } else {
+                    // No policy loaded = Default Deny checking mode
+                     match self.config.security_level {
+                         crate::config::SecurityLevel::AuditOnly => {
+                             allow_access = true;
+                         },
+                         _ => {
+                             allow_access = false; // Fail Closed
+                         }
+                     }
+                }
+
+                if !allow_access {
+                     return SecurityDecision::Deny {
+                        error_code: jsonrpc::ERROR_SECURITY_BLOCK,
+                        reason: format!("Access to resource denied (Default Deny): {}", uri),
+                    };
+                }
+
                  SecurityDecision::AllowWithTransforms {
                     taints_to_add: vec![],
                     taints_to_remove: vec![],
@@ -286,6 +318,17 @@ impl SecurityCore {
             classes: classes.to_vec(),
             timestamp: AuditLogger::now(),
         });
+    }
+
+    fn match_resource_pattern(&self, uri: &str, pattern: &str) -> bool {
+        if pattern == "*" {
+            return true;
+        }
+        if pattern.ends_with("*") {
+             let prefix = &pattern[..pattern.len() - 1];
+             return uri.starts_with(prefix);
+        }
+        uri == pattern
     }
 }
 

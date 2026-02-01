@@ -1,0 +1,14 @@
+
+id: "res-policy-1"
+customer_id: "test"
+name: "Resource Hardening"
+version: 1
+static_rules:
+  read_file: ALLOW
+  ping: ALLOW
+taint_rules: []
+resource_rules:
+  - uri_pattern: "file:///allowed/*"
+    action: ALLOW
+  - uri_pattern: "*"
+    action: BLOCK

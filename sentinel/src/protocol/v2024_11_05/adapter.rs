@@ -4,14 +4,21 @@
 
 use crate::constants::session;
 use crate::core::events::{SecurityEvent, SecurityDecision, OutputTransform};
-use crate::mcp::adapter::ProtocolAdapter;
-use crate::mcp::transport::{JsonRpcRequest, JsonRpcResponse};
+use crate::protocol::traits::McpSessionHandler;
+use crate::protocol::types::{JsonRpcRequest, JsonRpcResponse};
 use crate::mcp::security::SecurityEngine;
 use serde_json::Value;
 
+#[derive(Debug)]
 pub struct Mcp2024Adapter;
 
-impl ProtocolAdapter for Mcp2024Adapter {
+impl Mcp2024Adapter {
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl McpSessionHandler for Mcp2024Adapter {
     fn version(&self) -> &'static str {
         "2024-11-05"
     }
@@ -85,11 +92,6 @@ impl ProtocolAdapter for Mcp2024Adapter {
                          match transform {
                              OutputTransform::Spotlight { .. } => {
                                  // Apply spotlighting to standard 2024 content locations.
-                                 // NOTE: This implementation aggressively spotlights the entire text field
-                                 // and currently ignores the specific `json_paths` provided in the OutputTransform.
-                                 // This is a "Defense in Depth" choice for MVP: better to over-spotlight than miss a path.
-                                 // Future optimization: Use a JSON pointer walker to target specific paths.
-                                 
                                  // 1. tools/call response: { content: [ { type: "text", text: "..." } ] }
                                  if let Some(content) = result.get_mut("content").and_then(|v| v.as_array_mut()) {
                                      for item in content {

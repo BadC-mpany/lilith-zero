@@ -11,7 +11,7 @@ from typing import List, Dict, Optional, Union
 import os
 import shutil
 
-from .src.sentinel_sdk import SentinelClient
+from .src.sentinel_sdk import Sentinel as SentinelClient
 from .src.constants import (
     __version__,
     SECURITY_LEVEL_CONFIG,

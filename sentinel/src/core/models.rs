@@ -135,6 +135,17 @@ pub struct PolicyDefinition {
     pub taint_rules: Vec<PolicyRule>,
     #[serde(alias = "createdAt", default)]
     pub created_at: Option<String>,
+    /// Resource access rules
+    #[serde(rename = "resourceRules", alias = "resource_rules", default)]
+    pub resource_rules: Vec<ResourceRule>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ResourceRule {
+    pub uri_pattern: String, // Glob pattern e.g. "file:///tmp/*"
+    pub action: String, // ALLOW, BLOCK
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub exceptions: Option<Vec<RuleException>>,
 }
 
 impl PolicyRule {
