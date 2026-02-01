@@ -1,4 +1,4 @@
-from fastmcp import FastMCP
+from mcp.server.fastmcp import FastMCP
 import os
 
 mcp = FastMCP("SentinelDemo")

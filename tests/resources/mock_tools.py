@@ -2,7 +2,7 @@
 Mock MCP Tool Server using FastMCP.
 Simulates a realistic set of tools for demonstrating Sentinel security policies.
 """
-from fastmcp import FastMCP
+from mcp.server.fastmcp import FastMCP
 import json
 from datetime import datetime
 

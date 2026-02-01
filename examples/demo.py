@@ -29,8 +29,8 @@ logging.basicConfig(
 logger = logging.getLogger("SentinelDemo")
 
 # Configuration - Use relative paths, resolved at runtime
-POLICY_PATH = os.path.join(os.path.dirname(__file__), "enterprise_policy.yaml")
-MOCK_TOOLS_PATH = os.path.join(os.path.dirname(__file__), "mock_tools.py")
+POLICY_PATH = os.path.join(os.path.dirname(__file__), "policies", "enterprise_policy.yaml")
+MOCK_TOOLS_PATH = os.path.join(os.path.dirname(__file__), "..", "tests", "resources", "mock_tools.py")
 
 
 def print_section(title: str):
