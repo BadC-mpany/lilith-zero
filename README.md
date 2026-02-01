@@ -22,13 +22,12 @@ Sentinel intercepts MCP traffic via stdio, applying:
 
 | Defense | Mechanism |
 |---------|-----------|
-| **Session Integrity** | HMAC-SHA256 signed session IDs, constant-time validation |
-| **Policy Enforcement** | Static ALLOW/DENY rules per tool |
-| **Taint Tracking** | Block sinks (email, APIs) after accessing sources (PII, databases) |
-| **Spotlighting** | Randomized delimiters prevent tool-output prompt injection. |
-| **Observability** | Structured JSON audit logs and OTEL instrumentation. |
-| **Process Binding** | Job Objects (Windows) / PR_SET_PDEATHSIG (Linux) + Explicit Drop Cleanup |
-| **Protocol Agnostic** | Auto-negotiates MCP version (2024/2025) via Adapters |
+| **Session Integrity** | HMAC-SHA256 session binding, constant-time validation |
+| **Logic Engine** | Multi-stage Policy Evaluator (Static + Taint + Resource) |
+| **Taint Tracking** | Compile-time `Tainted<T>` enforcement (Rust) + Runtime Sink blocking |
+| **Spotlighting** | Per-response randomized delimiters (Prompt Injection defense) |
+| **Process Binding** | OS Job Objects (Win) / `PDEATHSIG` (Linux) process supervision |
+| **Actor Model** | Fully async internal messaging (Tokio) - Deadlock-free I/O |
 
 ## Usage
 
@@ -53,19 +52,28 @@ async with client:
 ## Policy Example
 
 ```yaml
-static_rules:
+id: sentinel-policy
+customerId: demo-user
+name: Hardened Enterprise Policy
+version: 1
+
+staticRules:
   query_db: ALLOW
   execute_shell: DENY
 
-taint_rules:
+taintRules:
   - tool: get_user_profile
     action: ADD_TAINT
-    taint_tags: [PII]
+    tag: PII
     
   - tool: send_email
     action: CHECK_TAINT
-    forbidden_taints: [PII]
-    message: "Cannot email after accessing PII"
+    forbiddenTags: [PII]
+    error: "Policy violation: PII exfiltration blocked."
+
+resourceRules:
+  - uriPattern: "file:///config/*"
+    action: BLOCK
 ```
 
 ## Architecture
@@ -81,11 +89,9 @@ Agent ◄──JSON-RPC (stdio)──► [Protocol Adapter] ◄──SecurityEve
                                                                  └─────────────┘
 ```
 
-1. **Protocol Adapter**: Decouples wire format from security logic. Auto-detects MCP 2024 or 2025.
-2. **Security Core**: Pure logic kernel. Enforces policies, tracks taints, and validates sessions.
-3. **Hardened Design**: Fail-closed defaults, constant-time crypto, and strict session binding.
-
-Sentinel runs as a transparent proxy. No agent or tool modifications required.
+1. **Protocol Adapter**: Decouples wire protocol from core security state. 
+2. **Async Actor Core**: Message-passing pipeline (Tokio) ensures non-blocking I/O across stdin/stdout/stderr.
+3. **Type-Driven Security**: Internal `Clean<T>`/`Tainted<T>` types wrap JSON-RPC payloads.
 
 ## Requirements
 
@@ -118,11 +124,11 @@ export SENTINEL_BINARY_PATH="./sentinel/target/release/sentinel"
 
 
 ```bash
-# Run the End-to-End Attack/Defense Demo
-python examples/secure_agent_demo.py
+# Run verified security suite
+python -m unittest tests.test_security_hardening
 
-# Run the Comprehensive Hardening Test Suite
-python examples/hardening_test_suite.py
+# Run basic flow sanity check
+python -m unittest tests.test_basic_flow
 ```
 
 Expected Output (Hardening Suite):
@@ -146,10 +152,10 @@ OK
 
 ## Documentation
 
-- [sentinel/](sentinel/) — Rust interceptor
-- [sentinel_sdk/](sentinel_sdk/) — Python SDK
-- [examples/](examples/) — Demo scripts and policies
-- [SECURITY.md](SECURITY.md) — Vulnerability disclosure
+- [sentinel/](sentinel/) — Binary (Rust)
+- [sentinel_sdk/](sentinel_sdk/) — Client SDK (Python)
+- [tests/](tests/) — Test suites & resources
+- [examples/](examples/) — Reference implementations
 
 ## License
 

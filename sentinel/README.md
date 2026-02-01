@@ -35,21 +35,18 @@ sentinel-interceptor \
 
 ## Components
 
-```
 src/
-├── main.rs           # CLI (clap)
-├── constants.rs      # Centralized values
 ├── mcp/
-│   ├── server.rs     # Request handling
-│   ├── transport.rs  # JSON-RPC stdio
-│   ├── process.rs    # Job Objects / PR_SET_PDEATHSIG
-│   └── security.rs   # Spotlighting
-├── engine/
-│   └── evaluator.rs  # Policy logic
-└── core/
-    ├── crypto.rs     # HMAC session IDs
-    ├── models.rs     # Types
-    └── errors.rs     # Error types
+│   ├── server.rs     # Actor coordinator
+│   ├── pipeline.rs   # Async reader/writer tasks
+│   ├── process.rs    # OS-level supervision
+│   └── mod.rs
+├── core/
+│   ├── security_core.rs # Logic kernel
+│   ├── taint.rs      # Type-level safety (Clean<T>)
+│   ├── crypto.rs     # HMAC session logic
+│   └── mod.rs
+└── engine/           # Rule evaluation logic
 ```
 
 ## Security
@@ -98,21 +95,26 @@ Parent death terminates child.
 
 ```yaml
 id: policy-id
+customerId: customer-id
 name: Policy Name
 version: 1
 
-static_rules:
+staticRules:
   tool_name: ALLOW | DENY
 
-taint_rules:
+taintRules:
   - tool: source_tool
     action: ADD_TAINT
-    taint_tags: [TAG]
+    tag: TAG
     
   - tool: sink_tool
     action: CHECK_TAINT
-    forbidden_taints: [TAG]
-    message: "Error message"
+    forbiddenTags: [TAG]
+    error: "Error message"
+
+resourceRules:
+  - uriPattern: "file:///allowed/*"
+    action: ALLOW
 ```
 
 ## Dependencies

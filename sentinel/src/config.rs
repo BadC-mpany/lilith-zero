@@ -40,17 +40,17 @@ pub struct Config {
 impl Config {
     pub fn from_env() -> Result<Self, InterceptorError> {
         Ok(Self {
-            policies_yaml_path: env::var(crate::constants::config::ENV_POLICIES_YAML_PATH).ok().map(PathBuf::from),
-            log_level: env::var(crate::constants::config::ENV_LOG_LEVEL).unwrap_or_else(|_| "info".to_string()),
-            log_format: env::var(crate::constants::config::ENV_LOG_FORMAT).unwrap_or_else(|_| "text".to_string()),
-            owner: env::var(crate::constants::config::ENV_OWNER).unwrap_or_else(|_| "unknown".to_string()),
-            expected_audience: env::var(crate::constants::config::ENV_EXPECTED_AUDIENCE)
+            policies_yaml_path: env::var(crate::core::constants::config::ENV_POLICIES_YAML_PATH).ok().map(PathBuf::from),
+            log_level: env::var(crate::core::constants::config::ENV_LOG_LEVEL).unwrap_or_else(|_| "info".to_string()),
+            log_format: env::var(crate::core::constants::config::ENV_LOG_FORMAT).unwrap_or_else(|_| "text".to_string()),
+            owner: env::var(crate::core::constants::config::ENV_OWNER).unwrap_or_else(|_| "unknown".to_string()),
+            expected_audience: env::var(crate::core::constants::config::ENV_EXPECTED_AUDIENCE)
                 .ok()
                 .map(|s| s.split(',').map(|s| s.trim().to_string()).collect()),
             security_level: SecurityLevel::from_str(
-                &env::var(crate::constants::config::ENV_SECURITY_LEVEL).unwrap_or_else(|_| "medium".to_string())
+                &env::var(crate::core::constants::config::ENV_SECURITY_LEVEL).unwrap_or_else(|_| "medium".to_string())
             ),
-            mcp_version: env::var(crate::constants::config::ENV_MCP_VERSION).unwrap_or_else(|_| "2024-11-05".to_string()),
+            mcp_version: env::var(crate::core::constants::config::ENV_MCP_VERSION).unwrap_or_else(|_| "2024-11-05".to_string()),
             jwt_secret: env::var("SENTINEL_JWT_SECRET").ok(),
         })
     }

@@ -2,10 +2,10 @@
 //!
 //! Implements the 2024-11-05 version of the Model Context Protocol.
 
-use crate::constants::session;
+use crate::core::constants::session;
 use crate::core::events::{SecurityEvent, SecurityDecision, OutputTransform};
-use crate::protocol::traits::McpSessionHandler;
-use crate::protocol::types::{JsonRpcRequest, JsonRpcResponse};
+use crate::core::traits::McpSessionHandler;
+use crate::core::models::{JsonRpcRequest, JsonRpcResponse};
 use crate::utils::security::SecurityEngine;
 use serde_json::Value;
 use tracing::debug;

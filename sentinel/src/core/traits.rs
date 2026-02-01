@@ -4,7 +4,7 @@
 //! and the internal SecurityEvent model.
 
 use crate::core::events::{SecurityEvent, SecurityDecision};
-use crate::protocol::types::{JsonRpcRequest, JsonRpcResponse};
+use crate::core::models::{JsonRpcRequest, JsonRpcResponse};
 
 /// Handler to translate between generic SecurityEvents and specific wire protocol versions.
 pub trait McpSessionHandler: Send + Sync {

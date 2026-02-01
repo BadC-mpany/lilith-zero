@@ -3,10 +3,10 @@
 //! Implements support for the 2025-06-18 version of the Model Context Protocol.
 //! This includes support for structured tool output and enhanced resource security.
 
-use crate::constants::session;
+use crate::core::constants::session;
 use crate::core::events::{SecurityEvent, SecurityDecision, OutputTransform};
-use crate::protocol::traits::McpSessionHandler;
-use crate::protocol::types::{JsonRpcRequest, JsonRpcResponse};
+use crate::core::traits::McpSessionHandler;
+use crate::core::models::{JsonRpcRequest, JsonRpcResponse};
 use crate::utils::security::SecurityEngine;
 use serde_json::Value;
 

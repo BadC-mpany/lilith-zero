@@ -102,6 +102,7 @@ pub struct RuleException {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PolicyRule {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool: Option<String>,
@@ -122,25 +123,27 @@ pub struct PolicyRule {
 
 /// Policy definition
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PolicyDefinition {
     pub id: String,
     pub customer_id: String,
     pub name: String,
     pub version: u32,
     /// Static rules: tool_name -> "ALLOW" or "DENY"
-    #[serde(rename = "staticRules", alias = "static_rules")]
+    #[serde(alias = "static_rules")]
     pub static_rules: std::collections::HashMap<String, String>,
     /// Dynamic taint rules
-    #[serde(rename = "taintRules", alias = "taint_rules")]
+    #[serde(alias = "taint_rules")]
     pub taint_rules: Vec<PolicyRule>,
-    #[serde(alias = "createdAt", default)]
+    #[serde(alias = "created_at", default)]
     pub created_at: Option<String>,
     /// Resource access rules
-    #[serde(rename = "resourceRules", alias = "resource_rules", default)]
+    #[serde(alias = "resource_rules", default)]
     pub resource_rules: Vec<ResourceRule>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ResourceRule {
     pub uri_pattern: String, // Glob pattern e.g. "file:///tmp/*"
     pub action: String, // ALLOW, BLOCK
@@ -197,4 +200,27 @@ pub struct ToolConfig {
     #[serde(default)]
     #[serde(rename = "taintClass")]
     pub taint_class: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JsonRpcRequest {
+    pub jsonrpc: String,
+    pub method: String,
+    pub params: Option<serde_json::Value>,
+    pub id: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JsonRpcResponse {
+    pub jsonrpc: String,
+    pub result: Option<serde_json::Value>,
+    pub error: Option<JsonRpcError>,
+    pub id: serde_json::Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JsonRpcError {
+    pub code: i32,
+    pub message: String,
+    pub data: Option<serde_json::Value>,
 }

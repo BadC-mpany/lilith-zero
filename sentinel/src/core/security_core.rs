@@ -15,7 +15,7 @@ use crate::core::events::{SecurityEvent, SecurityDecision, OutputTransform};
 use crate::core::models::{Decision, HistoryEntry, PolicyDefinition};
 use crate::engine::evaluator::PolicyEvaluator;
 use crate::core::auth;
-use crate::constants::jsonrpc;
+use crate::core::constants::jsonrpc;
 
 pub struct SecurityCore {
     pub config: Arc<Config>,

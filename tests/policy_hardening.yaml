@@ -1,10 +1,11 @@
 id: "hardening-demo-policy"
-customer_id: "demo-user"
+customerId: "demo-user"
 name: "Hardened Policy"
 version: 1
 staticRules:
   read_user_db: "ALLOW"
-  export_to_cloud: "ALLOW" # Allowed statically, but blocked by Taint if PII is present
+  export_to_cloud: "ALLOW"
+  ping: "ALLOW"
 
 taintRules:
   # Rule 1: Reading DB adds PII taint
@@ -15,5 +16,5 @@ taintRules:
   # Rule 2: Exporting PII is FORBIDDEN
   - tool: "export_to_cloud"
     action: "CHECK_TAINT"
-    forbidden_tags: ["PII"]
+    forbiddenTags: ["PII"]
     error: "BLOCKED: Attempted to exfiltrate PII to external cloud storage."

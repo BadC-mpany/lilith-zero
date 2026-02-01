@@ -9,7 +9,7 @@ use serde_json::Value;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, Stdin, Stdout};
 use tracing::debug;
 
-use crate::protocol::types::{JsonRpcRequest, JsonRpcResponse, JsonRpcError};
+use crate::core::models::{JsonRpcRequest, JsonRpcResponse, JsonRpcError};
 
 pub struct StdioTransport {
     reader: BufReader<Stdin>,
@@ -33,7 +33,7 @@ impl StdioTransport {
     /// Read the next JSON-RPC message from Stdin.
     /// Uses a bounded read to prevent DoS attacks via huge lines.
     pub async fn read_message(&mut self) -> Result<Option<JsonRpcRequest>> {
-        use crate::constants::limits;
+        use crate::core::constants::limits;
         
         let mut buf = Vec::new();
         // read_until reads until the delimiter is found or EOF

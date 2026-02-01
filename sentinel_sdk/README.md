@@ -3,24 +3,24 @@
 The Sentinel SDK allows you to easily wrap your MCP Tool Servers with the Sentinel security middleware.
 
 ## Installation
-
 ```bash
-pip install sentinel-sdk
+pip install -e ./sentinel_sdk
 ```
 
 ## Usage
+Wrap any MCP command to instantly apply security policies.
 
 ```python
 from sentinel_sdk import Sentinel
-from langchain_mcp import load_mcp_tools
 
-# Wrap your tool server execution
-config = Sentinel.wrap_command(
-    upstream_cmd="python",
-    upstream_args=["my_tools.py"],
-    policies_path="policy.yaml"
+client = Sentinel.start(
+    upstream="python tools.py",
+    policy="policy.yaml"
 )
 
-# Load tools into LangChain (or any MCP client)
-tools = load_mcp_tools(**config)
+async with client:
+    # Deterministic policy enforcement active here
+    result = await client.execute_tool("read_db", {"q": "..."})
 ```
+
+See `examples/` for attack simulation and enterprise deployment demos.

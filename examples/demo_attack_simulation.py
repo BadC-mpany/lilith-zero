@@ -17,7 +17,7 @@ async def run_attack_scenario():
     # 1. Start Sentinel protecting the vulnerable tools
     client = Sentinel.start(
         upstream_cmd=sys.executable,
-        upstream_args=["tests/vulnerable_tools.py"],
+        upstream_args=["tests/resources/vulnerable_tools.py"],
         policy_path="tests/policy_hardening.yaml",
         binary_path="./sentinel/target/release/sentinel.exe" # Explicit path for demo
     )

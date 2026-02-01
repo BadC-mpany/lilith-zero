@@ -9,7 +9,7 @@ use ring::rand::{SecureRandom, SystemRandom};
 use sha2::Sha256;
 use uuid::Uuid;
 
-use crate::constants::crypto;
+use crate::core::constants::crypto;
 
 type HmacSha256 = Hmac<Sha256>;
 

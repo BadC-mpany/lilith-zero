@@ -1,80 +1,74 @@
-//! MCP Middleware implementation.
+//! MCP Middleware implementation (Actor Model).
 //! 
-//! This module implements the main `McpMiddleware` which acts as a proxy
-//! between an MCP client and an upstream MCP server.
-//! 
-//! v2 Architecture (Permanent Sentinel):
-//! - Decoupled from wire protocol via `ProtocolAdapter`
-//! - Centralized security logic in `SecurityCore`
-//! - Simplified main loop
+//! v3 Architecture (Async Actors):
+//! - `DownstreamReader`: Reads client JSON-RPC requests.
+//! - `UpstreamReader`: Reads tool JSON-RPC responses.
+//! - `McpMiddleware` (Main Loop): Coordinator acting as the central actor.
+//!   - Maintains `pending_decisions` map for request/response correlation.
+//!   - Routes messages between Upstream and Downstream.
+//!   - Enforces Security Policies.
 
+use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::time::timeout;
-use std::time::Duration;
+use tokio::io::AsyncWriteExt;
+use tokio::sync::mpsc;
 use tracing::{debug, error, info, warn};
 use anyhow::{Context, Result};
 use serde_json::Value;
 
 use crate::config::Config;
-use crate::constants::{jsonrpc, session};
+use crate::core::constants::{jsonrpc, session};
 use crate::core::crypto::CryptoSigner;
 use crate::core::events::{SecurityEvent, SecurityDecision};
 use crate::core::security_core::SecurityCore;
 use crate::core::session::ActiveSession;
 use crate::mcp::process::ProcessSupervisor;
-use crate::protocol::types::{JsonRpcRequest, JsonRpcResponse};
-use crate::protocol::traits::McpSessionHandler;
+use crate::core::models::{JsonRpcRequest, JsonRpcResponse, JsonRpcError};
+use crate::core::traits::McpSessionHandler;
 use crate::protocol::negotiation::HandshakeManager;
-use crate::mcp::transport::StdioTransport;
-
-const UPSTREAM_TIMEOUT: Duration = Duration::from_secs(30);
+use crate::mcp::pipeline::{self, DownstreamEvent, UpstreamEvent};
 
 pub struct McpMiddleware {
-    transport: StdioTransport,
-    upstream: Option<ProcessSupervisor>,
-    upstream_stdin: Option<tokio::process::ChildStdin>,
-    upstream_stdout: Option<tokio::io::BufReader<tokio::process::ChildStdout>>,
     upstream_cmd: String,
     upstream_args: Vec<String>,
     // Core Security Logic
     core: SecurityCore,
     // Active Protocol Session (Gateway)
     session: ActiveSession,
+    
+    // Actor State
+    upstream_stdin: Option<tokio::process::ChildStdin>,
+    pending_decisions: HashMap<String, SecurityDecision>, // Map Request ID (String) -> Decision
+    
+    // Upstream Control
+    upstream_supervisor: Option<ProcessSupervisor>,
 }
 
 impl McpMiddleware {
     pub fn new(upstream_cmd: String, upstream_args: Vec<String>, config: Arc<Config>) -> Self {
         let signer = CryptoSigner::new();
-        // Initialize Security Core
         let core = SecurityCore::new(config.clone(), signer);
-        
-        // Negotiate/Initialize Session based on config
         let session = HandshakeManager::negotiate(&config.mcp_version);
 
         Self {
-            transport: StdioTransport::new(),
-            upstream: None,
-            upstream_stdin: None,
-            upstream_stdout: None,
             upstream_cmd,
             upstream_args,
             core,
             session,
+            upstream_stdin: None,
+            pending_decisions: HashMap::new(),
+            upstream_supervisor: None,
         }
     }
 
     pub async fn run(&mut self) -> Result<()> {
-        // Output session ID for SDK interaction
+        // Output session ID for SDK interaction (REQUIRED)
         eprintln!("{}{}", session::SESSION_ID_ENV_PREFIX, self.core.session_id);
 
-        info!("Sentinel Middleware v2 started. Session: {}", self.core.session_id);
-        eprintln!(
-            "Sentinel Security Middleware v{} (Session: {})",
-            env!("CARGO_PKG_VERSION"),
-            self.core.session_id
-        );
+        info!("Sentinel Middleware v3 (Actor Model) started. Session: {}", self.core.session_id);
+        eprintln!("Sentinel Middleware v{} (Session: {})", env!("CARGO_PKG_VERSION"), self.core.session_id);
 
+        // Load Policies
         if let Some(ref path) = self.core.config.policies_yaml_path {
              match std::fs::read_to_string(path.as_path()) {
                 Ok(content) => match serde_yaml::from_str(&content) {
@@ -90,181 +84,224 @@ impl McpMiddleware {
              warn!("No policy loaded. Using default permissive behavior.");
         }
 
+        // Setup Channels
+        let (tx_downstream_events, mut rx_downstream_events) = mpsc::channel(32);
+        let (tx_upstream_events, mut rx_upstream_events) = mpsc::channel(32);
+
+        // Spawn Downstream Reader (Stdin)
+        pipeline::spawn_downstream_reader(tokio::io::stdin(), tx_downstream_events);
+
+        // We use tokio::io::stdout() for writing to client directly in the main loop for now (Writer Task could be separate but simple write is okay)
+        let mut downstream_writer = tokio::io::stdout();
+
         loop {
-            let req_opt = self.transport.read_message().await?;
-            if req_opt.is_none() {
-                break; // EOF
+            tokio::select! {
+                // --- Handle Downstream (Client) Events ---
+                event = rx_downstream_events.recv() => {
+                    match event {
+                        Some(DownstreamEvent::Request(mut req)) => {
+                            self.handle_client_request(&mut req, &mut downstream_writer, &tx_upstream_events).await?;
+                        }
+                        Some(DownstreamEvent::Disconnect) => {
+                            info!("Client disconnected. Shutting down.");
+                            break;
+                        }
+                        Some(DownstreamEvent::Error(e)) => {
+                            warn!("Downstream transport error: {}", e);
+                            // Optionally send error back if possible?
+                        }
+                        None => break, // Channel closed
+                    }
+                }
+
+                // --- Handle Upstream (tool) Events ---
+                event = rx_upstream_events.recv() => {
+                    match event {
+                        Some(UpstreamEvent::Response(resp)) => {
+                            self.handle_upstream_response(resp, &mut downstream_writer).await?;
+                        }
+                        Some(UpstreamEvent::Log(msg)) => {
+                            debug!("[Upstream Log] {}", msg);
+                        }
+                        Some(UpstreamEvent::Terminated) => {
+                            warn!("Upstream process terminated unexpectedly.");
+                            self.upstream_stdin = None;
+                            self.upstream_supervisor = None;
+                            // We don't exit, we might restart or just report error on next request.
+                        }
+                        None => {
+                            // Upstream channel closed (shouldn't happen unless we drop sender)
+                        }
+                    }
+                }
+                
+                // --- Signals ---
+                _ = tokio::signal::ctrl_c() => {
+                    info!("Received Ctrl+C, shutting down.");
+                    break;
+                }
             }
-            let mut req = req_opt.unwrap();
+        }
+        
+        Ok(())
+    }
 
-            // 1. Parse Protocol
-            let event = self.session.parse_request(&req);
+    async fn handle_client_request(
+        &mut self, 
+        req: &mut JsonRpcRequest, 
+        writer: &mut tokio::io::Stdout,
+        tx_upstream_events: &mpsc::Sender<UpstreamEvent>
+    ) -> Result<()> {
+        // 1. Parse Protocol (Session Token extraction, etc)
+        let security_event = self.session.parse_request(&req);
 
-            // 2. Evaluate Security
-            let decision = self.core.evaluate(event.clone()).await;
+        // 2. Evaluate Security
+        let decision = self.core.evaluate(security_event.clone()).await;
 
-            // 3. Act on Decision
-            match decision {
-                SecurityDecision::Deny { error_code, reason } => {
-                    warn!("Blocked request: {}", reason);
-                    if let Some(id) = req.id {
-                        self.transport.write_error(id, error_code, &reason).await?;
+        match decision {
+            SecurityDecision::Deny { error_code, reason } => {
+                warn!("Blocked request: {}", reason);
+                if let Some(id) = &req.id {
+                    self.write_error(writer, id.clone(), error_code, &reason).await?;
+                }
+            }
+            SecurityDecision::Allow | SecurityDecision::AllowWithTransforms { .. } => {
+                // Handle Side Effects (Infra)
+                if let SecurityEvent::Handshake { protocol_version, .. } = &security_event {
+                    // Negotiation
+                    if protocol_version != self.session.version() {
+                         info!("Negotiating protocol: Client requested {}, upgrading session.", protocol_version);
+                         self.session = HandshakeManager::negotiate(&protocol_version);
                     }
-                },
-                SecurityDecision::Allow | SecurityDecision::AllowWithTransforms { .. } => {
-                    // Handle Infrastructure Side Effects (Spawning & Negotiation)
-                    if let SecurityEvent::Handshake { protocol_version, .. } = &event {
-                        // 1. Protocol Negotiation (Gateway Switch)
-                        if protocol_version != self.session.version() {
-                            info!("Negotiating protocol: Client requested {}, upgrading session.", protocol_version);
-                            self.session = HandshakeManager::negotiate(&protocol_version);
-                        }
-
-                        // 2. Spawn Upstream
-                        if self.upstream.is_none() {
-                            if let Err(e) = self.spawn_upstream() {
-                                error!("Failed to spawn upstream: {}", e);
-                                if let Some(id) = req.id {
-                                    self.transport.write_error(
-                                        id, 
-                                        jsonrpc::ERROR_INTERNAL, 
-                                        "Failed to start upstream process"
-                                    ).await?;
-                                }
-                                continue;
-                            }
+                    
+                    // Spawn Upstream if needed
+                    if self.upstream_stdin.is_none() {
+                        if let Err(e) = self.spawn_upstream(tx_upstream_events.clone()) {
+                             error!("Failed to spawn upstream: {}", e);
+                             if let Some(id) = &req.id {
+                                 self.write_error(writer, id.clone(), jsonrpc::ERROR_INTERNAL, "Failed to start upstream process").await?;
+                             }
+                             return Ok(());
                         }
                     }
+                }
 
-                    // Forward to Upstream
-                    if self.upstream.is_some() {
-                        // Sanitize request (remove internal session tokens)
-                        self.session.sanitize_for_upstream(&mut req);
-                        
-                        match self.transact_upstream(req).await {
-                            Ok(resp) => {
-                                // Apply Output Transforms (Spotlighting)
-                                let secured_resp = self.session.apply_decision(&decision, resp);
-                                self.transport.write_response(secured_resp).await?;
-                            },
-                            Err(e) => {
-                                error!("Upstream transaction failed: {}", e);
-                                break;
-                            }
-                        }
-                    } else {
-                         if let Some(id) = req.id {
-                             self.transport.write_error(
-                                 id,
-                                 jsonrpc::ERROR_METHOD_NOT_FOUND,
-                                 "Upstream not connected (Handshake required)"
-                             ).await?;
-                         }
+                // Track Decision for Response (if request has ID)
+                if let Some(id) = &req.id {
+                    // We map the ID as string.
+                    if let Some(id_str) = id.as_str() {
+                        self.pending_decisions.insert(id_str.to_string(), decision.clone());
+                    } else if let Some(id_num) = id.as_i64() {
+                         self.pending_decisions.insert(id_num.to_string(), decision.clone());
                     }
+                }
+
+                // Forward to Upstream
+                if self.upstream_stdin.is_some() {
+                    self.session.sanitize_for_upstream(req);
+                    // Blessing the request as clean because Policy Allowed it.
+                    let clean_req = crate::core::taint::Clean::new_unchecked(req.clone());
+                    self.write_upstream(clean_req).await?;
+                } else {
+                     if let Some(id) = &req.id {
+                         self.write_error(writer, id.clone(), jsonrpc::ERROR_METHOD_NOT_FOUND, "Upstream not connected").await?;
+                     }
                 }
             }
         }
         Ok(())
     }
 
-    fn spawn_upstream(&mut self) -> Result<()> {
+    async fn handle_upstream_response(
+        &mut self,
+        resp: JsonRpcResponse,
+        writer: &mut tokio::io::Stdout
+    ) -> Result<()> {
+        // Correlate with Request
+        let mut decision = SecurityDecision::Allow; // Default if unsolicited (notifications)?
+        
+        let id_key = if let Some(id_str) = resp.id.as_str() {
+            Some(id_str.to_string())
+        } else if let Some(id_num) = resp.id.as_i64() {
+             Some(id_num.to_string())
+        } else {
+            None
+        };
+
+        if let Some(key) = id_key {
+            if let Some(d) = self.pending_decisions.remove(&key) {
+                decision = d;
+            } else {
+                if !resp.id.is_null() {
+                    warn!("Received upstream response with unknown ID: {:?}. Dropping.", resp.id);
+                    return Ok(());
+                }
+            }
+        }
+
+        // Apply Transforms (Spotlighting)
+        let secured_resp = self.session.apply_decision(&decision, resp);
+        
+        // Write to Downstream
+        let json = serde_json::to_string(&secured_resp)?;
+        debug!("Writing downstream: {}", json);
+        writer.write_all(json.as_bytes()).await?;
+        writer.write_all(b"\n").await?;
+        writer.flush().await?;
+
+        Ok(())
+    }
+
+    fn spawn_upstream(&mut self, tx_upstream: mpsc::Sender<UpstreamEvent>) -> Result<()> {
         info!("Spawning upstream: {} {:?}", self.upstream_cmd, self.upstream_args);
+        
         let mut supervisor = ProcessSupervisor::spawn(&self.upstream_cmd, &self.upstream_args)
             .context("Failed to spawn upstream")?;
         
+        // Capture Stdin
         self.upstream_stdin = supervisor.child.stdin.take();
-        self.upstream_stdout = supervisor.child.stdout.take().map(BufReader::new);
         
-        // Drain stderr
-        if let Some(stderr) = supervisor.child.stderr.take() {
-            tokio::spawn(async move {
-                let mut reader = BufReader::new(stderr);
-                let mut line = String::new();
-                while let Ok(bytes) = reader.read_line(&mut line).await {
-                    if bytes == 0 { break; }
-                    debug!("[Upstream Stderr] {}", line.trim());
-                    line.clear();
-                }
-            });
+        // Capture and spawn reader for Stdout
+        if let Some(stdout) = supervisor.child.stdout.take() {
+            pipeline::spawn_upstream_reader(stdout, tx_upstream.clone());
         }
         
-        self.upstream = Some(supervisor);
+        // Capture and spawn drain for Stderr
+        if let Some(stderr) = supervisor.child.stderr.take() {
+            pipeline::spawn_upstream_stderr_drain(stderr, tx_upstream.clone());
+        }
+
+        self.upstream_supervisor = Some(supervisor);
         Ok(())
     }
 
-    async fn transact_upstream(&mut self, req: JsonRpcRequest) -> Result<JsonRpcResponse> {
-        let json = serde_json::to_string(&req)?;
-        let stdin = self.upstream_stdin.as_mut().context("Upstream stdin missing")?;
-        let stdout = self.upstream_stdout.as_mut().context("Upstream stdout missing")?;
-
-        debug!("Writing to upstream: {}", json);
-        stdin.write_all(json.as_bytes()).await?;
-        stdin.write_all(b"\n").await?;
-        stdin.flush().await?;
-        debug!("Flushed to upstream");
-
-        if req.id.is_none() {
-             return Ok(JsonRpcResponse {
-                jsonrpc: "2.0".to_string(),
-                result: None,
-                error: None,
-                id: Value::Null,
-            });
+    async fn write_upstream(&mut self, req: crate::core::taint::Clean<JsonRpcRequest>) -> Result<()> {
+        if let Some(stdin) = self.upstream_stdin.as_mut() {
+            // We use into_inner() because we are at the Sink boundary.
+            let json = serde_json::to_string(&req.into_inner())?;
+            debug!("Writing upstream: {}", json);
+            stdin.write_all(json.as_bytes()).await?;
+            stdin.write_all(b"\n").await?;
+            stdin.flush().await?;
         }
+        Ok(())
+    }
 
-        // Loop to filter out upstream noise
-        let mut attempts = 0;
-        let max_attempts = 1000; 
-
-        loop {
-            if attempts >= max_attempts {
-                 return Err(anyhow::anyhow!("Upstream unresponsive or flooding noise."));
-            }
-            attempts += 1;
-            debug!("Waiting for upstream response (attempt {})", attempts);
-
-            let mut line = String::new();
-            match timeout(UPSTREAM_TIMEOUT, stdout.read_line(&mut line)).await {
-                Ok(Ok(_)) => {}, // Success
-                Ok(Err(e)) => return Err(anyhow::anyhow!("Failed to read from upstream: {}", e)),
-                Err(_) => return Err(anyhow::anyhow!("Upstream unresponsive (timeout)")),
-            }
-            
-            if line.trim().is_empty() {
-                 if line.is_empty() {
-                      return Err(anyhow::anyhow!("Upstream execution returned EOF (process died?)"));
-                 }
-                 continue; 
-            }
-
-            if !line.trim().starts_with('{') {
-                debug!("[Upstream Noise] {}", line.trim());
-                continue;
-            }
-
-            match serde_json::from_str::<JsonRpcResponse>(&line) {
-                Ok(resp) => {
-                    debug!("Parsed upstream response (id: {:?})", resp.id);
-                    
-                    // Verify ID matches request (hardening against stale responses/noise)
-                    if let Some(req_id) = &req.id {
-                        if &resp.id != req_id {
-                            warn!("Ignoring mismatched response ID: {:?} (expected {:?})", resp.id, req_id);
-                            continue;
-                        }
-                    } else if !resp.id.is_null() {
-                         // If request has no ID (shouldn't be here due to early return), match Null.
-                         // But we returned early if req.id.is_none().
-                         // So req.id is Some.
-                    }
-
-                    return Ok(resp)
-                },
-                Err(e) => {
-                    warn!("[Upstream Malformed JSON] {} - Error: {}", line.trim(), e);
-                    continue;
-                }
-            }
-        }
+    async fn write_error(&self, writer: &mut tokio::io::Stdout, id: Value, code: i32, message: &str) -> Result<()> {
+         let response = JsonRpcResponse {
+            jsonrpc: "2.0".to_string(),
+            result: None,
+            error: Some(JsonRpcError {
+                code,
+                message: message.to_string(),
+                data: None,
+            }),
+            id,
+        };
+        let json = serde_json::to_string(&response)?;
+        writer.write_all(json.as_bytes()).await?;
+        writer.write_all(b"\n").await?;
+        writer.flush().await?;
+        Ok(())
     }
 }

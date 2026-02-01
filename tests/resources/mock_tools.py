@@ -1,141 +1,68 @@
-"""
-Mock MCP Tool Server using FastMCP.
-Simulates a realistic set of tools for demonstrating Sentinel security policies.
-"""
 from mcp.server.fastmcp import FastMCP
-import json
-from datetime import datetime
+import datetime
+import os
 
-mcp = FastMCP("Mock Enterprise Tools")
+mcp = FastMCP("SentinelEnterpriseDemo")
 
-# ============================================================================
-# PII/Sensitive Data Sources (Should be taint-tracked)
-# ============================================================================
+# --- SCENARIO 1: Safe Tools ---
+
+@mcp.tool()
+def get_current_time() -> str:
+    """Returns the current system time."""
+    now = datetime.datetime.now()
+    return f"Current time is: {now.strftime('%Y-%m-%d %H:%M:%S')}"
+
+@mcp.tool()
+def calculate(expression: str) -> str:
+    """Performs a mathematical calculation."""
+    try:
+        # Note: In a real app, use a safe math parser, not eval!
+        # But for mock tools, this is fine.
+        res = eval(expression, {"__builtins__": {}}, {})
+        return f"Result: {res}"
+    except Exception as e:
+        return f"Error: {e}"
+
+# --- SCENARIO 2: PII Sources ---
 
 @mcp.tool()
 def get_user_profile(user_id: str) -> str:
-    """Fetch user profile from database. Contains PII."""
-    return json.dumps({
-        "user_id": user_id,
-        "name": "Alice Johnson",
-        "email": "alice.johnson@company.com",
-        "phone": "+1-555-0123",
-        "ssn_last4": "4567",
-        "department": "Engineering"
-    })
-
-@mcp.tool()
-def query_database(sql: str) -> str:
-    """Execute SQL query against internal database."""
-    # Simulate query results
-    if "users" in sql.lower():
-        return json.dumps([
-            {"id": 1, "name": "Alice", "email": "alice@example.com", "salary": 95000},
-            {"id": 2, "name": "Bob", "email": "bob@example.com", "salary": 87000},
-        ])
-    elif "orders" in sql.lower():
-        return json.dumps([
-            {"order_id": "ORD-001", "customer": "Alice", "amount": 299.99},
-        ])
-    return json.dumps({"rows": 0, "message": "No results"})
-
-@mcp.tool()
-def read_file(path: str) -> str:
-    """Read contents of an internal file."""
-    # Simulated file contents
-    files = {
-        "/etc/config.yaml": "database_url: postgres://prod:secret@db.internal:5432/app",
-        "/var/log/app.log": "[2024-01-15] User login: alice@company.com from 192.168.1.50",
-        "/home/user/notes.txt": "Meeting notes: Q1 revenue projections confidential",
+    """Returns sensitive user profile data (PII)."""
+    # This tool is marked as a TAINT SOURCE in the policy.
+    profiles = {
+        "12345": {"name": "Alice Smith", "email": "alice@example.com", "ssn": "XXX-XX-1234"},
+        "67890": {"name": "Bob Jones", "email": "bob@example.com", "ssn": "XXX-XX-5678"}
     }
-    return files.get(path, f"File not found: {path}")
+    data = profiles.get(user_id, "User not found")
+    return f"Profile Data: {data}"
 
-# ============================================================================
-# External Sinks (Dangerous for data exfiltration)
-# ============================================================================
+# --- SCENARIO 3: External Sinks ---
 
 @mcp.tool()
 def send_email(to: str, subject: str, body: str) -> str:
-    """Send an email to external recipient."""
+    """Sends an email to an external recipient."""
+    # This tool is marked as a TAINT SINK in the policy.
     return f"Email sent to {to} with subject: {subject}"
 
 @mcp.tool()
 def post_to_slack(channel: str, message: str) -> str:
-    """Post message to Slack channel."""
-    return f"Posted to #{channel}: {message[:50]}..."
+    """Posts a message to a Slack channel."""
+    # This tool is also a TAINT SINK.
+    return f"Posted to Slack channel #{channel}: {message}"
 
-@mcp.tool()
-def upload_to_s3(bucket: str, key: str, content: str) -> str:
-    """Upload content to S3 bucket."""
-    return f"Uploaded to s3://{bucket}/{key} ({len(content)} bytes)"
-
-@mcp.tool()
-def call_external_api(url: str, method: str, payload: str) -> str:
-    """Make HTTP request to external API."""
-    return json.dumps({
-        "status": 200,
-        "response": f"Mock response from {url}"
-    })
-
-# ============================================================================
-# Safe/Internal Operations
-# ============================================================================
-
-@mcp.tool()
-def get_current_time() -> str:
-    """Get current server time."""
-    return datetime.now().isoformat()
-
-@mcp.tool()
-def calculate(expression: str) -> str:
-    """Evaluate a mathematical expression."""
-    try:
-        # Safe eval for simple math
-        allowed = set("0123456789+-*/(). ")
-        if all(c in allowed for c in expression):
-            return str(eval(expression))
-        return "Invalid expression"
-    except:
-        return "Error evaluating expression"
-
-@mcp.tool()
-def format_text(text: str, style: str) -> str:
-    """Format text (uppercase, lowercase, title)."""
-    if style == "upper":
-        return text.upper()
-    elif style == "lower":
-        return text.lower()
-    elif style == "title":
-        return text.title()
-    return text
-
-@mcp.tool()
-def summarize_text(text: str, max_length: int = 100) -> str:
-    """Generate a summary of the input text."""
-    if len(text) <= max_length:
-        return text
-    return text[:max_length-3] + "..."
-
-# ============================================================================
-# Administrative Tools (High privilege)
-# ============================================================================
+# --- SCENARIO 4: Administrative/Denied Tools ---
 
 @mcp.tool()
 def execute_shell(command: str) -> str:
-    """Execute shell command on server."""
-    # NEVER actually execute - just simulate
-    return f"[SIMULATED] Would execute: {command}"
-
-@mcp.tool()
-def modify_user_permissions(user_id: str, role: str) -> str:
-    """Change user's permission level."""
-    return f"[SIMULATED] User {user_id} role changed to: {role}"
+    """Executes a shell command (Extremely Dangerous)."""
+    # This tool is BLOCKED by static policy.
+    return "This should NEVER be executed!"
 
 @mcp.tool()
 def delete_records(table: str, condition: str) -> str:
-    """Delete records from database table."""
-    return f"[SIMULATED] Would delete from {table} where {condition}"
-
+    """Deletes records from a database table."""
+    # This tool is also BLOCKED by static policy.
+    return f"Records deleted from {table} where {condition}"
 
 if __name__ == "__main__":
     mcp.run()
