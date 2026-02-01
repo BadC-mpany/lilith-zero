@@ -10,6 +10,8 @@
 
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::time::timeout;
+use std::time::Duration;
 use tracing::{debug, error, info, warn};
 use anyhow::{Context, Result};
 use serde_json::Value;
@@ -25,6 +27,8 @@ use crate::protocol::types::{JsonRpcRequest, JsonRpcResponse};
 use crate::protocol::traits::McpSessionHandler;
 use crate::protocol::negotiation::HandshakeManager;
 use crate::mcp::transport::StdioTransport;
+
+const UPSTREAM_TIMEOUT: Duration = Duration::from_secs(30);
 
 pub struct McpMiddleware {
     transport: StdioTransport,
@@ -193,9 +197,11 @@ impl McpMiddleware {
         let stdin = self.upstream_stdin.as_mut().context("Upstream stdin missing")?;
         let stdout = self.upstream_stdout.as_mut().context("Upstream stdout missing")?;
 
+        debug!("Writing to upstream: {}", json);
         stdin.write_all(json.as_bytes()).await?;
         stdin.write_all(b"\n").await?;
         stdin.flush().await?;
+        debug!("Flushed to upstream");
 
         if req.id.is_none() {
              return Ok(JsonRpcResponse {
@@ -215,9 +221,14 @@ impl McpMiddleware {
                  return Err(anyhow::anyhow!("Upstream unresponsive or flooding noise."));
             }
             attempts += 1;
+            debug!("Waiting for upstream response (attempt {})", attempts);
 
             let mut line = String::new();
-            stdout.read_line(&mut line).await.context("Failed to read from upstream")?;
+            match timeout(UPSTREAM_TIMEOUT, stdout.read_line(&mut line)).await {
+                Ok(Ok(_)) => {}, // Success
+                Ok(Err(e)) => return Err(anyhow::anyhow!("Failed to read from upstream: {}", e)),
+                Err(_) => return Err(anyhow::anyhow!("Upstream unresponsive (timeout)")),
+            }
             
             if line.trim().is_empty() {
                  if line.is_empty() {
@@ -232,7 +243,23 @@ impl McpMiddleware {
             }
 
             match serde_json::from_str::<JsonRpcResponse>(&line) {
-                Ok(resp) => return Ok(resp),
+                Ok(resp) => {
+                    debug!("Parsed upstream response (id: {:?})", resp.id);
+                    
+                    // Verify ID matches request (hardening against stale responses/noise)
+                    if let Some(req_id) = &req.id {
+                        if &resp.id != req_id {
+                            warn!("Ignoring mismatched response ID: {:?} (expected {:?})", resp.id, req_id);
+                            continue;
+                        }
+                    } else if !resp.id.is_null() {
+                         // If request has no ID (shouldn't be here due to early return), match Null.
+                         // But we returned early if req.id.is_none().
+                         // So req.id is Some.
+                    }
+
+                    return Ok(resp)
+                },
                 Err(e) => {
                     warn!("[Upstream Malformed JSON] {} - Error: {}", line.trim(), e);
                     continue;

@@ -4,7 +4,7 @@
 //! process management, and the core middleware server.
 
 pub mod process;
-pub mod security;
+
 pub mod server;
 pub mod transport;
 

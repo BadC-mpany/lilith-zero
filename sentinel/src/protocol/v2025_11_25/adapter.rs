@@ -7,7 +7,7 @@ use crate::constants::session;
 use crate::core::events::{SecurityEvent, SecurityDecision, OutputTransform};
 use crate::protocol::traits::McpSessionHandler;
 use crate::protocol::types::{JsonRpcRequest, JsonRpcResponse};
-use crate::mcp::security::SecurityEngine;
+use crate::utils::security::SecurityEngine;
 use serde_json::Value;
 
 #[derive(Debug)]
@@ -30,11 +30,14 @@ impl McpSessionHandler for Mcp2025Adapter {
         match req.method.as_str() {
              "initialize" => {
                 let params = req.params.as_ref().cloned().unwrap_or(Value::Null);
+                let client_info = params.get("clientInfo").cloned().unwrap_or(Value::Null);
+                let capabilities = params.get("capabilities").cloned().unwrap_or(Value::Null);
+                let audience_token = params.get("_audience_token").and_then(|v| v.as_str()).map(|s| s.to_string());
                 SecurityEvent::Handshake {
                     protocol_version: self.version().to_string(),
-                    client_info: params.get("clientInfo").cloned().unwrap_or(Value::Null),
-                    audience_token: None, // 2025 spec adds formal OAuth, so we'd extract bearer token here.
-                    capabilities: params.get("capabilities").cloned().unwrap_or(Value::Null),
+                    client_info,
+                    audience_token, // 2025 spec adds formal OAuth, so we'd extract bearer token here.
+                    capabilities,
                 }
             },
             "tools/call" => {

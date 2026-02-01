@@ -28,6 +28,7 @@ impl PatternMatcher {
             current_classes,
             current_taints,
             args,
+            0,
         )
     }
 
@@ -45,7 +46,13 @@ impl PatternMatcher {
         _current_classes: &[String],
         _current_taints: &HashSet<String>,
         args: &Value,
+        depth: usize,
     ) -> Result<bool, InterceptorError> {
+        if depth > 50 {
+            return Err(InterceptorError::PolicyViolation(
+                "Recursion depth limit exceeded".to_string(),
+            ));
+        }
         if condition.is_null() {
             return Ok(true);
         }
@@ -59,7 +66,7 @@ impl PatternMatcher {
                          "and" => {
                              if let Value::Array(list) = args_val {
                                  for item in list {
-                                     if !Self::evaluate_condition_with_args(item, _history, _current_tool, _current_classes, _current_taints, args)? {
+                                     if !Self::evaluate_condition_with_args(item, _history, _current_tool, _current_classes, _current_taints, args, depth + 1)? {
                                          return Ok(false);
                                      }
                                  }
@@ -71,7 +78,7 @@ impl PatternMatcher {
                          "or" => {
                               if let Value::Array(list) = args_val {
                                  for item in list {
-                                     if Self::evaluate_condition_with_args(item, _history, _current_tool, _current_classes, _current_taints, args)? {
+                                     if Self::evaluate_condition_with_args(item, _history, _current_tool, _current_classes, _current_taints, args, depth + 1)? {
                                          return Ok(true);
                                      }
                                  }
@@ -81,7 +88,7 @@ impl PatternMatcher {
                              }
                          },
                          "not" => {
-                             let res = Self::evaluate_condition_with_args(args_val, _history, _current_tool, _current_classes, _current_taints, args)?;
+                             let res = Self::evaluate_condition_with_args(args_val, _history, _current_tool, _current_classes, _current_taints, args, depth + 1)?;
                              Ok(!res)
                          },
                          "==" => {
@@ -166,11 +173,11 @@ mod tests {
         
         // Test: user_id == 123
         let cond1 = json!({ "==": [{ "var": "user_id" }, 123] });
-        assert_eq!(PatternMatcher::evaluate_condition_with_args(&cond1, &[], "", &[], &HashSet::new(), &args).await.unwrap(), true);
+        assert_eq!(PatternMatcher::evaluate_condition_with_args(&cond1, &[], "", &[], &HashSet::new(), &args, 0).await.unwrap(), true);
 
         // Test: user_id > 100
         let cond2 = json!({ ">": [{ "var": "user_id" }, 100] });
-        assert_eq!(PatternMatcher::evaluate_condition_with_args(&cond2, &[], "", &[], &HashSet::new(), &args).await.unwrap(), true);
+        assert_eq!(PatternMatcher::evaluate_condition_with_args(&cond2, &[], "", &[], &HashSet::new(), &args, 0).await.unwrap(), true);
 
         // Test: safe AND (user_id < 200)
         let cond3 = json!({ 

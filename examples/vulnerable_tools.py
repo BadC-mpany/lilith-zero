@@ -24,5 +24,11 @@ def export_to_cloud(data: str, destination: str) -> str:
     """Exports data to an external cloud storage bucket."""
     return f"Successfully exported {len(data)} bytes to {destination}"
 
+@mcp.tool()
+def sleep_tool(seconds: int) -> str:
+    """Sleeps for a specified number of seconds."""
+    time.sleep(seconds)
+    return f"Slept for {seconds} seconds"
+
 if __name__ == "__main__":
     mcp.run()

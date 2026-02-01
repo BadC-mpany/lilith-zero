@@ -6,8 +6,9 @@ use crate::constants::session;
 use crate::core::events::{SecurityEvent, SecurityDecision, OutputTransform};
 use crate::protocol::traits::McpSessionHandler;
 use crate::protocol::types::{JsonRpcRequest, JsonRpcResponse};
-use crate::mcp::security::SecurityEngine;
+use crate::utils::security::SecurityEngine;
 use serde_json::Value;
+use tracing::debug;
 
 #[derive(Debug)]
 pub struct Mcp2024Adapter;
@@ -29,11 +30,12 @@ impl McpSessionHandler for Mcp2024Adapter {
                 let params = req.params.as_ref().cloned().unwrap_or(Value::Null);
                 let client_info = params.get("clientInfo").cloned().unwrap_or(Value::Null);
                 let capabilities = params.get("capabilities").cloned().unwrap_or(Value::Null);
+                let audience_token = params.get("_audience_token").and_then(|v| v.as_str()).map(|s| s.to_string());
                 
                 SecurityEvent::Handshake {
                     protocol_version: self.version().to_string(),
                     client_info,
-                    audience_token: None, // Not standard in 2024 spec
+                    audience_token, 
                     capabilities,
                 }
             },
@@ -85,6 +87,7 @@ impl McpSessionHandler for Mcp2024Adapter {
         decision: &SecurityDecision,
         mut response: JsonRpcResponse,
     ) -> JsonRpcResponse {
+        debug!("Applying decision to response (id: {:?})", response.id);
         match decision {
             SecurityDecision::AllowWithTransforms { output_transforms, .. } => {
                  if let Some(result) = response.result.as_mut() {

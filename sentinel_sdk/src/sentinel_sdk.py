@@ -44,7 +44,8 @@ class Sentinel:
                  upstream_args: Optional[List[str]] = None,
                  binary_path: Optional[str] = None,
                  policy_path: Optional[str] = None,
-                 mcp_version: Optional[str] = None):
+                 mcp_version: Optional[str] = None,
+                 audience_token: Optional[str] = None):
         
         self.upstream_cmd = upstream_cmd
         self.upstream_args = upstream_args if upstream_args is not None else []
@@ -58,6 +59,7 @@ class Sentinel:
         self.policy_path = os.path.abspath(_pol_path) if _pol_path else None
         
         self.mcp_version_preference = mcp_version or MCP_PROTOCOL_VERSION
+        self.audience_token = audience_token
         
         self.process: Optional[asyncio.subprocess.Process] = None
         self.session_id: Optional[str] = None
@@ -122,7 +124,8 @@ class Sentinel:
         init_result = await self._send_request("initialize", {
             "protocolVersion": self.mcp_version_preference, 
             "capabilities": {}, 
-            "clientInfo": {"name": SDK_NAME, "version": __version__}
+            "clientInfo": {"name": SDK_NAME, "version": __version__},
+            "_audience_token": self.audience_token
         })
         logger.info(f"Initialized: {init_result}")
         

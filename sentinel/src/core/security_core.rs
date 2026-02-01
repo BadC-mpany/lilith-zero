@@ -6,14 +6,14 @@
 
 use std::collections::HashSet;
 use std::sync::Arc;
-use tracing::warn;
+use tracing::{info, warn};
+use serde_json::json;
 
 use crate::config::Config;
 use crate::core::crypto::CryptoSigner;
 use crate::core::events::{SecurityEvent, SecurityDecision, OutputTransform};
 use crate::core::models::{Decision, HistoryEntry, PolicyDefinition};
 use crate::engine::evaluator::PolicyEvaluator;
-use crate::utils::audit_logger::{AuditLogger, AuditEntry, AuditEventType};
 use crate::core::auth;
 use crate::constants::jsonrpc;
 
@@ -54,7 +54,7 @@ impl SecurityCore {
                 // 1. Validate Audience Binding (if configured)
                 if let Some(expected) = &self.config.expected_audience {
                     if let Some(token) = audience_token {
-                         if let Err(e) = auth::validate_audience_claim(&token, expected) {
+                         if let Err(e) = auth::validate_audience_claim(&token, expected, self.config.jwt_secret.as_deref()) {
                              warn!("Audience validation failed: {}", e);
                              return SecurityDecision::Deny {
                                  error_code: jsonrpc::ERROR_AUTH,
@@ -71,14 +71,12 @@ impl SecurityCore {
                 }
 
                 // Log Session Start
-                AuditLogger::log(AuditEntry {
-                    timestamp: AuditLogger::now(),
-                    session_id: self.session_id.clone(),
-                    event_type: AuditEventType::SessionStart,
-                    tool: None,
-                    decision: None,
-                    details: Some(client_info),
-                });
+                info!(
+                    target: "audit",
+                    event_type = "SessionStart",
+                    session_id = %self.session_id,
+                    timestamp = %crate::utils::time::now(),
+                );
                 
                 SecurityDecision::Allow
             },
@@ -241,14 +239,14 @@ impl SecurityCore {
         match decision {
             Decision::Allowed => {
                 self.record_history(tool_name, classes);
-                AuditLogger::log(AuditEntry {
-                    timestamp: AuditLogger::now(),
-                    session_id: self.session_id.clone(),
-                    event_type: AuditEventType::Decision,
-                    tool: Some(tool_name.to_string()),
-                    decision: Some("ALLOWED".to_string()),
-                    details: None,
-                });
+                info!(
+                    target: "audit",
+                    event_type = "Decision",
+                    session_id = %self.session_id,
+                    timestamp = %crate::utils::time::now(),
+                    tool_name = %tool_name,
+                    decision = "ALLOW",
+                );
                 
                 // If spotlighting is enabled, we apply it
                 if self.config.security_level_config().spotlighting {
@@ -262,14 +260,18 @@ impl SecurityCore {
                 }
             },
             Decision::Denied { reason } => {
-                 AuditLogger::log(AuditEntry {
-                    timestamp: AuditLogger::now(),
-                    session_id: self.session_id.clone(),
-                    event_type: AuditEventType::Decision,
-                    tool: Some(tool_name.to_string()),
-                    decision: Some("DENIED".to_string()),
-                    details: Some(serde_json::json!({"reason": reason})),
-                });
+                 info!(
+                    target: "audit",
+                    event_type = "Decision",
+                    session_id = %self.session_id,
+                    timestamp = %crate::utils::time::now(),
+                    tool_name = %tool_name,
+                    decision = "DENY",
+                    details = %json!({
+                        "reason": reason,
+                        "error_code": jsonrpc::ERROR_SECURITY_BLOCK
+                    })
+                );
                 SecurityDecision::Deny {
                     error_code: jsonrpc::ERROR_SECURITY_BLOCK,
                     reason,
@@ -281,20 +283,23 @@ impl SecurityCore {
                 for t in &taints_to_add { self.taints.insert(t.clone()); }
                 for t in &taints_to_remove { self.taints.remove(t); }
 
-                let details = serde_json::json!({
+                let _details = serde_json::json!({
                     "taints_added": taints_to_add,
                     "taints_removed": taints_to_remove
                 });
                 
-                AuditLogger::log(AuditEntry {
-                    timestamp: AuditLogger::now(),
-                    session_id: self.session_id.clone(),
-                    event_type: AuditEventType::Decision,
-                    tool: Some(tool_name.to_string()),
-                    decision: Some("ALLOWED_WITH_SIDE_EFFECTS".to_string()),
-                    details: Some(details),
-                });
-
+                info!(
+                    target: "audit",
+                    event_type = "Decision",
+                    session_id = %self.session_id,
+                    timestamp = %crate::utils::time::now(),
+                    tool_name = %tool_name,
+                    decision = "ALLOW_WITH_SIDE_EFFECTS",
+                    details = %json!({
+                        "taints_to_add": taints_to_add,
+                        "taints_to_remove": taints_to_remove
+                    })
+                );
                 if self.config.security_level_config().spotlighting {
                      SecurityDecision::AllowWithTransforms {
                         taints_to_add,
@@ -316,7 +321,7 @@ impl SecurityCore {
         self.history.push(HistoryEntry {
             tool: tool.to_string(),
             classes: classes.to_vec(),
-            timestamp: AuditLogger::now(),
+            timestamp: crate::utils::time::now(),
         });
     }
 

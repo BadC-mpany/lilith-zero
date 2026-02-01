@@ -135,6 +135,7 @@ impl PolicyEvaluator {
                 tool_classes,
                 current_taints,
                 tool_args,
+                0, // Initial depth
             )? {
                 return Ok(true);
             }

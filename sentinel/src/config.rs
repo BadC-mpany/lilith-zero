@@ -34,6 +34,7 @@ pub struct Config {
     pub expected_audience: Option<Vec<String>>,
     pub security_level: SecurityLevel,
     pub mcp_version: String,
+    pub jwt_secret: Option<String>,
 }
 
 impl Config {
@@ -50,6 +51,7 @@ impl Config {
                 &env::var(crate::constants::config::ENV_SECURITY_LEVEL).unwrap_or_else(|_| "medium".to_string())
             ),
             mcp_version: env::var(crate::constants::config::ENV_MCP_VERSION).unwrap_or_else(|_| "2024-11-05".to_string()),
+            jwt_secret: env::var("SENTINEL_JWT_SECRET").ok(),
         })
     }
 
@@ -83,6 +85,7 @@ impl Default for Config {
             expected_audience: None,
             security_level: SecurityLevel::BlockParams,
             mcp_version: "2024-11-05".to_string(),
+            jwt_secret: None,
         }
     }
 }
