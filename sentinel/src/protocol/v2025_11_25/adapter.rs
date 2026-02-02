@@ -13,6 +13,12 @@ use serde_json::Value;
 #[derive(Debug)]
 pub struct Mcp2025Adapter;
 
+impl Default for Mcp2025Adapter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Mcp2025Adapter {
     pub fn new() -> Self {
         Self
@@ -72,26 +78,23 @@ impl McpSessionHandler for Mcp2025Adapter {
             SecurityDecision::AllowWithTransforms { output_transforms, .. } => {
                  if let Some(result) = response.result.as_mut() {
                      for transform in output_transforms {
-                         match transform {
-                             OutputTransform::Spotlight { .. } => {
-                                 // 2025 Spec adds "structuredContent". 
-                                 if let Some(structured) = result.get_mut("structuredContent") {
-                                     self.recursive_spotlight(structured);
-                                 }
-                                 
-                                 // Backward compatibility with "content"
-                                  if let Some(content) = result.get_mut("content").and_then(|v| v.as_array_mut()) {
-                                     for item in content {
-                                         if let Some(text_val) = item.get_mut("text") {
-                                             if let Some(text) = text_val.as_str() {
-                                                 let spotlighted = SecurityEngine::spotlight(text);
-                                                 *text_val = Value::String(spotlighted);
-                                             }
+                         if let OutputTransform::Spotlight { .. } = transform {
+                             // 2025 Spec adds "structuredContent". 
+                             if let Some(structured) = result.get_mut("structuredContent") {
+                                 Self::recursive_spotlight(structured);
+                             }
+                             
+                             // Backward compatibility with "content"
+                              if let Some(content) = result.get_mut("content").and_then(|v| v.as_array_mut()) {
+                                 for item in content {
+                                     if let Some(text_val) = item.get_mut("text") {
+                                         if let Some(text) = text_val.as_str() {
+                                             let spotlighted = SecurityEngine::spotlight(text);
+                                             *text_val = Value::String(spotlighted);
                                          }
                                      }
                                  }
                              }
-                             _ => {}
                          }
                      }
                  }
@@ -118,14 +121,14 @@ impl McpSessionHandler for Mcp2025Adapter {
 }
 
 impl Mcp2025Adapter {
-    fn recursive_spotlight(&self, value: &mut Value) {
+    fn recursive_spotlight(value: &mut Value) {
         match value {
             Value::String(s) => {
                  *s = SecurityEngine::spotlight(s);
             },
             Value::Array(arr) => {
                 for item in arr {
-                    self.recursive_spotlight(item);
+                    Self::recursive_spotlight(item);
                 }
             },
             Value::Object(map) => {
@@ -134,10 +137,10 @@ impl Mcp2025Adapter {
                         if let Value::String(s) = v {
                             *s = SecurityEngine::spotlight(s);
                         } else {
-                            self.recursive_spotlight(v);
+                            Self::recursive_spotlight(v);
                         }
                     } else if v.is_object() || v.is_array() {
-                         self.recursive_spotlight(v);
+                         Self::recursive_spotlight(v);
                     }
                 }
             },

@@ -1,8 +1,8 @@
 // Comprehensive policy validation - fail-fast at config load time
 
 use crate::core::errors::InterceptorError;
-use crate::core::models::{PolicyDefinition, PolicyRule, RuleException};
-use serde_json::Value;
+use crate::core::models::{PolicyDefinition, PolicyRule, RuleException, LogicCondition};
+
 use std::collections::HashSet;
 
 /// Validates policy definitions for structural correctness and semantic consistency
@@ -98,25 +98,21 @@ impl PolicyValidator {
 
         // Validate pattern if present
         if let Some(ref pattern) = rule.pattern {
-            Self::validate_pattern(pattern, &rule_context)?;
+            // LogicCondition IS the pattern. No need to check "type": "logic".
+            // We just validate the condition structure.
+            Self::validate_condition(pattern, &rule_context)?;
 
-            // Check for tool_args_match in logic patterns (same constraint as exceptions)
-            if let Some(pattern_type) = pattern.get("type").and_then(|v| v.as_str()) {
-                if pattern_type == "logic" {
-                    if let Some(condition) = pattern.get("condition") {
-                        if Self::condition_contains_tool_args_match(condition)
-                            && rule.tool_class.is_some()
-                        {
-                            return Err(InterceptorError::ConfigurationError(
-                                    format!(
-                                        "{}: tool_args_match in logic patterns is only valid for tool-specific rules (not tool_class rules). \
-                                        Tool classes have heterogeneous argument schemas.",
-                                        rule_context
-                                    )
-                                ));
-                        }
-                    }
-                }
+            // Check for tool_args_match in logic patterns
+            if Self::condition_contains_tool_args_match(pattern)
+                && rule.tool_class.is_some()
+            {
+                return Err(InterceptorError::ConfigurationError(
+                        format!(
+                            "{}: tool_args_match in logic patterns is only valid for tool-specific rules (not tool_class rules). \
+                            Tool classes have heterogeneous argument schemas.",
+                            rule_context
+                        )
+                    ));
             }
         }
 
@@ -194,177 +190,24 @@ impl PolicyValidator {
         Ok(())
     }
 
-    /// Validate pattern structure
-    fn validate_pattern(pattern: &Value, context: &str) -> Result<(), InterceptorError> {
-        // Pattern must have 'type' field
-        let pattern_type = pattern
-            .get("type")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| {
-                InterceptorError::ConfigurationError(format!(
-                    "{}: pattern missing 'type' field",
-                    context
-                ))
-            })?;
-
-        match pattern_type {
-            "sequence" => Self::validate_sequence_pattern(pattern, context)?,
-            "logic" => Self::validate_logic_pattern(pattern, context)?,
-            other => {
-                return Err(InterceptorError::ConfigurationError(format!(
-                    "{}: unknown pattern type '{}' (must be 'sequence' or 'logic')",
-                    context, other
-                )));
-            }
-        }
-
-        Ok(())
-    }
-
-    /// Validate sequence pattern
-    fn validate_sequence_pattern(pattern: &Value, context: &str) -> Result<(), InterceptorError> {
-        // Must have 'steps' array
-        let steps = pattern
-            .get("steps")
-            .and_then(|v| v.as_array())
-            .ok_or_else(|| {
-                InterceptorError::ConfigurationError(format!(
-                    "{}: sequence pattern missing 'steps' array",
-                    context
-                ))
-            })?;
-
-        if steps.is_empty() {
-            return Err(InterceptorError::ConfigurationError(format!(
-                "{}: sequence pattern 'steps' cannot be empty",
-                context
-            )));
-        }
-
-        // Validate each step
-        for (idx, step) in steps.iter().enumerate() {
-            let step_obj = step.as_object().ok_or_else(|| {
-                InterceptorError::ConfigurationError(format!(
-                    "{}: sequence step #{} must be an object",
-                    context,
-                    idx + 1
-                ))
-            })?;
-
-            // Each step must have either 'tool' or 'class'
-            let has_tool = step_obj.contains_key("tool");
-            let has_class = step_obj.contains_key("class");
-
-            if !has_tool && !has_class {
-                return Err(InterceptorError::ConfigurationError(format!(
-                    "{}: sequence step #{} must have either 'tool' or 'class'",
-                    context,
-                    idx + 1
-                )));
-            }
-        }
-
-        Ok(())
-    }
-
-    /// Validate logic pattern
-    fn validate_logic_pattern(pattern: &Value, context: &str) -> Result<(), InterceptorError> {
-        // Must have 'condition' field
-        let condition = pattern.get("condition").ok_or_else(|| {
-            InterceptorError::ConfigurationError(format!(
-                "{}: logic pattern missing 'condition' field",
-                context
-            ))
-        })?;
-
-        // Validate condition structure
-        Self::validate_condition(condition, context)?;
-
-        Ok(())
-    }
-
     /// Validate condition structure (recursive)
-    fn validate_condition(condition: &Value, context: &str) -> Result<(), InterceptorError> {
-        let obj = condition.as_object().ok_or_else(|| {
-            InterceptorError::ConfigurationError(format!(
-                "{}: condition must be an object",
-                context
-            ))
-        })?;
-
-        // Check for logical operators
-        if let Some(and_array) = obj.get("AND").and_then(|v| v.as_array()) {
-            if and_array.is_empty() {
-                return Err(InterceptorError::ConfigurationError(format!(
-                    "{}: AND operator cannot have empty array",
-                    context
-                )));
-            }
-            for item in and_array {
-                Self::validate_condition(item, context)?;
-            }
-            return Ok(());
+    fn validate_condition(condition: &LogicCondition, _context: &str) -> Result<(), InterceptorError> {
+        match condition {
+             LogicCondition::And(rules) | LogicCondition::Or(rules) => {
+                 for rule in rules {
+                     Self::validate_condition(rule, _context)?;
+                 }
+             },
+             LogicCondition::Not(rule) => {
+                 Self::validate_condition(rule, _context)?;
+             },
+             LogicCondition::Eq(_) | LogicCondition::Neq(_) | 
+             LogicCondition::Gt(_) | LogicCondition::Lt(_) |
+             LogicCondition::ToolArgsMatch(_) => {
+                // Leaf nodes are valid by definition in this schema
+             },
+             LogicCondition::Literal(_) => {},
         }
-
-        if let Some(or_array) = obj.get("OR").and_then(|v| v.as_array()) {
-            if or_array.is_empty() {
-                return Err(InterceptorError::ConfigurationError(format!(
-                    "{}: OR operator cannot have empty array",
-                    context
-                )));
-            }
-            for item in or_array {
-                Self::validate_condition(item, context)?;
-            }
-            return Ok(());
-        }
-
-        if let Some(not_value) = obj.get("NOT") {
-            Self::validate_condition(not_value, context)?;
-            return Ok(());
-        }
-
-        // If not a logical operator, validate as atomic condition
-        Self::validate_atomic_condition(obj, context)?;
-
-        Ok(())
-    }
-
-    /// Validate atomic condition
-    fn validate_atomic_condition(
-        condition: &serde_json::Map<String, Value>,
-        context: &str,
-    ) -> Result<(), InterceptorError> {
-        const VALID_ATOMIC_CONDITIONS: &[&str] = &[
-            "current_tool_class",
-            "current_tool",
-            "session_has_class",
-            "session_has_tool",
-            "session_has_taint",
-            "tool_args_match",
-        ];
-
-        // Must have exactly one valid atomic condition key
-        let matching_keys: Vec<_> = condition
-            .keys()
-            .filter(|k| VALID_ATOMIC_CONDITIONS.contains(&k.as_str()))
-            .collect();
-
-        if matching_keys.is_empty() {
-            return Err(InterceptorError::ConfigurationError(format!(
-                "{}: condition must contain one of: {}",
-                context,
-                VALID_ATOMIC_CONDITIONS.join(", ")
-            )));
-        }
-
-        if matching_keys.len() > 1 {
-            return Err(InterceptorError::ConfigurationError(format!(
-                "{}: condition has multiple atomic keys: {:?}",
-                context, matching_keys
-            )));
-        }
-
         Ok(())
     }
 
@@ -406,32 +249,15 @@ impl PolicyValidator {
     }
 
     /// Recursively check if condition contains tool_args_match
-    fn condition_contains_tool_args_match(condition: &Value) -> bool {
-        if let Some(obj) = condition.as_object() {
-            // Check for tool_args_match directly
-            if obj.contains_key("tool_args_match") {
-                return true;
-            }
-
-            // Check AND/OR/NOT operators recursively
-            if let Some(and_array) = obj.get("AND").and_then(|v| v.as_array()) {
-                return and_array
-                    .iter()
-                    .any(Self::condition_contains_tool_args_match);
-            }
-
-            if let Some(or_array) = obj.get("OR").and_then(|v| v.as_array()) {
-                return or_array
-                    .iter()
-                    .any(Self::condition_contains_tool_args_match);
-            }
-
-            if let Some(not_value) = obj.get("NOT") {
-                return Self::condition_contains_tool_args_match(not_value);
-            }
+    fn condition_contains_tool_args_match(condition: &LogicCondition) -> bool {
+        match condition {
+            LogicCondition::And(rules) | LogicCondition::Or(rules) => {
+                rules.iter().any(Self::condition_contains_tool_args_match)
+            },
+            LogicCondition::Not(rule) => Self::condition_contains_tool_args_match(rule),
+            LogicCondition::ToolArgsMatch(_) => true,
+            _ => false 
         }
-
-        false
     }
 
     /// Validate that referenced tool classes exist in the tool registry (optional check)
@@ -453,41 +279,8 @@ impl PolicyValidator {
                         )));
                     }
                 }
-
-                // Also check classes in patterns
-                if let Some(ref pattern) = rule.pattern {
-                    Self::validate_pattern_classes(pattern, &policy.name, idx, known_classes)?;
-                }
             }
         }
-
-        Ok(())
-    }
-
-    /// Validate tool classes referenced in patterns
-    fn validate_pattern_classes(
-        pattern: &Value,
-        policy_name: &str,
-        rule_idx: usize,
-        known_classes: &HashSet<String>,
-    ) -> Result<(), InterceptorError> {
-        if let Some(steps) = pattern.get("steps").and_then(|v| v.as_array()) {
-            for step in steps {
-                if let Some(class_name) = step.get("class").and_then(|v| v.as_str()) {
-                    if !known_classes.contains(class_name) {
-                        return Err(InterceptorError::ConfigurationError(format!(
-                            "Policy '{}', rule #{}: unknown tool class '{}' in pattern. \
-                                Known classes: {:?}",
-                            policy_name,
-                            rule_idx + 1,
-                            class_name,
-                            known_classes
-                        )));
-                    }
-                }
-            }
-        }
-
         Ok(())
     }
 }
@@ -495,7 +288,7 @@ impl PolicyValidator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
+    use serde_json::{json, from_value};
     use std::collections::HashMap;
 
     #[test]
@@ -509,6 +302,7 @@ mod tests {
             name: "test_policy".to_string(),
             version: 1,
             static_rules,
+            resource_rules: vec![],
             taint_rules: vec![PolicyRule {
                 tool: Some("read_file".to_string()),
                 tool_class: None,
@@ -519,7 +313,7 @@ mod tests {
                 pattern: None,
                 exceptions: None,
             }],
-            created_at: "2024-01-01T00:00:00Z".to_string(),
+            created_at: Some("2024-01-01T00:00:00Z".to_string()),
         };
 
         assert!(PolicyValidator::validate_policy(&policy).is_ok());
@@ -533,6 +327,7 @@ mod tests {
             name: "test".to_string(),
             version: 1,
             static_rules: HashMap::new(),
+            resource_rules: vec![],
             taint_rules: vec![PolicyRule {
                 tool: None,
                 tool_class: None, // Missing both!
@@ -543,15 +338,12 @@ mod tests {
                 pattern: None,
                 exceptions: None,
             }],
-            created_at: "2024-01-01T00:00:00Z".to_string(),
+            created_at: Some("2024-01-01T00:00:00Z".to_string()),
         };
 
         let result = PolicyValidator::validate_policy(&policy);
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("must specify either 'tool' or 'tool_class'"));
+        assert!(result.unwrap_err().to_string().contains("must specify either 'tool' or 'tool_class'"));
     }
 
     #[test]
@@ -562,6 +354,7 @@ mod tests {
             name: "test".to_string(),
             version: 1,
             static_rules: HashMap::new(),
+            resource_rules: vec![],
             taint_rules: vec![PolicyRule {
                 tool: Some("test_tool".to_string()),
                 tool_class: None,
@@ -572,15 +365,12 @@ mod tests {
                 pattern: None,
                 exceptions: None,
             }],
-            created_at: "2024-01-01T00:00:00Z".to_string(),
+            created_at: Some("2024-01-01T00:00:00Z".to_string()),
         };
 
         let result = PolicyValidator::validate_policy(&policy);
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("requires 'forbidden_tags'"));
+        assert!(result.unwrap_err().to_string().contains("requires 'forbidden_tags'"));
     }
 
     #[test]
@@ -593,6 +383,7 @@ mod tests {
             name: "test".to_string(),
             version: 1,
             static_rules: HashMap::new(),
+            resource_rules: vec![],
             taint_rules: vec![PolicyRule {
                 tool: None,
                 tool_class: Some("CONSEQUENTIAL_WRITE".to_string()),
@@ -602,13 +393,13 @@ mod tests {
                 error: None,
                 pattern: None,
                 exceptions: Some(vec![RuleException {
-                    condition: json!({
+                    condition: from_value(json!({
                         "tool_args_match": {"destination": "internal_*"}
-                    }),
+                    })).unwrap(),
                     reason: Some("test".to_string()),
                 }]),
             }],
-            created_at: "2024-01-01T00:00:00Z".to_string(),
+            created_at: Some("2024-01-01T00:00:00Z".to_string()),
         };
 
         let result = PolicyValidator::validate_policy(&policy);
@@ -628,6 +419,7 @@ mod tests {
             name: "test".to_string(),
             version: 1,
             static_rules: HashMap::new(),
+            resource_rules: vec![],
             taint_rules: vec![PolicyRule {
                 tool: Some("send_email".to_string()),
                 tool_class: None,
@@ -637,13 +429,13 @@ mod tests {
                 error: None,
                 pattern: None,
                 exceptions: Some(vec![RuleException {
-                    condition: json!({
+                    condition: from_value(json!({
                         "tool_args_match": {"to": "*@company.com"}
-                    }),
+                    })).unwrap(),
                     reason: Some("Internal emails allowed".to_string()),
                 }]),
             }],
-            created_at: "2024-01-01T00:00:00Z".to_string(),
+            created_at: Some("2024-01-01T00:00:00Z".to_string()),
         };
 
         assert!(PolicyValidator::validate_policy(&policy).is_ok());

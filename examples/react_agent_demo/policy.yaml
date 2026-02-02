@@ -1,0 +1,26 @@
+name: "react_agent_demo_policy"
+version: 1
+id: "policy-demo-001"
+customerId: "demo-user"
+
+# Static Allowlist (Safe Tools)
+staticRules:
+  analyze_data: "ALLOW"
+  get_financial_report: "ALLOW"
+  upload_to_cloud: "ALLOW" # It will be further restricted by taintRules
+
+# Taint Tracking Rules
+taintRules:
+  # 1. Reading reports adds CONFIDENTIAL taint
+  - tool: "get_financial_report"
+    action: "ADD_TAINT"
+    tag: "CONFIDENTIAL"
+
+  # 2. Uploading requires checking for confidential data leak
+  - tool: "upload_to_cloud"
+    action: "CHECK_TAINT"
+    forbiddenTags: ["CONFIDENTIAL"]
+    error: "Policy Violation: Exfiltration of confidential data blocked."
+
+# Resource Rules
+resourceRules: []

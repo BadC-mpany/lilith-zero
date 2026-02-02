@@ -49,6 +49,15 @@ impl ProcessSupervisor {
         let child = {
             // On Unix, use pre_exec to set PR_SET_PDEATHSIG before exec
             // This ensures the child receives SIGKILL if the parent dies
+            // On Unix, use pre_exec to set PR_SET_PDEATHSIG before exec
+            // This ensures the child receives SIGKILL if the parent dies
+            // SAFETY:
+            // 1. `pre_exec` runs in the child process after `fork` but before `exec`.
+            //    It is critical that only async-signal-safe functions are called here.
+            //    `libc::prctl` is a direct syscall wrapper and is generally considered safe for this use.
+            // 2. We use `PR_SET_PDEATHSIG` with `SIGKILL` to ensure the child is ruthlessly terminated
+            //    if the parent (Sentinel) crashes or exits. This is a core security invariant for
+            //    process binding.
             unsafe {
                 Command::new(cmd)
                     .args(args)
@@ -112,6 +121,11 @@ impl Drop for ProcessSupervisor {
         #[cfg(unix)]
         {
             if let Some(id) = self.child.id() {
+                // SAFETY:
+                // 1. the pid is obtained from the child object which we own, so it's likely valid.
+                // 2. libc::kill is a syscall. Sending SIGKILL is safe from memory perspective.
+                // 3. We ignore errors because if the process is already dead, our job is done.
+                // 4. This is a best-effort fallback if the OS-level binding failed.
                 unsafe {
                    libc::kill(id as i32, libc::SIGKILL);
                 }

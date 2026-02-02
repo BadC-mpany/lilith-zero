@@ -90,12 +90,58 @@ pub enum Decision {
     },
 }
 
+/// Recursive Logic Condition (Typed AST)
+/// Replaces raw serde_json::Value with a strict enum for maintaining correctness.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")] 
+// Note: standard JsonLogic often uses standard names. We support: "and", "or", "not", "==", ">", etc.
+pub enum LogicCondition {
+    // Logic Ops
+    And(Vec<LogicCondition>),
+    Or(Vec<LogicCondition>),
+    Not(Box<LogicCondition>),
+    
+    // Comparison Ops
+    #[serde(rename = "==")]
+    Eq(Vec<LogicValue>), // [LHS, RHS]
+    #[serde(rename = "!=")]
+    Neq(Vec<LogicValue>), 
+    #[serde(rename = ">")]
+    Gt(Vec<LogicValue>),
+    #[serde(rename = "<")]
+    Lt(Vec<LogicValue>),
+
+    // Domain Specific
+    #[serde(rename = "tool_args_match")]
+    ToolArgsMatch(serde_json::Value),
+
+    // Fallback/Extensions (or simple boolean literal)
+    // Sometimes logic is just "true"
+    #[serde(untagged)]
+    Literal(bool),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(untagged)]
+pub enum LogicValue {
+    /// {"var": "path"}
+    Var { var: String },
+    /// Literal values
+    Str(String),
+    Num(f64),
+    Bool(bool),
+    Null,
+    /// Nested complex object (rare but supported in standard)
+    Object(serde_json::Value), 
+    Array(Vec<serde_json::Value>)
+}
+
 /// Exception condition for rules
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RuleException {
     /// Condition that must be true for exception to apply (logic pattern format)
     #[serde(rename = "when")]
-    pub condition: serde_json::Value,
+    pub condition: LogicCondition,
     /// Reason for the exception (documentation)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
@@ -116,7 +162,7 @@ pub struct PolicyRule {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub pattern: Option<serde_json::Value>,
+    pub pattern: Option<LogicCondition>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub exceptions: Option<Vec<RuleException>>,
 }

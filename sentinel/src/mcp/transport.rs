@@ -4,7 +4,7 @@
 //! MCP messages over standard I/O, as well as the core JSON-RPC types.
 
 use anyhow::{Context, Result};
-use serde::{Deserialize, Serialize};
+
 use serde_json::Value;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, Stdin, Stdout};
 use tracing::debug;

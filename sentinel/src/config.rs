@@ -11,11 +11,11 @@ pub enum SecurityLevel {
 }
 
 impl SecurityLevel {
-    pub fn from_str(s: &str) -> Self {
+    pub fn parse_safe(s: &str) -> Self {
         match s.to_lowercase().as_str() {
             "audit_only" | "low" => SecurityLevel::AuditOnly,
             "full_isolation" | "high" => SecurityLevel::FullIsolation,
-            "block_params" | "medium" | _ => SecurityLevel::BlockParams,
+            _ => SecurityLevel::BlockParams,
         }
     }
 }
@@ -47,7 +47,7 @@ impl Config {
             expected_audience: env::var(crate::core::constants::config::ENV_EXPECTED_AUDIENCE)
                 .ok()
                 .map(|s| s.split(',').map(|s| s.trim().to_string()).collect()),
-            security_level: SecurityLevel::from_str(
+            security_level: SecurityLevel::parse_safe(
                 &env::var(crate::core::constants::config::ENV_SECURITY_LEVEL).unwrap_or_else(|_| "medium".to_string())
             ),
             mcp_version: env::var(crate::core::constants::config::ENV_MCP_VERSION).unwrap_or_else(|_| "2024-11-05".to_string()),

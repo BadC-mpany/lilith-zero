@@ -13,6 +13,12 @@ use tracing::debug;
 #[derive(Debug)]
 pub struct Mcp2024Adapter;
 
+impl Default for Mcp2024Adapter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Mcp2024Adapter {
     pub fn new() -> Self {
         Self
@@ -92,34 +98,31 @@ impl McpSessionHandler for Mcp2024Adapter {
             SecurityDecision::AllowWithTransforms { output_transforms, .. } => {
                  if let Some(result) = response.result.as_mut() {
                      for transform in output_transforms {
-                         match transform {
-                             OutputTransform::Spotlight { .. } => {
-                                 // Apply spotlighting to standard 2024 content locations.
-                                 // 1. tools/call response: { content: [ { type: "text", text: "..." } ] }
-                                 if let Some(content) = result.get_mut("content").and_then(|v| v.as_array_mut()) {
-                                     for item in content {
-                                         if let Some(text_val) = item.get_mut("text") {
-                                             if let Some(text) = text_val.as_str() {
-                                                 let spotlighted = SecurityEngine::spotlight(text);
-                                                 *text_val = Value::String(spotlighted);
-                                             }
-                                         }
-                                     }
-                                 }
-                                 
-                                 // 2. resources/read response: { contents: [ { uri: "...", text: "..." } ] }
-                                  if let Some(contents) = result.get_mut("contents").and_then(|v| v.as_array_mut()) {
-                                     for item in contents {
-                                         if let Some(text_val) = item.get_mut("text") {
-                                              if let Some(text) = text_val.as_str() {
-                                                 let spotlighted = SecurityEngine::spotlight(text);
-                                                 *text_val = Value::String(spotlighted);
-                                             }
+                         if let OutputTransform::Spotlight { .. } = transform {
+                             // Apply spotlighting to standard 2024 content locations.
+                             // 1. tools/call response: { content: [ { type: "text", text: "..." } ] }
+                             if let Some(content) = result.get_mut("content").and_then(|v| v.as_array_mut()) {
+                                 for item in content {
+                                     if let Some(text_val) = item.get_mut("text") {
+                                         if let Some(text) = text_val.as_str() {
+                                             let spotlighted = SecurityEngine::spotlight(text);
+                                             *text_val = Value::String(spotlighted);
                                          }
                                      }
                                  }
                              }
-                             _ => {}
+                             
+                             // 2. resources/read response: { contents: [ { uri: "...", text: "..." } ] }
+                              if let Some(contents) = result.get_mut("contents").and_then(|v| v.as_array_mut()) {
+                                 for item in contents {
+                                     if let Some(text_val) = item.get_mut("text") {
+                                          if let Some(text) = text_val.as_str() {
+                                             let spotlighted = SecurityEngine::spotlight(text);
+                                             *text_val = Value::String(spotlighted);
+                                         }
+                                     }
+                                 }
+                             }
                          }
                      }
                  }

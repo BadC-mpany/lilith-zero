@@ -27,16 +27,16 @@ pub struct SecurityCore {
 }
 
 impl SecurityCore {
-    pub fn new(config: Arc<Config>, signer: CryptoSigner) -> Self {
-        let session_id = signer.generate_session_id();
-        Self {
+    pub fn new(config: Arc<Config>, signer: CryptoSigner) -> Result<Self, crate::core::errors::InterceptorError> {
+        let session_id = signer.generate_session_id()?;
+        Ok(Self {
             config,
             signer,
             session_id,
             policy: None,
             taints: HashSet::new(),
             history: Vec::new(),
-        }
+        })
     }
 
     pub fn set_policy(&mut self, policy: PolicyDefinition) {
@@ -47,7 +47,7 @@ impl SecurityCore {
     pub async fn evaluate(&mut self, event: SecurityEvent) -> SecurityDecision {
         match event {
             SecurityEvent::Handshake {
-                client_info,
+                client_info: _,
                 audience_token,
                 ..
             } => {
@@ -329,8 +329,7 @@ impl SecurityCore {
         if pattern == "*" {
             return true;
         }
-        if pattern.ends_with("*") {
-             let prefix = &pattern[..pattern.len() - 1];
+        if let Some(prefix) = pattern.strip_suffix("*") {
              return uri.starts_with(prefix);
         }
         uri == pattern
@@ -345,8 +344,8 @@ mod tests {
     #[tokio::test]
     async fn test_security_core_flow() {
         let config = Arc::new(Config::default());
-        let signer = CryptoSigner::new();
-        let mut core = SecurityCore::new(config, signer);
+        let signer = CryptoSigner::try_new().unwrap();
+        let mut core = SecurityCore::new(config, signer).unwrap();
         
         // 1. Handshake
         let event = SecurityEvent::Handshake {
@@ -413,7 +412,7 @@ mod tests {
         }
         
        // With Audit Config -> Should Allow (Log Only)
-       let mut audit_core = SecurityCore::new(Arc::new(audit_config), CryptoSigner::new());
+       let mut audit_core = SecurityCore::new(Arc::new(audit_config), CryptoSigner::try_new().unwrap()).unwrap();
        let valid_token_audit = audit_core.session_id.clone();
        let tool_event_audit = SecurityEvent::ToolRequest {
             request_id: serde_json::Value::String("3".to_string()),

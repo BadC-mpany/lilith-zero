@@ -5,7 +5,7 @@
 //! Content-Length headers for robust message framing.
 
 use anyhow::{Result, anyhow, Context};
-use bytes::{Buf, BytesMut};
+use bytes::BytesMut;
 use tokio_util::codec::{Decoder, Encoder};
 use crate::core::models::{JsonRpcRequest, JsonRpcResponse};
 use crate::core::constants::limits;

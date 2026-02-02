@@ -1,6 +1,6 @@
-use sentinel::constants::spotlight;
+use sentinel::core::constants::spotlight;
 use sentinel::core::crypto::CryptoSigner;
-use sentinel::mcp::security::SecurityEngine;
+use sentinel::utils::security::SecurityEngine;
 
 #[test]
 fn test_spotlighting_structure() {
@@ -37,8 +37,8 @@ fn test_spotlighting_injection_attempt() {
 
 #[test]
 fn test_session_id_integrity() {
-    let signer = CryptoSigner::new();
-    let valid_id = signer.generate_session_id();
+    let signer = CryptoSigner::try_new().unwrap();
+    let valid_id = signer.generate_session_id().unwrap();
     
     assert!(signer.validate_session_id(&valid_id));
     

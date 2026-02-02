@@ -3,7 +3,7 @@
 //! 
 //! Strongly typed string wrappers to prevent accidental taint leakage.
 
-use std::fmt;
+
 use serde::{Deserialize, Serialize};
 
 /// A string that has NOT been validated by the Policy Engine.

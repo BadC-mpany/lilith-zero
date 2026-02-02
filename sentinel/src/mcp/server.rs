@@ -45,12 +45,12 @@ pub struct McpMiddleware {
 }
 
 impl McpMiddleware {
-    pub fn new(upstream_cmd: String, upstream_args: Vec<String>, config: Arc<Config>) -> Self {
-        let signer = CryptoSigner::new();
-        let core = SecurityCore::new(config.clone(), signer);
+    pub fn new(upstream_cmd: String, upstream_args: Vec<String>, config: Arc<Config>) -> Result<Self> {
+        let signer = CryptoSigner::try_new().map_err(|e| anyhow::anyhow!("Crypto init failed: {}", e))?;
+        let core = SecurityCore::new(config.clone(), signer).map_err(|e| anyhow::anyhow!("Security Core init failed: {}", e))?;
         let session = HandshakeManager::negotiate(&config.mcp_version);
 
-        Self {
+        Ok(Self {
             upstream_cmd,
             upstream_args,
             core,
@@ -58,7 +58,7 @@ impl McpMiddleware {
             upstream_stdin: None,
             pending_decisions: HashMap::new(),
             upstream_supervisor: None,
-        }
+        })
     }
 
     pub async fn run(&mut self) -> Result<()> {
@@ -153,7 +153,7 @@ impl McpMiddleware {
         tx_upstream_events: &mpsc::Sender<UpstreamEvent>
     ) -> Result<()> {
         // 1. Parse Protocol (Session Token extraction, etc)
-        let security_event = self.session.parse_request(&req);
+        let security_event = self.session.parse_request(req);
 
         // 2. Evaluate Security
         let decision = self.core.evaluate(security_event.clone()).await;
@@ -171,7 +171,7 @@ impl McpMiddleware {
                     // Negotiation
                     if protocol_version != self.session.version() {
                          info!("Negotiating protocol: Client requested {}, upgrading session.", protocol_version);
-                         self.session = HandshakeManager::negotiate(&protocol_version);
+                         self.session = HandshakeManager::negotiate(protocol_version);
                     }
                     
                     // Spawn Upstream if needed
@@ -202,10 +202,8 @@ impl McpMiddleware {
                     // Blessing the request as clean because Policy Allowed it.
                     let clean_req = crate::core::taint::Clean::new_unchecked(req.clone());
                     self.write_upstream(clean_req).await?;
-                } else {
-                     if let Some(id) = &req.id {
-                         self.write_error(writer, id.clone(), jsonrpc::ERROR_METHOD_NOT_FOUND, "Upstream not connected").await?;
-                     }
+                } else if let Some(id) = &req.id {
+                    self.write_error(writer, id.clone(), jsonrpc::ERROR_METHOD_NOT_FOUND, "Upstream not connected").await?;
                 }
             }
         }
@@ -222,20 +220,14 @@ impl McpMiddleware {
         
         let id_key = if let Some(id_str) = resp.id.as_str() {
             Some(id_str.to_string())
-        } else if let Some(id_num) = resp.id.as_i64() {
-             Some(id_num.to_string())
-        } else {
-            None
-        };
+        } else { resp.id.as_i64().map(|id_num| id_num.to_string()) };
 
         if let Some(key) = id_key {
             if let Some(d) = self.pending_decisions.remove(&key) {
                 decision = d;
-            } else {
-                if !resp.id.is_null() {
-                    warn!("Received upstream response with unknown ID: {:?}. Dropping.", resp.id);
-                    return Ok(());
-                }
+            } else if !resp.id.is_null() {
+                warn!("Received upstream response with unknown ID: {:?}. Dropping.", resp.id);
+                return Ok(());
             }
         }
 

@@ -56,7 +56,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // In the future, we might re-introduce Redis/Supabase for cloud-sync,
     // but for standalone middleware, we can keep it simple.
 
-    let mut middleware = McpMiddleware::new(cli.upstream_cmd, cli.upstream_args, Arc::new(config));
+    let mut middleware = McpMiddleware::new(cli.upstream_cmd, cli.upstream_args, Arc::new(config))?;
 
     middleware.run().await?;
 

@@ -17,30 +17,31 @@ pub struct CryptoSigner {
     secret: [u8; crypto::SECRET_KEY_LENGTH],
 }
 
-impl Default for CryptoSigner {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+
+
+use crate::core::errors::{InterceptorError, CryptoError};
+
+// ... imports remain ...
 
 impl CryptoSigner {
     /// Create a new signer with a secure random ephemeral key
-    pub fn new() -> Self {
+    pub fn try_new() -> Result<Self, InterceptorError> {
         let rng = SystemRandom::new();
         let mut secret = [0u8; crypto::SECRET_KEY_LENGTH];
         rng.fill(&mut secret)
-            .expect("Failed to generate secure random secret");
-        Self { secret }
+            .map_err(|_| InterceptorError::CryptoError(CryptoError::RandomError))?;
+        Ok(Self { secret })
     }
 
     /// Generate a cryptographically bound Session ID
     /// Format: "{version}.{uuid_b64}.{hmac_b64}"
-    pub fn generate_session_id(&self) -> String {
+    pub fn generate_session_id(&self) -> Result<String, InterceptorError> {
         let uuid = Uuid::new_v4();
         let uuid_bytes = uuid.as_bytes();
 
-        let mut mac =
-            HmacSha256::new_from_slice(&self.secret).expect("HMAC can take key of any size");
+        let mut mac = HmacSha256::new_from_slice(&self.secret)
+            .map_err(|e| InterceptorError::CryptoError(CryptoError::HashingError(e.to_string())))?;
+            
         mac.update(uuid_bytes);
         let result = mac.finalize();
         let signature = result.into_bytes();
@@ -48,7 +49,7 @@ impl CryptoSigner {
         let uuid_b64 = URL_SAFE_NO_PAD.encode(uuid_bytes);
         let sig_b64 = URL_SAFE_NO_PAD.encode(signature);
 
-        format!("{}.{}.{}", crypto::SESSION_ID_VERSION, uuid_b64, sig_b64)
+        Ok(format!("{}.{}.{}", crypto::SESSION_ID_VERSION, uuid_b64, sig_b64))
     }
 
     /// Validate a Session ID's integrity using constant-time comparison
@@ -73,8 +74,10 @@ impl CryptoSigner {
         };
 
         // Re-compute HMAC
-        let mut mac =
-            HmacSha256::new_from_slice(&self.secret).expect("HMAC can take key of any size");
+        let mut mac = match HmacSha256::new_from_slice(&self.secret) {
+            Ok(m) => m,
+            Err(_) => return false, // Should be impossible with correct key size, but fail safe
+        };
         mac.update(&uuid_bytes);
 
         // Decode provided signature

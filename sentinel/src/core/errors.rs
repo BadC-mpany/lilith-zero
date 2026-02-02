@@ -70,6 +70,10 @@ pub enum CryptoError {
     /// Failed to hash parameters
     #[error("Failed to hash parameters: {0}")]
     HashingError(String),
+
+    /// Failed to generate random bytes
+    #[error("Failed to generate random bytes")]
+    RandomError,
 }
 
 impl InterceptorError {

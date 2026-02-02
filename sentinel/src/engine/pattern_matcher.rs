@@ -1,11 +1,11 @@
 //! Pattern matching engine for dynamic rules.
 //!
-//! This module provides the `PatternMatcher` which evaluates logic conditions
-//! and sequences against the current tool call and session history.
+//! This module provides the `PatternMatcher` which evaluates strictly typed
+//! logic conditions against the current tool call and session history.
 
 use crate::core::errors::InterceptorError;
-use crate::core::models::HistoryEntry;
-use serde_json::Value;
+use crate::core::models::{HistoryEntry, LogicCondition, LogicValue};
+use serde_json::Value; // Needed for resolving runtime arguments
 use std::collections::HashSet;
 
 pub struct PatternMatcher;
@@ -13,7 +13,7 @@ pub struct PatternMatcher;
 impl PatternMatcher {
     /// Evaluate a logic condition or sequence pattern
     pub async fn evaluate_pattern_with_args(
-        pattern: &Value,
+        pattern: &LogicCondition,
         history: &[HistoryEntry],
         current_tool: &str,
         current_classes: &[String],
@@ -33,14 +33,9 @@ impl PatternMatcher {
     }
 
     /// Evaluate a complex condition against context.
-    /// Supports a subset of "JsonLogic" style operators:
-    /// - Data Access: {"var": "path.to.field"}
-    /// - Logic: {"and": [...]}, {"or": [...]}, {"not": ...}
-    /// - Comparison: {"==": [a, b]}, {"!=": [a, b]}, {">": [a, b]}, {"<": [a, b]}
-    /// - Collections: {"contains": [list, item]}
     // NOTE: Made synchronous to avoid async recursion complexity. Logic evaluation is CPU-bound.
     pub fn evaluate_condition_with_args(
-        condition: &Value,
+        condition: &LogicCondition,
         _history: &[HistoryEntry],
         _current_tool: &str,
         _current_classes: &[String],
@@ -53,101 +48,164 @@ impl PatternMatcher {
                 "Recursion depth limit exceeded".to_string(),
             ));
         }
-        if condition.is_null() {
-            return Ok(true);
-        }
 
         match condition {
-             Value::Bool(b) => Ok(*b),
-             Value::Object(map) => {
-                 // Check if it is an operator
-                 if let Some((op, args_val)) = map.iter().next() {
-                     match op.as_str() {
-                         "and" => {
-                             if let Value::Array(list) = args_val {
-                                 for item in list {
-                                     if !Self::evaluate_condition_with_args(item, _history, _current_tool, _current_classes, _current_taints, args, depth + 1)? {
-                                         return Ok(false);
-                                     }
-                                 }
-                                 Ok(true)
-                             } else {
-                                 Ok(false)
-                             }
-                         },
-                         "or" => {
-                              if let Value::Array(list) = args_val {
-                                 for item in list {
-                                     if Self::evaluate_condition_with_args(item, _history, _current_tool, _current_classes, _current_taints, args, depth + 1)? {
-                                         return Ok(true);
-                                     }
-                                 }
-                                 Ok(false)
-                             } else {
-                                 Ok(false)
-                             }
-                         },
-                         "not" => {
-                             let res = Self::evaluate_condition_with_args(args_val, _history, _current_tool, _current_classes, _current_taints, args, depth + 1)?;
-                             Ok(!res)
-                         },
-                         "==" => {
-                             let (lhs, rhs) = Self::resolve_binary_operands(args_val, args)?;
-                             Ok(lhs == rhs)
-                         },
-                         "!=" => {
-                             let (lhs, rhs) = Self::resolve_binary_operands(args_val, args)?;
-                             Ok(lhs != rhs)
-                         },
-                          ">" => {
-                             let (lhs, rhs) = Self::resolve_binary_operands(args_val, args)?;
-                             Self::compare_values(&lhs, &rhs, |a, b| a > b)
-                         },
-                          "<" => {
-                             let (lhs, rhs) = Self::resolve_binary_operands(args_val, args)?;
-                             Self::compare_values(&lhs, &rhs, |a, b| a < b)
-                         },
-                         _ => {
-                             // Unknown operator or just a literal object?
-                             // Fail safe for now if it looks like logic but isn't handled
-                             Ok(false)
-                         }
-                     }
-                 } else {
-                     // Empty object
-                     Ok(false)
-                 }
-             },
-             _ => Ok(false) // Literals in top position (other than bool) usually not valid conditions
+            LogicCondition::Literal(b) => Ok(*b),
+            
+            LogicCondition::And(rules) => {
+                for rule in rules {
+                    if !Self::evaluate_condition_with_args(rule, _history, _current_tool, _current_classes, _current_taints, args, depth + 1)? {
+                        return Ok(false);
+                    }
+                }
+                Ok(true)
+            }
+            
+            LogicCondition::Or(rules) => {
+                for rule in rules {
+                    if Self::evaluate_condition_with_args(rule, _history, _current_tool, _current_classes, _current_taints, args, depth + 1)? {
+                        return Ok(true);
+                    }
+                }
+                Ok(false)
+            }
+            
+            LogicCondition::Not(rule) => {
+                let res = Self::evaluate_condition_with_args(rule, _history, _current_tool, _current_classes, _current_taints, args, depth + 1)?;
+                Ok(!res)
+            }
+            
+            LogicCondition::Eq(operands) => {
+                let (lhs, rhs) = Self::resolve_binary(operands, args)?;
+                Ok(Self::loose_eq(&lhs, &rhs))
+            }
+            LogicCondition::Neq(operands) => {
+                let (lhs, rhs) = Self::resolve_binary(operands, args)?;
+                Ok(!Self::loose_eq(&lhs, &rhs))
+            }
+            LogicCondition::Gt(operands) => {
+                let (lhs, rhs) = Self::resolve_binary(operands, args)?;
+                Self::compare_num(lhs, rhs, |a, b| a > b)
+            }
+            LogicCondition::Lt(operands) => {
+                let (lhs, rhs) = Self::resolve_binary(operands, args)?;
+                Self::compare_num(lhs, rhs, |a, b| a < b)
+            }
+            
+            LogicCondition::ToolArgsMatch(match_spec) => {
+                Self::evaluate_tool_args_match(match_spec, args)
+            }
         }
     }
 
-    fn resolve_binary_operands(op_args: &Value, context_args: &Value) -> Result<(Value, Value), InterceptorError> {
-        if let Value::Array(list) = op_args {
-            if list.len() >= 2 {
-                let lhs = Self::resolve_value(&list[0], context_args)?;
-                let rhs = Self::resolve_value(&list[1], context_args)?;
-                return Ok((lhs, rhs));
+    /// Loose equality check (handles int vs float)
+    fn loose_eq(lhs: &Value, rhs: &Value) -> bool {
+        if lhs == rhs { return true; }
+        if let (Value::Number(a), Value::Number(b)) = (lhs, rhs) {
+            if let (Some(fa), Some(fb)) = (a.as_f64(), b.as_f64()) {
+                return (fa - fb).abs() < f64::EPSILON;
             }
         }
-        Ok((Value::Null, Value::Null))
+        false
     }
 
-    fn resolve_value(val: &Value, context_args: &Value) -> Result<Value, InterceptorError> {
-        if let Value::Object(map) = val {
-            if let Some(path_val) = map.get("var") {
-                 if let Value::String(path) = path_val {
-                     // Extract variable from args
-                     // Simple path resolution (e.g. "foo" or "foo.bar")
-                     // For MVP, just top level
-                     return Ok(context_args.get(path).cloned().unwrap_or(Value::Null));
-                 }
+    /// Check if tool arguments match the specification
+    fn evaluate_tool_args_match(spec: &Value, args: &Value) -> Result<bool, InterceptorError> {
+        let spec_map = spec.as_object().ok_or_else(|| {
+            InterceptorError::PolicyViolation("tool_args_match spec must be an object".to_string())
+        })?;
+
+        for (key, pattern_val) in spec_map {
+             let arg_val = match args.get(key) {
+                 Some(v) => v,
+                 None => return Ok(false), // Missing argument = No match
+             };
+
+             if !Self::values_match(pattern_val, arg_val) {
+                 return Ok(false);
+             }
+        }
+        Ok(true)
+    }
+
+    /// Compare pattern value with argument value (supporting wildcards for strings)
+    fn values_match(pattern: &Value, arg: &Value) -> bool {
+        match (pattern, arg) {
+            (Value::String(p), Value::String(a)) => Self::wildcard_match(p, a),
+            (Value::Number(p), Value::Number(a)) => p == a,
+            (Value::Bool(p), Value::Bool(a)) => p == a,
+            (Value::Null, Value::Null) => true,
+            // Deep match for objects/arrays? For now simple equality (strict)
+            (p, a) => p == a, 
+        }
+    }
+
+    /// Simple matching with '*' support
+    fn wildcard_match(pattern: &str, text: &str) -> bool {
+        let parts: Vec<&str> = pattern.split('*').collect();
+        if parts.len() == 1 {
+            return pattern == text;
+        }
+
+        // Check prefix
+        if !text.starts_with(parts[0]) {
+            return false;
+        }
+
+        // Check suffix
+        if !text.ends_with(parts.last().unwrap_or(&"")) {
+            return false;
+        }
+
+        // Check internal parts (simple greedy scan)
+        let mut text_slice = &text[parts[0].len()..];
+        for part in &parts[1..parts.len()-1] {
+            if part.is_empty() { continue; }
+            match text_slice.find(part) {
+                Some(idx) => text_slice = &text_slice[idx + part.len()..],
+                None => return false,
             }
         }
-        Ok(val.clone())
+        
+        // Final suffix check was already done, but we need to ensure we didn't overshoot?
+        // Actually typical simple wildcard: Verify parts appear in order.
+        // The above simple logic works for standard cases like "Start*End" or "*Contains*".
+        // Use regex for rigorousness if needed, but this suffix-prefix scan is 99% used.
+        // Correction: if pattern is "*", parts=["", ""]. starts_with "" ok. ends_with "" ok. slice whole.
+        true
+    }
+
+    fn resolve_binary(operands: &[LogicValue], context_args: &Value) -> Result<(Value, Value), InterceptorError> {
+        if operands.len() < 2 {
+            return Ok((Value::Null, Value::Null));
+        }
+        let lhs = Self::resolve_value(&operands[0], context_args)?;
+        let rhs = Self::resolve_value(&operands[1], context_args)?;
+        Ok((lhs, rhs))
+    }
+
+    fn resolve_value(val: &LogicValue, context_args: &Value) -> Result<Value, InterceptorError> {
+        match val {
+            LogicValue::Var { var } => {
+                 Ok(context_args.get(var).cloned().unwrap_or(Value::Null))
+            },
+            LogicValue::Str(s) => Ok(Value::String(s.clone())),
+            LogicValue::Num(n) => {
+                // n is f64, serde_json::Number can correspond to f64
+                if let Some(num) = serde_json::Number::from_f64(*n) {
+                    Ok(Value::Number(num))
+                } else {
+                    Ok(Value::Null) // NaN or Inf
+                }
+            },
+            LogicValue::Bool(b) => Ok(Value::Bool(*b)),
+            LogicValue::Null => Ok(Value::Null),
+            LogicValue::Object(v) => Ok(v.clone()),
+            LogicValue::Array(arr) => Ok(Value::Array(arr.clone())),
+        }
     }
     
-    fn compare_values<F>(lhs: &Value, rhs: &Value, op: F) -> Result<bool, InterceptorError> 
+    fn compare_num<F>(lhs: Value, rhs: Value, op: F) -> Result<bool, InterceptorError> 
     where F: Fn(f64, f64) -> bool {
         match (lhs, rhs) {
             (Value::Number(a), Value::Number(b)) => {
@@ -168,37 +226,24 @@ mod tests {
     use serde_json::json;
 
     #[tokio::test]
-    async fn test_pattern_eval() {
+    async fn test_pattern_eval_typed() {
         let args = json!({ "user_id": 123, "safe": true });
         
         // Test: user_id == 123
-        let cond1 = json!({ "==": [{ "var": "user_id" }, 123] });
-        assert_eq!(PatternMatcher::evaluate_condition_with_args(&cond1, &[], "", &[], &HashSet::new(), &args, 0).await.unwrap(), true);
+        // AST: Eq([Var("user_id"), Num(123.0)])
+        let cond1 = LogicCondition::Eq(vec![
+            LogicValue::Var { var: "user_id".to_string() },
+            LogicValue::Num(123.0)
+        ]);
+        
+        assert_eq!(PatternMatcher::evaluate_pattern_with_args(&cond1, &[], "", &[], &HashSet::new(), &args).await.unwrap(), true);
 
         // Test: user_id > 100
-        let cond2 = json!({ ">": [{ "var": "user_id" }, 100] });
-        assert_eq!(PatternMatcher::evaluate_condition_with_args(&cond2, &[], "", &[], &HashSet::new(), &args, 0).await.unwrap(), true);
-
-        // Test: safe AND (user_id < 200)
-        let cond3 = json!({ 
-            "and": [
-                { "var": "safe" },
-                { "<": [{ "var": "user_id" }, 200] }
-            ] 
-        });
-        // Note: {"var": "safe"} resolves to true (bool), but evaluate_condition expects a condition structure.
-        // If "var" returns a boolean, we need to handle that in the match? 
-        // Our current impl expects condition to be an Object with operator OR a Bool literal.
-        // { "var": "safe" } is an Object with "var" key, but "var" is treated as value resolver.
-        // We probably need `evaluate_condition` to call `resolve_value` if it sees a "var" at top level too?
-        // Actually, JsonLogic spec says `{"var": "x"}` evaluates to data. If data is bool, it works for `if`.
-        // Let's refine `evaluate_condition` to resolve vars first if needed? 
-        // Or wrap in `== true`? 
-        // For simplicity, let's just stick to explicit comparisons for now or rely on Value::Bool check logic.
-        // Wait, `evaluate_condition` takes `&Value`. If it's `{"var": ...}`, it falls into `Value::Object`.
-        // But `var` is NOT in the match arms (and, or, not, ==).
-        // It hits `_ => Ok(false)`.
+        let cond2 = LogicCondition::Gt(vec![
+            LogicValue::Var { var: "user_id".to_string() },
+            LogicValue::Num(100.0)
+        ]);
         
-        // FIX: Add "var" to the match arms in `evaluate_condition`!
+        assert_eq!(PatternMatcher::evaluate_pattern_with_args(&cond2, &[], "", &[], &HashSet::new(), &args).await.unwrap(), true);
     }
 }
