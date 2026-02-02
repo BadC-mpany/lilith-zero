@@ -39,11 +39,13 @@ src/
 ├── mcp/
 │   ├── server.rs     # Actor coordinator
 │   ├── pipeline.rs   # Async reader/writer tasks
+│   ├── codec.rs      # LSP/JSON-RPC framing
 │   ├── process.rs    # OS-level supervision
 │   └── mod.rs
 ├── core/
 │   ├── security_core.rs # Logic kernel
-│   ├── taint.rs      # Type-level safety (Clean<T>)
+│   ├── types.rs      # SafeString/TaintedString types
+│   ├── taint.rs      # Taint analysis logic
 │   ├── crypto.rs     # HMAC session logic
 │   └── mod.rs
 └── engine/           # Rule evaluation logic

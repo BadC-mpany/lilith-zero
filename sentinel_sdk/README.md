@@ -24,3 +24,4 @@ async with client:
 ```
 
 See `examples/` for attack simulation and enterprise deployment demos.
+Requires `SENTINEL_BINARY_PATH` to be set to the Rust release binary.

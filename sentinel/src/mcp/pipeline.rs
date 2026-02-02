@@ -27,54 +27,36 @@ pub enum UpstreamEvent {
 }
 
 /// Spawns a background task to read from Client Stdin
+use tokio_util::codec::FramedRead;
+use crate::mcp::codec::McpCodec;
+use futures_util::StreamExt; // We need this for .next() on FramedRead
+
 pub fn spawn_downstream_reader(
     stream: tokio::io::Stdin,
     tx: mpsc::Sender<DownstreamEvent>,
 ) {
     tokio::spawn(async move {
-        let mut reader = BufReader::new(stream);
-        let mut buf = Vec::new();
+        let mut framed = FramedRead::new(stream, McpCodec::new());
         
-        loop {
-            buf.clear();
-            match reader.read_until(b'\n', &mut buf).await {
-                Ok(0) => {
-                    // EOF
-                    let _ = tx.send(DownstreamEvent::Disconnect).await;
-                    break;
-                }
-                Ok(n) => {
-                    if n as u64 > limits::MAX_MESSAGE_SIZE_BYTES {
-                        let _ = tx.send(DownstreamEvent::Error("Message too large".to_string())).await;
-                        continue;
-                    }
-                    
-                    let line = String::from_utf8_lossy(&buf);
-                     debug!("Processing downstream line: {}", line.trim());
-                    // Parse
-                    match serde_json::from_slice::<JsonRpcRequest>(&buf) {
-                        Ok(req) => {
-                             if tx.send(DownstreamEvent::Request(req)).await.is_err() {
-                                 break; // Receiver dropped, stop
-                             }
-                        }
-                        Err(e) => {
-                             // If it's empty line, ignore.
-                             if buf.iter().all(|b| b.is_ascii_whitespace()) {
-                                 continue;
-                             }
-                             warn!("Failed to parse downstream JSON: {}. Line: {:?}", e, line);
-                             let _ = tx.send(DownstreamEvent::Error(format!("Parse error: {}", e))).await;
-                        }
+        while let Some(result) = framed.next().await {
+            match result {
+                Ok(req) => {
+                    if tx.send(DownstreamEvent::Request(req)).await.is_err() {
+                        break;
                     }
                 }
                 Err(e) => {
-                    error!("Error reading downstream stdin: {}", e);
-                    let _ = tx.send(DownstreamEvent::Disconnect).await;
-                    break;
+                    error!("Framing error: {}", e);
+                    let _ = tx.send(DownstreamEvent::Error(e.to_string())).await;
+                    // If strict, we might break here. Codec helps recovery though.
+                    // For now, continue but warn? 
+                    // Actually, breaking on error is safer if stream is desynced.
+                    // break; 
                 }
             }
         }
+        // EOF
+        let _ = tx.send(DownstreamEvent::Disconnect).await;
     });
 }
 

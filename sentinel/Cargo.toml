@@ -35,6 +35,10 @@ ring = "0.17"
 rand = "0.8"
 base64 = "0.21"
 jsonwebtoken = "9.3.0"
+tokio-util = { version = "0.7.18", features = ["codec"] }
+bytes = "1.11.0"
+futures = { version = "0.3.31", features = ["std"] }
+futures-util = "0.3.31"
 
 # Process Isolation
 [target.'cfg(windows)'.dependencies]

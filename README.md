@@ -81,7 +81,7 @@ resourceRules:
 "Permanent Sentinel" Architecture:
 
 ```
-Agent ◄──JSON-RPC (stdio)──► [Protocol Adapter] ◄──SecurityEvent──► [Security Core]
+Agent ◄──LSP-RPC (stdio)──► [Protocol Adapter] ◄──SecurityEvent──► [Security Core]
                                                                         │
                                                                  ┌──────┴──────┐
                                                                  │ Policy      │
@@ -89,9 +89,9 @@ Agent ◄──JSON-RPC (stdio)──► [Protocol Adapter] ◄──SecurityEve
                                                                  └─────────────┘
 ```
 
-1. **Protocol Adapter**: Decouples wire protocol from core security state. 
-2. **Async Actor Core**: Message-passing pipeline (Tokio) ensures non-blocking I/O across stdin/stdout/stderr.
-3. **Type-Driven Security**: Internal `Clean<T>`/`Tainted<T>` types wrap JSON-RPC payloads.
+1. **Protocol Adapter**: Decouples wire protocol from core security state. Supports both legacy NDJSON and LSP-style `Content-Length` framing.
+2. **Async Actor Core**: Message-passing pipeline (Tokio + Channels) ensures non-blocking I/O across stdin/stdout/stderr.
+3. **Type-Driven Security**: Internal `SafeString`/`TaintedString` types enforce compiler-checked security boundaries.
 
 ## Requirements
 

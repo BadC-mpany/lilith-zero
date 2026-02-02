@@ -13,3 +13,4 @@ pub mod session;
 pub mod taint;
 pub mod traits;
 pub mod constants;
+pub mod types;
