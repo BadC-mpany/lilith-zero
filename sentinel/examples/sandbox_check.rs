@@ -2,15 +2,10 @@
 async fn main() -> anyhow::Result<()> {
     #[cfg(windows)]
     {
-        use sentinel::mcp::sandbox::SandboxConfig;
+        use sentinel::mcp::sandbox::SandboxPolicy;
         use sentinel::mcp::process::ProcessSupervisor;
         
-        let config = SandboxConfig {
-             strict_mode: true,
-             allowed_read_paths: vec![],
-             allowed_write_paths: vec![], 
-             allow_network: false,
-        };
+        let policy = SandboxPolicy::default().allow_network(false);
         
         // Try to write to a temp file
         let target = "C:\\Users\\Public\\sentinel_sandbox_fail.txt";
@@ -23,7 +18,7 @@ async fn main() -> anyhow::Result<()> {
         
         println!("Spawning sandboxed process (powershell)...");
         let args = vec!["-c".to_string(), script];
-        let (mut supervisor, _, _, _) = match ProcessSupervisor::spawn("powershell", &args, Some(config)) {
+        let (mut supervisor, _, _, _) = match ProcessSupervisor::spawn("powershell", &args, Some(policy)) {
             Ok(v) => v,
             Err(e) => {
                 eprintln!("Failed to spawn: {}", e);

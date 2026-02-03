@@ -249,7 +249,7 @@ impl McpMiddleware {
         info!("Spawning upstream: {} {:?}", self.upstream_cmd, self.upstream_args);
         
         // Use config from core
-        let mut sandbox_config = self.core.config.sandbox.clone();
+        let sandbox_config = self.core.config.sandbox.clone();
 
         // 1. Runtime Discovery (Removed: Now using explicit profiles)
         // if let Some(cfg) = sandbox_config { ... }

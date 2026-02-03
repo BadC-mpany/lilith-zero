@@ -76,6 +76,12 @@ taintRules:
     forbiddenTags: [PII]
     error: "Policy violation: PII exfiltration blocked."
 
+enforce_trifecta_protection: true
+trifecta_tool_classes:
+  get_user_profile: [ACCESS_PRIVATE]
+  fetch_web: [UNTRUSTED_SOURCE]
+  send_email: [EXTERNAL_COMMUNICATION]
+
 resourceRules:
   - uriPattern: "file:///config/*"
     action: BLOCK

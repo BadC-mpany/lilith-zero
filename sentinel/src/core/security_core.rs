@@ -12,10 +12,19 @@ use serde_json::json;
 use crate::config::Config;
 use crate::core::crypto::CryptoSigner;
 use crate::core::events::{SecurityEvent, SecurityDecision, OutputTransform};
-use crate::core::models::{Decision, HistoryEntry, PolicyDefinition};
+use crate::core::models::{Decision, HistoryEntry, PolicyDefinition, TrifectaClass};
 use crate::engine::evaluator::PolicyEvaluator;
 use crate::core::auth;
 use crate::core::constants::jsonrpc;
+
+const TRIFECTA_BLOCK_REASON: &str =
+    "Policy violation: external communication blocked by lethal trifecta protection.";
+
+#[derive(Debug, Default)]
+struct TrifectaState {
+    access_private: bool,
+    untrusted_source: bool,
+}
 
 pub struct SecurityCore {
     pub config: Arc<Config>,
@@ -24,6 +33,7 @@ pub struct SecurityCore {
     pub policy: Option<PolicyDefinition>,
     taints: HashSet<String>,
     history: Vec<HistoryEntry>,
+    trifecta_state: TrifectaState,
 }
 
 impl SecurityCore {
@@ -36,6 +46,7 @@ impl SecurityCore {
             policy: None,
             taints: HashSet::new(),
             history: Vec::new(),
+            trifecta_state: TrifectaState::default(),
         })
     }
 
@@ -120,6 +131,19 @@ impl SecurityCore {
 
                  // 2. Classify Tool
                  let classes = self.classify_tool(&tool_name);
+                 let trifecta_classes = self.trifecta_classes_for_tool(&tool_name);
+
+                 // 2a. Enforce lethal trifecta protection (exfil-only)
+                 if self.should_block_external(&trifecta_classes) {
+                     warn!(
+                         "Lethal trifecta protection blocked external communication for tool: {}",
+                         tool_name
+                     );
+                     return SecurityDecision::Deny {
+                         error_code: jsonrpc::ERROR_SECURITY_BLOCK,
+                         reason: TRIFECTA_BLOCK_REASON.to_string(),
+                     };
+                 }
                  
                  // 3. Evaluate Policy
                  let evaluator_result = if let Some(policy) = &self.policy {
@@ -149,7 +173,12 @@ impl SecurityCore {
                  };
 
                  match evaluator_result {
-                     Ok(decision) => self.process_evaluator_decision(&tool_name, &classes, decision),
+                     Ok(decision) => self.process_evaluator_decision(
+                         &tool_name,
+                         &classes,
+                         &trifecta_classes,
+                         decision,
+                     ),
                      Err(e) => {
                          warn!("Policy evaluation internal error: {}", e);
                          SecurityDecision::Deny {
@@ -214,6 +243,8 @@ impl SecurityCore {
                     };
                 }
 
+                self.note_access_private_resource();
+
                  SecurityDecision::AllowWithTransforms {
                     taints_to_add: vec![],
                     taints_to_remove: vec![],
@@ -235,10 +266,17 @@ impl SecurityCore {
         }
     }
 
-    fn process_evaluator_decision(&mut self, tool_name: &str, classes: &[String], decision: Decision) -> SecurityDecision {
+    fn process_evaluator_decision(
+        &mut self,
+        tool_name: &str,
+        classes: &[String],
+        trifecta_classes: &[TrifectaClass],
+        decision: Decision,
+    ) -> SecurityDecision {
         match decision {
             Decision::Allowed => {
                 self.record_history(tool_name, classes);
+                self.update_trifecta_state(trifecta_classes);
                 info!(
                     target: "audit",
                     event_type = "Decision",
@@ -279,6 +317,7 @@ impl SecurityCore {
             },
             Decision::AllowedWithSideEffects { taints_to_add, taints_to_remove } => {
                 self.record_history(tool_name, classes);
+                self.update_trifecta_state(trifecta_classes);
                 
                 for t in &taints_to_add { self.taints.insert(t.clone()); }
                 for t in &taints_to_remove { self.taints.remove(t); }
@@ -325,6 +364,67 @@ impl SecurityCore {
         });
     }
 
+    fn trifecta_enabled(&self) -> bool {
+        self.policy
+            .as_ref()
+            .map(|policy| policy.enforce_trifecta_protection)
+            .unwrap_or(false)
+    }
+
+    fn trifecta_classes_for_tool(&self, name: &str) -> Vec<TrifectaClass> {
+        if !self.trifecta_enabled() {
+            return Vec::new();
+        }
+        self.policy
+            .as_ref()
+            .and_then(|policy| policy.trifecta_tool_classes.get(name).cloned())
+            .unwrap_or_default()
+    }
+
+    fn should_block_external(&self, classes: &[TrifectaClass]) -> bool {
+        if !self.trifecta_enabled() {
+            return false;
+        }
+        let has_external = classes
+            .iter()
+            .any(|class| *class == TrifectaClass::ExternalCommunication);
+        if !has_external {
+            return false;
+        }
+        let has_access_private = self.trifecta_state.access_private
+            || classes
+                .iter()
+                .any(|class| *class == TrifectaClass::AccessPrivate);
+        let has_untrusted_source = self.trifecta_state.untrusted_source
+            || classes
+                .iter()
+                .any(|class| *class == TrifectaClass::UntrustedSource);
+        has_access_private && has_untrusted_source
+    }
+
+    fn update_trifecta_state(&mut self, classes: &[TrifectaClass]) {
+        if !self.trifecta_enabled() {
+            return;
+        }
+        for class in classes {
+            match class {
+                TrifectaClass::AccessPrivate => {
+                    self.trifecta_state.access_private = true;
+                }
+                TrifectaClass::UntrustedSource => {
+                    self.trifecta_state.untrusted_source = true;
+                }
+                TrifectaClass::ExternalCommunication => {}
+            }
+        }
+    }
+
+    fn note_access_private_resource(&mut self) {
+        if self.trifecta_enabled() {
+            self.trifecta_state.access_private = true;
+        }
+    }
+
     fn match_resource_pattern(&self, uri: &str, pattern: &str) -> bool {
         if pattern == "*" {
             return true;
@@ -340,6 +440,43 @@ impl SecurityCore {
 mod tests {
     use super::*;
     use crate::core::events::SecurityEvent;
+    use crate::mcp::sandbox::SandboxPolicy;
+    use std::collections::HashMap;
+
+    fn build_trifecta_policy(enforce: bool) -> PolicyDefinition {
+        let mut static_rules = HashMap::new();
+        static_rules.insert("read_private".to_string(), "ALLOW".to_string());
+        static_rules.insert("fetch_web".to_string(), "ALLOW".to_string());
+        static_rules.insert("send_external".to_string(), "ALLOW".to_string());
+
+        let mut trifecta_tool_classes = HashMap::new();
+        trifecta_tool_classes.insert(
+            "read_private".to_string(),
+            vec![TrifectaClass::AccessPrivate],
+        );
+        trifecta_tool_classes.insert(
+            "fetch_web".to_string(),
+            vec![TrifectaClass::UntrustedSource],
+        );
+        trifecta_tool_classes.insert(
+            "send_external".to_string(),
+            vec![TrifectaClass::ExternalCommunication],
+        );
+
+        PolicyDefinition {
+            id: "test-policy".to_string(),
+            customer_id: "test-customer".to_string(),
+            name: "trifecta-policy".to_string(),
+            version: 1,
+            static_rules,
+            taint_rules: vec![],
+            enforce_trifecta_protection: enforce,
+            trifecta_tool_classes,
+            created_at: None,
+            resource_rules: vec![],
+            sandbox: Some(SandboxPolicy::default()),
+        }
+    }
     
     #[tokio::test]
     async fn test_security_core_flow() {
@@ -425,6 +562,89 @@ mod tests {
         match decision_audit {
              SecurityDecision::Allow | SecurityDecision::AllowWithTransforms { .. } => {},
              _ => panic!("Expected Allow for AuditOnly mode"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_trifecta_blocks_external_after_access_and_untrusted() {
+        let config = Arc::new(Config::default());
+        let signer = CryptoSigner::try_new().unwrap();
+        let mut core = SecurityCore::new(config, signer).unwrap();
+        core.set_policy(build_trifecta_policy(true));
+
+        let token = core.session_id.clone();
+
+        let read_event = SecurityEvent::ToolRequest {
+            request_id: serde_json::Value::String("1".to_string()),
+            tool_name: "read_private".to_string(),
+            arguments: serde_json::Value::Null,
+            session_token: Some(token.clone()),
+        };
+        let decision = core.evaluate(read_event).await;
+        assert!(matches!(
+            decision,
+            SecurityDecision::Allow | SecurityDecision::AllowWithTransforms { .. }
+        ));
+
+        let untrusted_event = SecurityEvent::ToolRequest {
+            request_id: serde_json::Value::String("2".to_string()),
+            tool_name: "fetch_web".to_string(),
+            arguments: serde_json::Value::Null,
+            session_token: Some(token.clone()),
+        };
+        let decision = core.evaluate(untrusted_event).await;
+        assert!(matches!(
+            decision,
+            SecurityDecision::Allow | SecurityDecision::AllowWithTransforms { .. }
+        ));
+
+        let exfil_event = SecurityEvent::ToolRequest {
+            request_id: serde_json::Value::String("3".to_string()),
+            tool_name: "send_external".to_string(),
+            arguments: serde_json::Value::Null,
+            session_token: Some(token),
+        };
+        let decision = core.evaluate(exfil_event).await;
+        match decision {
+            SecurityDecision::Deny { error_code, reason } => {
+                assert_eq!(error_code, jsonrpc::ERROR_SECURITY_BLOCK);
+                assert_eq!(reason, TRIFECTA_BLOCK_REASON);
+            }
+            _ => panic!("Expected trifecta block for external communication"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_trifecta_allows_external_without_both_flags() {
+        let config = Arc::new(Config::default());
+        let signer = CryptoSigner::try_new().unwrap();
+        let mut core = SecurityCore::new(config, signer).unwrap();
+        core.set_policy(build_trifecta_policy(true));
+
+        let token = core.session_id.clone();
+
+        let read_event = SecurityEvent::ToolRequest {
+            request_id: serde_json::Value::String("1".to_string()),
+            tool_name: "read_private".to_string(),
+            arguments: serde_json::Value::Null,
+            session_token: Some(token.clone()),
+        };
+        let decision = core.evaluate(read_event).await;
+        match decision {
+            SecurityDecision::Allow | SecurityDecision::AllowWithTransforms { .. } => {}
+            _ => panic!("Expected allow for access_private tool"),
+        }
+
+        let exfil_event = SecurityEvent::ToolRequest {
+            request_id: serde_json::Value::String("2".to_string()),
+            tool_name: "send_external".to_string(),
+            arguments: serde_json::Value::Null,
+            session_token: Some(token),
+        };
+        let decision = core.evaluate(exfil_event).await;
+        match decision {
+            SecurityDecision::Allow | SecurityDecision::AllowWithTransforms { .. } => {}
+            _ => panic!("Expected allow without untrusted_source"),
         }
     }
 }

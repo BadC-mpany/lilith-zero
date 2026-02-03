@@ -147,6 +147,14 @@ pub struct RuleException {
     pub reason: Option<String>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum TrifectaClass {
+    AccessPrivate,
+    UntrustedSource,
+    ExternalCommunication,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PolicyRule {
@@ -181,6 +189,12 @@ pub struct PolicyDefinition {
     /// Dynamic taint rules
     #[serde(alias = "taint_rules")]
     pub taint_rules: Vec<PolicyRule>,
+    /// Lethal trifecta protection (exfil-only)
+    #[serde(alias = "enforce_trifecta_protection", default)]
+    pub enforce_trifecta_protection: bool,
+    /// Tool classifications for trifecta evaluation
+    #[serde(alias = "trifecta_tool_classes", default)]
+    pub trifecta_tool_classes: std::collections::HashMap<String, Vec<TrifectaClass>>,
     #[serde(alias = "created_at", default)]
     pub created_at: Option<String>,
     /// Resource access rules

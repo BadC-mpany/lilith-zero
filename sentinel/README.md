@@ -114,6 +114,12 @@ taintRules:
     forbiddenTags: [TAG]
     error: "Error message"
 
+enforce_trifecta_protection: true
+trifecta_tool_classes:
+  source_tool: [ACCESS_PRIVATE]
+  untrusted_feed: [UNTRUSTED_SOURCE]
+  send_email: [EXTERNAL_COMMUNICATION]
+
 resourceRules:
   - uriPattern: "file:///allowed/*"
     action: ALLOW

@@ -288,6 +288,7 @@ impl PolicyValidator {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::mcp::sandbox::SandboxPolicy;
     use serde_json::{json, from_value};
     use std::collections::HashMap;
 
@@ -297,7 +298,7 @@ mod tests {
         static_rules.insert("read_file".to_string(), "ALLOW".to_string());
 
         let policy = PolicyDefinition {
-            sandbox: None,
+            sandbox: Some(SandboxPolicy::default()),
             id: "test-policy".to_string(),
             customer_id: "test-customer".to_string(),
             name: "test_policy".to_string(),
@@ -314,6 +315,8 @@ mod tests {
                 pattern: None,
                 exceptions: None,
             }],
+            enforce_trifecta_protection: false,
+            trifecta_tool_classes: HashMap::new(),
             created_at: Some("2024-01-01T00:00:00Z".to_string()),
         };
 
@@ -323,7 +326,7 @@ mod tests {
     #[test]
     fn test_rule_needs_tool_or_class() {
         let policy = PolicyDefinition {
-            sandbox: None,
+            sandbox: Some(SandboxPolicy::default()),
             id: "test-policy".to_string(),
             customer_id: "test-customer".to_string(),
             name: "test".to_string(),
@@ -340,6 +343,8 @@ mod tests {
                 pattern: None,
                 exceptions: None,
             }],
+            enforce_trifecta_protection: false,
+            trifecta_tool_classes: HashMap::new(),
             created_at: Some("2024-01-01T00:00:00Z".to_string()),
         };
 
@@ -351,7 +356,7 @@ mod tests {
     #[test]
     fn test_check_taint_requires_forbidden_tags() {
         let policy = PolicyDefinition {
-            sandbox: None,
+            sandbox: Some(SandboxPolicy::default()),
             id: "test-policy".to_string(),
             customer_id: "test-customer".to_string(),
             name: "test".to_string(),
@@ -368,6 +373,8 @@ mod tests {
                 pattern: None,
                 exceptions: None,
             }],
+            enforce_trifecta_protection: false,
+            trifecta_tool_classes: HashMap::new(),
             created_at: Some("2024-01-01T00:00:00Z".to_string()),
         };
 
@@ -381,7 +388,7 @@ mod tests {
         use crate::core::models::RuleException;
 
         let policy = PolicyDefinition {
-            sandbox: None,
+            sandbox: Some(SandboxPolicy::default()),
             id: "test-policy".to_string(),
             customer_id: "test-customer".to_string(),
             name: "test".to_string(),
@@ -403,6 +410,8 @@ mod tests {
                     reason: Some("test".to_string()),
                 }]),
             }],
+            enforce_trifecta_protection: false,
+            trifecta_tool_classes: HashMap::new(),
             created_at: Some("2024-01-01T00:00:00Z".to_string()),
         };
 
@@ -418,7 +427,7 @@ mod tests {
         use crate::core::models::RuleException;
 
         let policy = PolicyDefinition {
-            sandbox: None,
+            sandbox: Some(SandboxPolicy::default()),
             id: "test-policy".to_string(),
             customer_id: "test-customer".to_string(),
             name: "test".to_string(),
@@ -440,6 +449,8 @@ mod tests {
                     reason: Some("Internal emails allowed".to_string()),
                 }]),
             }],
+            enforce_trifecta_protection: false,
+            trifecta_tool_classes: HashMap::new(),
             created_at: Some("2024-01-01T00:00:00Z".to_string()),
         };
 

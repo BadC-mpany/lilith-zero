@@ -1,5 +1,5 @@
-use anyhow::{Context, Result};
-use std::path::{Path, PathBuf};
+use anyhow::Result;
+use std::path::PathBuf;
 use crate::mcp::sandbox::{SandboxProfile, SandboxPolicy};
 
 /// A profile for running Python in a typical venv or conda env.
