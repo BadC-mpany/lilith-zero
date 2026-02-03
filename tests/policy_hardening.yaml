@@ -22,5 +22,5 @@ taintRules:
 enforceTrifectaProtection: true
 trifectaToolClasses:
   read_user_db: [ACCESS_PRIVATE]
-  export_to_cloud: [EXTERNAL_COMMUNICATION]
+  export_to_cloud: [EXTERNAL_COMMUNICATION] # depends on who can read from cloud
   ping: []
