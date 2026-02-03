@@ -27,12 +27,14 @@ from sentinel_sdk import Sentinel
 # Configuration
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 SENTINEL_BIN = os.path.abspath(
-    os.path.join(BASE_DIR, "../../sentinel/target/debug/sentinel.exe")
+    os.path.join(BASE_DIR, "../../sentinel/target/release/sentinel.exe")
 )
 MOCK_SERVER = os.path.join(BASE_DIR, "mock_server.py")
 POLICY_TAINT = os.path.join(BASE_DIR, "policy_taint.yaml")  # Taint-only policy (no sandbox)
 SECRET_FILE = os.path.join(BASE_DIR, "sentinel_sandbox_secret.txt")
 
+import logging
+logging.basicConfig(level=logging.DEBUG)
 console = Console()
 
 
@@ -107,14 +109,13 @@ async def demo_sandbox_enforcement():
     outside_file = os.path.abspath(os.path.join(BASE_DIR, "../../CHANGELOG.md"))
     
     async with Sentinel(
-        f"{sys.executable} {MOCK_SERVER}",
+        f"{sys.executable} -B {MOCK_SERVER}",
         binary=SENTINEL_BIN,
-        # Sandbox permissions - use Python language profile and allow demo dir
-        language_profile=f"python:{sys.prefix}",
         allow_read=[
-            BASE_DIR,  # Demo directory
-            sys.base_prefix,  # Base Python installation (needed for miniconda)
-            "C:\\Windows",  # System DLLs required by Python
+            BASE_DIR,
+            sys.prefix,
+            sys.base_prefix,
+            "C:\\Windows\\System32",
         ],
     ) as sentinel:
         console.print(f"\n[dim]Session: {sentinel.session_id}[/dim]")

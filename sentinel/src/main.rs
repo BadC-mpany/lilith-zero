@@ -13,7 +13,7 @@ use std::path::PathBuf;
 struct Cli {
     /// Upstream tool command (e.g., "python")
     #[arg(short, long)]
-    upstream_cmd: String,
+    upstream_cmd: Option<String>,
 
     /// Path to policy YAML file
     #[arg(long)]
@@ -46,6 +46,10 @@ struct Cli {
     /// Dry run: Prints the effective sandbox configuration and exits via stdout.
     #[arg(long)]
     dry_run: bool,
+
+    /// Inspect a binary to find its dependencies (DLLs).
+    #[arg(long)]
+    inspect: Option<PathBuf>,
 }
 
 #[tokio::main]
@@ -112,19 +116,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if let Some(profile_str) = cli.language_profile {
         use_sandbox = true;
         let parts: Vec<&str> = profile_str.splitn(2, ':').collect();
-        if parts.len() != 2 {
-            eprintln!("Error: profile must be format 'lang:path', e.g. 'python:./venv'");
+        if parts.len() < 2 {
+            eprintln!("Error: profile must be format 'lang:env_path[,core_path]', e.g. 'python:./venv' or 'python:./venv,C:\\Python312'");
             std::process::exit(1);
         }
         let lang = parts[0];
-        let path = parts[1];
+        let paths_str = parts[1];
+        let paths: Vec<&str> = paths_str.split(',').collect();
         
-        info!("Applying language profile: {} for path {}", lang, path);
+        let env_path = paths[0];
+        let core_path = paths.get(1).map(|&p| PathBuf::from(p));
+        
+        info!("Applying language profile: {} for env_path {}", lang, env_path);
         
         use sentinel::mcp::sandbox::SandboxProfile;
         match lang {
             "python" => {
-                 let profile = sentinel::mcp::sandbox::profiles::python::PythonProfile::new(path);
+                 let profile = sentinel::mcp::sandbox::profiles::python::PythonProfile::new(env_path, core_path);
                  profile.apply(&mut policy)?;
             },
             _ => {
@@ -141,7 +149,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         info!("Sandbox Disabled.");
     }
     
-    // DRY RUN LOGIC
+    if let Err(e) = init_tracing(&config) {
+        eprintln!("Failed to init tracing: {}", e);
+    }
+
+    // DRY RUN / INSPECT LOGIC
     if cli.dry_run {
         println!("--- Dry Run: Effective Sandbox Configuration ---");
         if use_sandbox {
@@ -152,14 +164,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    if let Err(e) = init_tracing(&config) {
-        eprintln!("Failed to init tracing: {}", e);
+    if let Some(path) = cli.inspect {
+        println!("--- Binary Inspection: {} ---", path.display());
+        match sentinel::utils::pe::get_dependencies(&path) {
+            Ok(deps) => {
+                println!("Dependencies found:");
+                for dep in deps {
+                    println!("  - {}", dep);
+                }
+            },
+            Err(e) => {
+                eprintln!("Error inspecting binary: {}", e);
+                std::process::exit(1);
+            }
+        }
+        return Ok(());
     }
 
-    info!("Starting Sentinel in Middleware Mode");
-    info!("Upstream: {} {:?}", cli.upstream_cmd, cli.upstream_args);
 
-    let mut middleware = McpMiddleware::new(cli.upstream_cmd, cli.upstream_args, Arc::new(config))?;
+    info!("Starting Sentinel in Middleware Mode");
+    let cmd = cli.upstream_cmd.ok_or_else(|| anyhow::anyhow!("Missing --upstream-cmd"))?;
+    info!("Upstream: {} {:?}", cmd, cli.upstream_args);
+
+    let mut middleware = McpMiddleware::new(cmd, cli.upstream_args, Arc::new(config))?;
 
     middleware.run().await?;
 
@@ -191,7 +218,7 @@ fn init_tracing(config: &Config) -> Result<(), Box<dyn std::error::Error>> {
 
     let filter = EnvFilter::try_from_default_env()
         .or_else(|_| EnvFilter::try_new(&config.log_level))
-        .unwrap_or_else(|_| EnvFilter::new("info"));
+        .unwrap_or_else(|_| EnvFilter::new("sentinel=debug,info"));
 
     let subscriber = fmt()
         .with_env_filter(filter)

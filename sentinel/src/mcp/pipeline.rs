@@ -16,14 +16,13 @@ pub enum DownstreamEvent {
     Error(String),
 }
 
-/// Messages arriving from the Upstream Server (the Tool)
 #[derive(Debug)]
 pub enum UpstreamEvent {
     Response(JsonRpcResponse),
     /// Unstructured log line from stderr
     Log(String),
-    /// Process terminated
-    Terminated,
+    /// Process terminated with optional exit code
+    Terminated(Option<i32>),
 }
 
 /// Spawns a background task to read from Client Stdin
@@ -76,8 +75,9 @@ pub fn spawn_upstream_reader<R>(
             line.clear();
             match reader.read_line(&mut line).await {
                 Ok(0) => {
-                    let _ = tx.send(UpstreamEvent::Terminated).await;
-                    break;
+                    // EOF on stdout usually means process died.
+                    // We rely on the explicit waiter task in server.rs for Terminated event.
+                    break; 
                 }
                 Ok(_) => {
                     // Try to parse as JSON-RPC Response
@@ -106,7 +106,6 @@ pub fn spawn_upstream_reader<R>(
                 }
                 Err(e) => {
                     error!("Error reading upstream stdout: {}", e);
-                    let _ = tx.send(UpstreamEvent::Terminated).await;
                     break;
                 }
             }

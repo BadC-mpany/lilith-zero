@@ -122,13 +122,12 @@ impl McpMiddleware {
                             self.handle_upstream_response(resp, &mut downstream_writer).await?;
                         }
                         Some(UpstreamEvent::Log(msg)) => {
-                            debug!("[Upstream Log] {}", msg);
+                            info!("[Upstream Log] {}", msg);
                         }
-                        Some(UpstreamEvent::Terminated) => {
-                            warn!("Upstream process terminated unexpectedly.");
+                        Some(UpstreamEvent::Terminated(code)) => {
+                            warn!("Upstream process terminated (Exit Code: {:?}).", code);
                             self.upstream_stdin = None;
                             self.upstream_supervisor = None;
-                            // We don't exit, we might restart or just report error on next request.
                         }
                         None => {
                             // Upstream channel closed (shouldn't happen unless we drop sender)
@@ -249,12 +248,12 @@ impl McpMiddleware {
         info!("Spawning upstream: {} {:?}", self.upstream_cmd, self.upstream_args);
         
         // Use config from core
-        let mut sandbox_config = self.core.config.sandbox.clone();
+        let sandbox_config = self.core.config.sandbox.clone();
 
         // 1. Runtime Discovery (Removed: Now using explicit profiles)
         // if let Some(cfg) = sandbox_config { ... }
         
-        let (supervisor, stdin, stdout, stderr) = ProcessSupervisor::spawn(&self.upstream_cmd, &self.upstream_args, sandbox_config)
+        let (supervisor, stdin, stdout, stderr) = ProcessSupervisor::spawn(&self.upstream_cmd, &self.upstream_args, sandbox_config, tx_upstream.clone())
             .context("Failed to spawn upstream")?;
         
         // Capture Stdin

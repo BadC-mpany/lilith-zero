@@ -1,5 +1,6 @@
 use anyhow::Result;
 use std::path::PathBuf;
+use async_trait::async_trait;
 
 pub mod windows;
 // pub mod runtime; // DELETED - Legacy Magic
@@ -9,6 +10,24 @@ pub mod linux;
 pub mod macos;
 
 pub mod profiles;
+
+/// Interface for a sandboxed child process.
+/// This allows the MCP middleware to interact with standard or sandboxed processes
+/// in a unified way regardless of the underlying OS primitive.
+#[async_trait]
+pub trait ChildProcess: Send {
+    /// Kill the process.
+    async fn kill(&mut self) -> Result<()>;
+    
+    /// Immediately signal the process to exit.
+    fn start_kill(&mut self) -> Result<()>;
+    
+    /// Wait for the process to exit and return its status.
+    async fn wait(&mut self) -> Result<std::process::ExitStatus>;
+
+    /// Get the process ID if available.
+    fn id(&self) -> Option<u32>;
+}
 
 /// The explicit security policy for a sandbox.
 /// Start with defaults (all denied) and explicitly grant permissions.

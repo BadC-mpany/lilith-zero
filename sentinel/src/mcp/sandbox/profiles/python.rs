@@ -1,17 +1,19 @@
-use anyhow::{Context, Result};
-use std::path::{Path, PathBuf};
+use anyhow::Result;
+use std::path::PathBuf;
 use crate::mcp::sandbox::{SandboxProfile, SandboxPolicy};
 
 /// A profile for running Python in a typical venv or conda env.
 /// Grants access to standard library and site-packages locations WITHOUT introspection.
 pub struct PythonProfile {
     pub env_root: PathBuf,
+    pub core_root: Option<PathBuf>,
 }
 
 impl PythonProfile {
-    pub fn new(env_root: impl Into<PathBuf>) -> Self {
+    pub fn new(env_root: impl Into<PathBuf>, core_root: Option<PathBuf>) -> Self {
         Self {
             env_root: env_root.into(),
+            core_root,
         }
     }
 }
@@ -23,7 +25,12 @@ impl SandboxProfile for PythonProfile {
         // 1. The root itself (often needed for venv config)
         policy.read_paths.push(root.clone());
         
-        // 2. Scripts/bin (executables)
+        // 2. Core Python (if provided separately, e.g. for venvs pointing to global python)
+        if let Some(core) = &self.core_root {
+            policy.read_paths.push(core.clone());
+        }
+        
+        // 3. Scripts/bin (executables)
         if cfg!(windows) {
             policy.read_paths.push(root.join("Scripts"));
             policy.read_paths.push(root.join("Lib"));
@@ -37,13 +44,21 @@ impl SandboxProfile for PythonProfile {
         } else {
             policy.read_paths.push(root.join("bin"));
             policy.read_paths.push(root.join("lib"));
-            // Modern python often has lib/pythonX.Y/site-packages. 
-            // Since we aren't introspecting version, we might need to rely on the user providing a deep enough root 
-            // or just allow "lib" which covers it.
         }
 
-        // 3. For Conda specifically, we might need more.
-        // But for "Minimal", we strictly trust the input root.
+        // 4. Common Python Environment Variables (Help avoid registry lookups)
+        let python_envs = vec![
+            "PYTHONHOME", 
+            "PYTHONPATH", 
+            "PYTHONUNBUFFERED", 
+            "PYTHONDONTWRITEBYTECODE",
+            "PYTHONIOENCODING"
+        ];
+        for env in python_envs {
+            if !policy.allow_env.contains(&env.to_string()) {
+                policy.allow_env.push(env.to_string());
+            }
+        }
         
         Ok(())
     }
