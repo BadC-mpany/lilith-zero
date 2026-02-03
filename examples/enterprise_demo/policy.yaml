@@ -74,3 +74,20 @@ taint_rules:
     action: "CHECK_TAINT"
     forbidden_tags: ["PII", "INTERNAL_DATA"]
     error: "Cannot call external API after accessing sensitive data"
+
+enforce_trifecta_protection: true
+trifecta_tool_classes:
+  get_current_time: []
+  calculate: []
+  format_text: []
+  summarize_text: []
+  get_user_profile: [ACCESS_PRIVATE]
+  query_database: [ACCESS_PRIVATE]
+  read_file: [ACCESS_PRIVATE]
+  send_email: [EXTERNAL_COMMUNICATION]
+  post_to_slack: [EXTERNAL_COMMUNICATION]
+  upload_to_s3: [EXTERNAL_COMMUNICATION]
+  call_external_api: [EXTERNAL_COMMUNICATION]
+  execute_shell: [] # could this read private?
+  modify_user_permissions: []
+  delete_records: []

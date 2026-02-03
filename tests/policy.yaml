@@ -8,3 +8,8 @@ staticRules:
   ping: "ALLOW"
 taintRules: []
 resourceRules: []
+enforceTrifectaProtection: true
+trifectaToolClasses:
+  read_db: [ACCESS_PRIVATE]
+  send_slack: [EXTERNAL_COMMUNICATION]
+  ping: []

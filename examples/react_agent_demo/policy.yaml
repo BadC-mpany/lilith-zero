@@ -30,5 +30,12 @@ taintRules:
     forbiddenTags: ["CONFIDENTIAL"]
     error: "Policy Violation: Exfiltration of confidential data blocked."
 
+enforceTrifectaProtection: true
+trifectaToolClasses:
+  analyze_data: []
+  get_financial_report: [ACCESS_PRIVATE]
+  upload_to_cloud: [EXTERNAL_COMMUNICATION] # depends on who can read from cloud
+  unauthorized_read: [ACCESS_PRIVATE]
+
 # Resource Rules
 resourceRules: []

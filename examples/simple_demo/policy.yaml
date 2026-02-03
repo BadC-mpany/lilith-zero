@@ -18,3 +18,9 @@ taintRules:
     action: "CHECK_TAINT"
     forbiddenTags: ["PII"]
     error: "BLOCKED: Attempted to exfiltrate PII to external cloud storage."
+
+enforceTrifectaProtection: true
+trifectaToolClasses:
+  read_user_db: [ACCESS_PRIVATE]
+  export_to_cloud: [EXTERNAL_COMMUNICATION] # i mean it depends on whether some external agent can read from this cloud
+  ping: []
