@@ -1,4 +1,4 @@
-use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::io::{AsyncRead, AsyncBufReadExt, BufReader};
 use tokio::sync::mpsc;
 use tracing::{debug, error};
 
@@ -62,10 +62,12 @@ pub fn spawn_downstream_reader(
 
 
 /// Spawns a background task to read from Upstream Stdout
-pub fn spawn_upstream_reader(
-    stream: tokio::process::ChildStdout,
+pub fn spawn_upstream_reader<R>(
+    stream: R,
     tx: mpsc::Sender<UpstreamEvent>,
-) {
+) where 
+    R: AsyncRead + Unpin + Send + 'static 
+{
     tokio::spawn(async move {
         let mut reader = BufReader::new(stream);
         let mut line = String::new();
@@ -113,10 +115,12 @@ pub fn spawn_upstream_reader(
 }
 
 /// Spawns a background task to drain Upstream Stderr (Log Forwarding)
-pub fn spawn_upstream_stderr_drain(
-    stream: tokio::process::ChildStderr,
+pub fn spawn_upstream_stderr_drain<R>(
+    stream: R,
     tx: mpsc::Sender<UpstreamEvent>,
-) {
+) where
+    R: AsyncRead + Unpin + Send + 'static 
+{
     tokio::spawn(async move {
         let mut reader = BufReader::new(stream);
         let mut line = String::new();

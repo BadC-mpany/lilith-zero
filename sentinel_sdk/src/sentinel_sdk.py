@@ -45,10 +45,27 @@ class Sentinel:
                  binary_path: Optional[str] = None,
                  policy_path: Optional[str] = None,
                  mcp_version: Optional[str] = None,
-                 audience_token: Optional[str] = None):
+                 audience_token: Optional[str] = None,
+                 # Sandbox flags
+                 language_profile: Optional[str] = None,
+                 allow_read: Optional[List[str]] = None,
+                 allow_write: Optional[List[str]] = None,
+                 allow_net: bool = False,
+                 allow_env: Optional[List[str]] = None,
+                 dry_run: bool = False,
+                 skip_handshake: bool = False):
         
         self.upstream_cmd = upstream_cmd
         self.upstream_args = upstream_args if upstream_args is not None else []
+        
+        # Sandbox config
+        self.language_profile = language_profile
+        self.allow_read = allow_read or []
+        self.allow_write = allow_write or []
+        self.allow_net = allow_net
+        self.allow_env = allow_env or []
+        self.dry_run = dry_run
+        self.skip_handshake = skip_handshake
         
         # Resolve Binary Path
         _bin_path = binary_path or os.getenv(ENV_BINARY_PATH, get_binary_name())
@@ -66,18 +83,43 @@ class Sentinel:
         self._lock = asyncio.Lock()
         self._pending_requests: Dict[str, asyncio.Future] = {}
         self._reader_task: Optional[asyncio.Task] = None
+        self._stderr_task: Optional[asyncio.Task] = None
+        
+        # Captured output
+        self.stdout_lines: List[str] = []
+        self.stderr_lines: List[str] = []
     
-    @classmethod
-    def start(cls, **kwargs):
-        """Legacy/Sugar factory method. Prefer using constructor directly."""
-        return cls(**kwargs)
+    @staticmethod
+    def start(
+        upstream: str, 
+        binary_path: Optional[str] = None,
+        policy_path: Optional[str] = None,
+        mcp_version: Optional[str] = None,
+        **kwargs
+    ):
+        """
+        Legacy/Sugar factory method to start Sentinel with a single command string.
+        """
+        parts = upstream.split()
+        if not parts:
+            raise ValueError("upstream command cannot be empty")
+        
+        return Sentinel(
+            upstream_cmd=parts[0],
+            upstream_args=parts[1:],
+            binary_path=binary_path,
+            policy_path=policy_path,
+            mcp_version=mcp_version,
+            **kwargs
+        )
 
     async def __aenter__(self):
         await self.start_session()
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-        await self.stop_session()
+        if not self.dry_run:
+            await self.stop_session()
 
     async def start_session(self):
         """Start the Sentinel middleware process."""
@@ -85,6 +127,25 @@ class Sentinel:
         if self.policy_path:
             cmd.extend(["--policy", self.policy_path])
         
+        # Sandbox Args
+        if self.language_profile:
+            cmd.extend(["--language-profile", self.language_profile])
+        
+        for p in self.allow_read:
+            cmd.extend(["--allow-read", p])
+            
+        for p in self.allow_write:
+            cmd.extend(["--allow-write", p])
+            
+        if self.allow_net:
+            cmd.append("--allow-net")
+            
+        for e in self.allow_env:
+            cmd.extend(["--allow-env", e])
+            
+        if self.dry_run:
+            cmd.append("--dry-run") # Hyphen fixed
+
         cmd.extend(["--upstream-cmd", self.upstream_cmd])
         if self.upstream_args:
             cmd.append("--")
@@ -101,12 +162,24 @@ class Sentinel:
             )
         except FileNotFoundError:
             raise FileNotFoundError(f"Sentinel binary not found at: {self.binary_path}")
+            
+        if self.dry_run:
+            return
 
-        # Start reading stdout loop
-        self._reader_task = asyncio.create_task(self._read_stdout_loop())
-        # Start reading stderr to capture session ID
-        asyncio.create_task(self._process_stderr())
+        # Start reading stdout loop (optional if skip_handshake)
+        if not self.skip_handshake:
+            self._reader_task = asyncio.create_task(self._read_stdout_loop())
         
+        # Start reading stderr to capture session ID
+        self._stderr_task = asyncio.create_task(self._process_stderr())
+        
+        if self.skip_handshake:
+            # We still wait for session_id if possible
+             for _ in range(SESSION_TIMEOUT_ITERATIONS):
+                if self.session_id: break
+                await asyncio.sleep(SESSION_POLL_INTERVAL_SEC)
+             return
+
         # Wait for Session ID to be established (handshake)
         for _ in range(SESSION_TIMEOUT_ITERATIONS):
             if self.session_id:
@@ -140,6 +213,8 @@ class Sentinel:
         """
         if self._reader_task:
             self._reader_task.cancel()
+        if self._stderr_task:
+            self._stderr_task.cancel()
             
         if self.process:
             try:
@@ -165,6 +240,7 @@ class Sentinel:
                     break
                 
                 line_str = line.decode().strip()
+                self.stderr_lines.append(line_str)
                 # Check for Session ID handshake
                 if line_str.startswith("SENTINEL_SESSION_ID="):
                     self.session_id = line_str.split("=", 1)[1]
@@ -192,8 +268,11 @@ class Sentinel:
                 if not line:
                     break
                 
+                line_str = line.decode().strip()
+                self.stdout_lines.append(line_str)
+                
                 try:
-                    msg = json.loads(line.decode())
+                    msg = json.loads(line_str)
                     
                     # Handle Response
                     if "id" in msg:
@@ -206,7 +285,8 @@ class Sentinel:
                                 else:
                                     future.set_result(msg.get("result", {}))
                 except json.JSONDecodeError:
-                    logger.error(f"Failed to decode JSON from Sentinel: {line}")
+                    # Not a JSON line, maybe a log from upstream tool
+                    logger.debug(f"[Sentinel Stdout] {line_str}")
         except asyncio.CancelledError:
             pass
         except Exception as e:

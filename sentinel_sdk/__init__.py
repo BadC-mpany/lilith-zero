@@ -11,7 +11,7 @@ from typing import List, Dict, Optional, Union
 import os
 import shutil
 
-from .src.sentinel_sdk import Sentinel as SentinelClient
+from .src.sentinel_sdk import Sentinel
 from .src.constants import (
     __version__,
     SECURITY_LEVEL_CONFIG,
@@ -34,7 +34,6 @@ from .src.prompts import get_default_prompt, get_full_prompt
 
 __all__ = [
     "Sentinel",
-    "SentinelClient",
     "__version__",
     "SECURITY_LEVEL_LOW",
     "SECURITY_LEVEL_MEDIUM", 
@@ -42,7 +41,6 @@ __all__ = [
     "ENV_BINARY_PATH",
     "ENV_POLICY_PATH",
 ]
-
 
 def _find_binary() -> Optional[str]:
     """
@@ -72,21 +70,9 @@ def _find_binary() -> Optional[str]:
     
     return None
 
-
-class Sentinel:
+class SentinelHelper:
     """
-    Sentinel MCP Middleware.
-    Provides a security layer for Model Context Protocol servers.
-    
-    Usage:
-        client = Sentinel.start(
-            upstream="python tools.py",
-            policy="policy.yaml",
-            security_level="high"
-        )
-        
-        async with client:
-            result = await client.execute_tool("my_tool", {"arg": "value"})
+    Static helper for Sentinel MCP Middleware.
     """
     
     @staticmethod
@@ -95,20 +81,18 @@ class Sentinel:
         policy: Optional[str] = None,
         security_level: str = DEFAULT_SECURITY_LEVEL,
         binary_path: Optional[str] = None,
-        mcp_version: Optional[str] = None
-    ) -> SentinelClient:
+        mcp_version: Optional[str] = None,
+        # New Sandbox Flags
+        language_profile: Optional[str] = None,
+        allow_read: Optional[List[str]] = None,
+        allow_write: Optional[List[str]] = None,
+        allow_net: bool = False,
+        allow_env: Optional[List[str]] = None,
+        dry_run: bool = False,
+        skip_handshake: bool = False
+    ) -> Sentinel:
         """
-        Start a Sentinel-protected MCP session.
-        
-        Args:
-            upstream: Command to run the upstream tool server.
-            policy: Path to policy YAML file. If None, uses default permissive policy.
-            security_level: One of "low", "medium", "high".
-            binary_path: Optional explicit path to sentinel-interceptor binary.
-            mcp_version: Optional MCP protocol version string (e.g. "2025-06-18")
-            
-        Returns:
-            SentinelClient ready for use as async context manager.
+        Start a Sentinel-protected MCP session with optional sandboxing.
         """
         # Parse upstream command
         parts = upstream.split()
@@ -122,8 +106,7 @@ class Sentinel:
         resolved_binary = binary_path or _find_binary()
         if resolved_binary is None:
             raise FileNotFoundError(
-                f"Could not find sentinel-interceptor binary. "
-                f"Set {ENV_BINARY_PATH} environment variable or provide binary_path argument."
+                f"Could not find sentinel binary."
             )
         
         # Resolve policy path
@@ -138,12 +121,19 @@ class Sentinel:
         if mcp_version:
              os.environ[ENV_MCP_VERSION] = mcp_version
         
-        return SentinelClient(
+        return Sentinel(
             upstream_cmd=upstream_cmd,
             upstream_args=upstream_args,
             binary_path=resolved_binary,
             policy_path=policy_path,
-            mcp_version=mcp_version
+            mcp_version=mcp_version,
+            language_profile=language_profile,
+            allow_read=allow_read,
+            allow_write=allow_write,
+            allow_net=allow_net,
+            allow_env=allow_env,
+            dry_run=dry_run,
+            skip_handshake=skip_handshake
         )
     
     @staticmethod

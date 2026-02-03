@@ -10,7 +10,7 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncWrite, AsyncWriteExt};
 use tokio::sync::mpsc;
 use tracing::{debug, error, info, warn};
 use anyhow::{Context, Result};
@@ -28,6 +28,7 @@ use crate::core::traits::McpSessionHandler;
 use crate::protocol::negotiation::HandshakeManager;
 use crate::mcp::pipeline::{self, DownstreamEvent, UpstreamEvent};
 
+
 pub struct McpMiddleware {
     upstream_cmd: String,
     upstream_args: Vec<String>,
@@ -37,7 +38,7 @@ pub struct McpMiddleware {
     session: ActiveSession,
     
     // Actor State
-    upstream_stdin: Option<tokio::process::ChildStdin>,
+    upstream_stdin: Option<Box<dyn AsyncWrite + Unpin + Send>>,
     pending_decisions: HashMap<String, SecurityDecision>, // Map Request ID (String) -> Decision
     
     // Upstream Control
@@ -176,7 +177,7 @@ impl McpMiddleware {
                     
                     // Spawn Upstream if needed
                     if self.upstream_stdin.is_none() {
-                        if let Err(e) = self.spawn_upstream(tx_upstream_events.clone()) {
+                        if let Err(e) = self.spawn_upstream(tx_upstream_events.clone()).await {
                              error!("Failed to spawn upstream: {}", e);
                              if let Some(id) = &req.id {
                                  self.write_error(writer, id.clone(), jsonrpc::ERROR_INTERNAL, "Failed to start upstream process").await?;
@@ -244,22 +245,28 @@ impl McpMiddleware {
         Ok(())
     }
 
-    fn spawn_upstream(&mut self, tx_upstream: mpsc::Sender<UpstreamEvent>) -> Result<()> {
+    async fn spawn_upstream(&mut self, tx_upstream: mpsc::Sender<UpstreamEvent>) -> Result<()> {
         info!("Spawning upstream: {} {:?}", self.upstream_cmd, self.upstream_args);
         
-        let mut supervisor = ProcessSupervisor::spawn(&self.upstream_cmd, &self.upstream_args)
+        // Use config from core
+        let mut sandbox_config = self.core.config.sandbox.clone();
+
+        // 1. Runtime Discovery (Removed: Now using explicit profiles)
+        // if let Some(cfg) = sandbox_config { ... }
+        
+        let (supervisor, stdin, stdout, stderr) = ProcessSupervisor::spawn(&self.upstream_cmd, &self.upstream_args, sandbox_config)
             .context("Failed to spawn upstream")?;
         
         // Capture Stdin
-        self.upstream_stdin = supervisor.child.stdin.take();
+        self.upstream_stdin = stdin;
         
         // Capture and spawn reader for Stdout
-        if let Some(stdout) = supervisor.child.stdout.take() {
+        if let Some(stdout) = stdout {
             pipeline::spawn_upstream_reader(stdout, tx_upstream.clone());
         }
         
         // Capture and spawn drain for Stderr
-        if let Some(stderr) = supervisor.child.stderr.take() {
+        if let Some(stderr) = stderr {
             pipeline::spawn_upstream_stderr_drain(stderr, tx_upstream.clone());
         }
 

@@ -186,6 +186,8 @@ pub struct PolicyDefinition {
     /// Resource access rules
     #[serde(alias = "resource_rules", default)]
     pub resource_rules: Vec<ResourceRule>,
+    #[serde(default)]
+    pub sandbox: Option<crate::mcp::sandbox::SandboxPolicy>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

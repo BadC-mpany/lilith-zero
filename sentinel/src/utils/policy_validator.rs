@@ -297,6 +297,7 @@ mod tests {
         static_rules.insert("read_file".to_string(), "ALLOW".to_string());
 
         let policy = PolicyDefinition {
+            sandbox: None,
             id: "test-policy".to_string(),
             customer_id: "test-customer".to_string(),
             name: "test_policy".to_string(),
@@ -322,6 +323,7 @@ mod tests {
     #[test]
     fn test_rule_needs_tool_or_class() {
         let policy = PolicyDefinition {
+            sandbox: None,
             id: "test-policy".to_string(),
             customer_id: "test-customer".to_string(),
             name: "test".to_string(),
@@ -349,6 +351,7 @@ mod tests {
     #[test]
     fn test_check_taint_requires_forbidden_tags() {
         let policy = PolicyDefinition {
+            sandbox: None,
             id: "test-policy".to_string(),
             customer_id: "test-customer".to_string(),
             name: "test".to_string(),
@@ -378,6 +381,7 @@ mod tests {
         use crate::core::models::RuleException;
 
         let policy = PolicyDefinition {
+            sandbox: None,
             id: "test-policy".to_string(),
             customer_id: "test-customer".to_string(),
             name: "test".to_string(),
@@ -414,6 +418,7 @@ mod tests {
         use crate::core::models::RuleException;
 
         let policy = PolicyDefinition {
+            sandbox: None,
             id: "test-policy".to_string(),
             customer_id: "test-customer".to_string(),
             name: "test".to_string(),

@@ -22,6 +22,30 @@ struct Cli {
     /// Upstream tool arguments (e.g. "tools.py")
     #[arg(last = true)]
     upstream_args: Vec<String>,
+
+    /// explicit read permissions
+    #[arg(long)]
+    allow_read: Vec<String>,
+
+    /// explicit write permissions
+    #[arg(long)]
+    allow_write: Vec<String>,
+
+    /// explicit network permission
+    #[arg(long)]
+    allow_net: bool,
+
+    /// explicit env vars
+    #[arg(long)]
+    allow_env: Vec<String>,
+
+    /// Use a pre-defined language profile (e.g. "python:./venv")
+    #[arg(long)]
+    language_profile: Option<String>,
+
+    /// Dry run: Prints the effective sandbox configuration and exits via stdout.
+    #[arg(long)]
+    dry_run: bool,
 }
 
 #[tokio::main]
@@ -41,8 +65,91 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     // Override policy from CLI
-    if let Some(p) = cli.policy {
-        config.policies_yaml_path = Some(p);
+    if let Some(p) = &cli.policy { 
+        config.policies_yaml_path = Some(p.clone());
+    }
+
+    // Configure Sandbox Policy
+    let mut policy = sentinel::mcp::sandbox::SandboxPolicy::default();
+    let mut use_sandbox = false;
+
+    // 1. Load from YAML if exists (Base Layer)
+    if let Some(path) = &config.policies_yaml_path {
+        if let Ok(content) = std::fs::read_to_string(path) {
+             if let Ok(policy_def) = serde_yaml::from_str::<sentinel::core::models::PolicyDefinition>(&content) {
+                 if let Some(s) = policy_def.sandbox {
+                     info!("Loaded sandbox policy from YAML");
+                     policy = s;
+                     use_sandbox = true;
+                 }
+             }
+        }
+    }
+
+    // 2. Apply CLI Flags (Overlay Layer)
+    if !cli.allow_read.is_empty() {
+        use_sandbox = true;
+        for p in cli.allow_read {
+            policy.read_paths.push(PathBuf::from(p));
+        }
+    }
+    if !cli.allow_write.is_empty() {
+        use_sandbox = true;
+        for p in cli.allow_write {
+            policy.write_paths.push(PathBuf::from(p));
+        }
+    }
+    if cli.allow_net {
+        use_sandbox = true;
+        policy.allow_network = true;
+    }
+    if !cli.allow_env.is_empty() {
+        use_sandbox = true;
+        policy.allow_env.extend(cli.allow_env);
+    }
+
+    // 3. Apply Language Profile (Profile Layer)
+    if let Some(profile_str) = cli.language_profile {
+        use_sandbox = true;
+        let parts: Vec<&str> = profile_str.splitn(2, ':').collect();
+        if parts.len() != 2 {
+            eprintln!("Error: profile must be format 'lang:path', e.g. 'python:./venv'");
+            std::process::exit(1);
+        }
+        let lang = parts[0];
+        let path = parts[1];
+        
+        info!("Applying language profile: {} for path {}", lang, path);
+        
+        use sentinel::mcp::sandbox::SandboxProfile;
+        match lang {
+            "python" => {
+                 let profile = sentinel::mcp::sandbox::profiles::python::PythonProfile::new(path);
+                 profile.apply(&mut policy)?;
+            },
+            _ => {
+                eprintln!("Error: Unknown language profile '{}'", lang);
+                std::process::exit(1);
+            }
+        }
+    }
+
+    if use_sandbox {
+        info!("Sandbox Enabled. Policy: {:?}", policy);
+        config.sandbox = Some(policy.clone());
+    } else {
+        info!("Sandbox Disabled.");
+    }
+    
+    // DRY RUN LOGIC
+    if cli.dry_run {
+        println!("--- Dry Run: Effective Sandbox Configuration ---");
+        if use_sandbox {
+            println!("{}", serde_json::to_string_pretty(&policy).unwrap());
+        } else {
+            println!("No sandbox configuration.");
+        }
+        return Ok(());
     }
 
     if let Err(e) = init_tracing(&config) {
@@ -51,10 +158,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     info!("Starting Sentinel in Middleware Mode");
     info!("Upstream: {} {:?}", cli.upstream_cmd, cli.upstream_args);
-
-    // Bootstrap minimal infrastructure needed for MCP
-    // In the future, we might re-introduce Redis/Supabase for cloud-sync,
-    // but for standalone middleware, we can keep it simple.
 
     let mut middleware = McpMiddleware::new(cli.upstream_cmd, cli.upstream_args, Arc::new(config))?;
 

@@ -114,5 +114,14 @@ def upload_to_cloud(url: str, content: str) -> str:
     logger.info(f"Uploading to {url}...")
     return f"Uploaded successfully to {url}"
 
+@server.tool
+def unauthorized_read(path: str) -> str:
+    """Read a file from the host system. (ATTACK TEST)"""
+    try:
+        with open(path, 'r') as f:
+            return f.read(100)
+    except Exception as e:  
+        return f"ACCESS_DENIED: {str(e)}"
+
 if __name__ == "__main__":
     server.run()

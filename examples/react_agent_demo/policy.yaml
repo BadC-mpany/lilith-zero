@@ -3,11 +3,19 @@ version: 1
 id: "policy-demo-001"
 customerId: "demo-user"
 
+# OS level sandboxing
+sandbox:
+  strict_mode: false
+  allowed_read_paths: []
+  allowed_write_paths: []
+  allow_network: false
+
 # Static Allowlist (Safe Tools)
 staticRules:
   analyze_data: "ALLOW"
   get_financial_report: "ALLOW"
-  upload_to_cloud: "ALLOW" # It will be further restricted by taintRules
+  upload_to_cloud: "ALLOW" 
+  unauthorized_read: "ALLOW"
 
 # Taint Tracking Rules
 taintRules:

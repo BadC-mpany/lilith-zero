@@ -7,129 +7,166 @@
 use anyhow::{Context, Result};
 use std::process::Stdio;
 use tokio::process::{Child, Command};
-use tracing::info;
+use tracing::{info, debug};
 
 #[cfg(windows)]
 use win32job::{ExtendedLimitInfo, Job};
 
-/// Process supervisor that ensures child process lifecycle is bound to parent.
-///
-/// On Windows: Uses Job Objects with JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE.
-/// On Linux: Uses PR_SET_PDEATHSIG to send SIGKILL when parent dies.
-///
-/// The `job` field is intentionally never read after construction because
-/// the Job Object's cleanup happens automatically when it is dropped.
-/// Dropping the Job (when ProcessSupervisor is dropped) triggers the
-/// JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE behavior, terminating all assigned processes.
+use tokio::io::{AsyncRead, AsyncWrite};
+
+/// Abstract handle for a child process (standard or sandboxed).
+pub enum ChildHandle {
+    Tokio(Child),
+    #[cfg(windows)]
+    Custom(crate::mcp::sandbox::windows::AppContainerChild),
+}
+
+impl ChildHandle {
+    pub async fn kill(&mut self) -> Result<()> {
+        match self {
+            Self::Tokio(c) => c.kill().await.context("Failed to kill tokio child"),
+            #[cfg(windows)]
+            Self::Custom(c) => c.kill().await,
+        }
+    }
+
+    pub fn start_kill(&mut self) -> Result<()> {
+        match self {
+            Self::Tokio(c) => c.start_kill().context("Failed to start kill"),
+            #[cfg(windows)]
+            Self::Custom(c) => c.start_kill(),
+        }
+    }
+    
+    pub async fn wait(&mut self) -> Result<std::process::ExitStatus> {
+        match self {
+            Self::Tokio(c) => c.wait().await.context("Failed to wait on tokio child"),
+            #[cfg(windows)]
+            Self::Custom(c) => c.wait().await,
+        }
+    }
+
+    #[cfg(unix)]
+    pub fn id(&self) -> Option<u32> {
+        match self {
+            Self::Tokio(c) => c.id(),
+        }
+    }
+}
+
 pub struct ProcessSupervisor {
-    /// Windows Job Object handle. Kept alive to maintain process binding.
-    /// When dropped, all processes in the job are terminated.
     #[cfg(windows)]
     #[allow(dead_code)]
     job: Job,
-    pub child: Child,
+    pub child: ChildHandle,
 }
 
 impl ProcessSupervisor {
-    pub fn spawn(cmd: &str, args: &[String]) -> Result<Self> {
-        info!("Spawning upstream tool: {} {:?}", cmd, args);
+    /// Spawn a process with optional sandboxing.
+    /// Returns the Supervisor (lifecycle manager) and the Stdio streams.
+    pub fn spawn(
+        cmd: &str, 
+        args: &[String], 
+        policy: Option<crate::mcp::sandbox::SandboxPolicy>
+    ) -> Result<(Self, Option<Box<dyn AsyncWrite + Unpin + Send>>, Option<Box<dyn AsyncRead + Unpin + Send>>, Option<Box<dyn AsyncRead + Unpin + Send>>)> {
+        info!("Spawning upstream tool: {} {:?} (Sandboxed: {})", cmd, args, policy.is_some());
 
+        // Check if we need Windows Custom Path
         #[cfg(windows)]
-        let job = {
-            let job =
-                Job::create().map_err(|e| anyhow::anyhow!("Failed to create Job Object: {}", e))?;
-            let mut limits = ExtendedLimitInfo::new();
-            limits.limit_kill_on_job_close();
-            job.set_extended_limit_info(&limits)
-                .map_err(|e| anyhow::anyhow!("Failed to set job limits: {}", e))?;
-            job
-        };
+        if let Some(ref pol) = policy {
+             // Use Custom AppContainer Spawner
+             let (child_handle, stdin, stdout, stderr) = crate::mcp::sandbox::windows::spawn_custom(cmd, args, pol)?;
+             
+             let job = Job::create().map_err(|e| anyhow::anyhow!("Failed to create Job Object: {}", e))?;
+             let mut limits = ExtendedLimitInfo::new();
+             limits.limit_kill_on_job_close();
+             job.set_extended_limit_info(&limits)?;
+             
+             // Assign process handle to job
+             let raw_handle = child_handle.raw_handle();
+             if let Err(e) = job.assign_process(raw_handle as isize) {
+                 debug!("Could not assign AppContainer to Job (may already be in one): {}", e);
+             }
 
-        #[cfg(unix)]
-        let child = {
-            // On Unix, use pre_exec to set PR_SET_PDEATHSIG before exec
-            // This ensures the child receives SIGKILL if the parent dies
-            // On Unix, use pre_exec to set PR_SET_PDEATHSIG before exec
-            // This ensures the child receives SIGKILL if the parent dies
-            // SAFETY:
-            // 1. `pre_exec` runs in the child process after `fork` but before `exec`.
-            //    It is critical that only async-signal-safe functions are called here.
-            //    `libc::prctl` is a direct syscall wrapper and is generally considered safe for this use.
-            // 2. We use `PR_SET_PDEATHSIG` with `SIGKILL` to ensure the child is ruthlessly terminated
-            //    if the parent (Sentinel) crashes or exits. This is a core security invariant for
-            //    process binding.
-            unsafe {
-                Command::new(cmd)
-                    .args(args)
-                    .stdin(Stdio::piped())
-                    .stdout(Stdio::piped())
-                    .stderr(Stdio::piped())
-                    .pre_exec(|| {
-                        // PR_SET_PDEATHSIG = 1, SIGKILL = 9
-                        libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL);
-                        Ok(())
-                    })
-                    .spawn()
-                    .context("Failed to spawn upstream tool process")?
-            }
-        };
-
-        #[cfg(windows)]
-        let child = Command::new(cmd)
-            .args(args)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .context("Failed to spawn upstream tool process")?;
-
-        #[cfg(windows)]
-        {
-            // Assign process to job object for lifecycle binding
-            if let Some(h) = child.raw_handle() {
-                let handle = h as isize;
-                job.assign_process(handle)
-                    .map_err(|e| anyhow::anyhow!("Failed to assign process to job: {}", e))?;
-            }
+             return Ok((
+                 Self { job, child: ChildHandle::Custom(child_handle) },
+                 stdin,
+                 stdout,
+                 stderr
+             ));
         }
 
-        Ok(Self {
-            #[cfg(windows)]
-            job,
-            child,
-        })
+        // Standard Tokio Path (Linux, macOS, or Windows non-sandboxed)
+        let mut command = Command::new(cmd);
+        command.args(args)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+
+        if let Some(_pol) = &policy {
+            #[cfg(target_os = "linux")]
+            crate::mcp::sandbox::linux::spawn(&mut command, _pol)?;
+            
+            #[cfg(target_os = "macos")]
+            crate::mcp::sandbox::macos::spawn(&mut command, _pol)?;
+        }
+
+        #[cfg(unix)]
+        unsafe {
+            command.pre_exec(|| {
+                 #[cfg(target_os = "linux")]
+                 libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL);
+                 #[cfg(target_os = "macos")]
+                 { /* Seatbelt might handle this, or we add generic pdeathsig if available on mac? Mac doesn't strictly have pdeathsig like Linux */ }
+                 Ok(())
+            });
+        }
+        
+        // Windows Job Object for standard path
+        #[cfg(windows)]
+        let job = {
+             let job = Job::create().context("Failed to create Job")?;
+             let mut limits = ExtendedLimitInfo::new();
+             limits.limit_kill_on_job_close();
+             job.set_extended_limit_info(&limits)?;
+             job
+        };
+
+        let mut child = command.spawn().context("Failed to spawn upstream tool")?;
+
+        #[cfg(windows)]
+        if let Some(h) = child.raw_handle() {
+             job.assign_process(h as isize)?;
+        }
+
+        let stdin = child.stdin.take().map(|s| Box::new(s) as Box<dyn AsyncWrite + Unpin + Send>);
+        let stdout = child.stdout.take().map(|s| Box::new(s) as Box<dyn AsyncRead + Unpin + Send>);
+        let stderr = child.stderr.take().map(|s| Box::new(s) as Box<dyn AsyncRead + Unpin + Send>);
+
+        Ok((
+            Self {
+                #[cfg(windows)]
+                job,
+                child: ChildHandle::Tokio(child),
+            },
+            stdin,
+            stdout,
+            stderr
+        ))
     }
 
     pub async fn kill(&mut self) -> Result<()> {
-        self.child
-            .kill()
-            .await
-            .context("Failed to kill child process")?;
-        Ok(())
+        self.child.kill().await
     }
 }
 
 impl Drop for ProcessSupervisor {
     fn drop(&mut self) {
-        // Best effort cleanup.
-        // On Windows, Job Object handles it.
-        // On Unix, PR_SET_PDEATHSIG handles parent death.
-        // But for explicit drops (restarts), we try to kill.
-        
-        let _ = self.child.start_kill(); 
+        let _ = self.child.start_kill();
         
         #[cfg(unix)]
-        {
-            if let Some(id) = self.child.id() {
-                // SAFETY:
-                // 1. the pid is obtained from the child object which we own, so it's likely valid.
-                // 2. libc::kill is a syscall. Sending SIGKILL is safe from memory perspective.
-                // 3. We ignore errors because if the process is already dead, our job is done.
-                // 4. This is a best-effort fallback if the OS-level binding failed.
-                unsafe {
-                   libc::kill(id as i32, libc::SIGKILL);
-                }
-            }
+        if let Some(id) = self.child.id() {
+             unsafe { libc::kill(id as i32, libc::SIGKILL); }
         }
     }
 }
