@@ -1,66 +1,59 @@
-import os
-import sys
+"""
+Sandboxed Agent Demo - Sentinel with AppContainer Isolation.
+
+Demonstrates the agent running inside a sandboxed environment with
+explicit Deno-style permissions.
+
+Copyright 2024 Google DeepMind. All Rights Reserved.
+"""
+
 import asyncio
 import logging
+import os
+import sys
+
 from rich.console import Console
 
-# Ensure sentinel_sdk is discoverable
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../sentinel_sdk/src")))
+# Import from parent
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 from sentinel_sdk import Sentinel
-from agent import ElegantAgent
+from examples.react_agent_demo.agent import ElegantAgent
 
-# Resolve paths
+# Configuration
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DEFAULT_BIN = os.path.abspath(os.path.join(BASE_DIR, "../../sentinel/target/debug/sentinel.exe"))
-SENTINEL_BIN = os.getenv("SENTINEL_BINARY_PATH", DEFAULT_BIN)
+SENTINEL_BIN = os.path.abspath(
+    os.path.join(BASE_DIR, "../../sentinel/target/debug/sentinel.exe")
+)
 
 console = Console()
+logging.basicConfig(level=logging.DEBUG)
 
-async def run_demo():
-    # 1. Identify Python Profile Path (Prefix)
-    # This ensures the sandbox allows Python to read its own libraries.
-    python_prefix = sys.prefix
-    
-    console.print(f"[bold blue]Starting Sandboxed Sentinel Demo[/bold blue]")
+
+async def main() -> None:
+    """Run the agent inside a sandboxed Sentinel environment."""
+    console.print("[bold cyan]Starting Sandboxed Sentinel Demo[/bold cyan]")
     console.print(f"Sentinel: [white]{SENTINEL_BIN}[/white]")
-    console.print(f"Python Profile: [white]{python_prefix}[/white]")
-    console.print(f"Allowed Path: [white]{BASE_DIR}[/white]\n")
+    console.print(f"Workspace: [white]{BASE_DIR}[/white]\n")
 
-    # Start Sentinel using the helper method
-    sentinel = Sentinel.start(
-        upstream=f"{sys.executable} {os.path.join(BASE_DIR, 'mock_server.py')}",
-        binary_path=SENTINEL_BIN,
-        language_profile=f"python:{python_prefix}",
-        allow_read=[BASE_DIR, "C:\\ProgramData\\miniconda3"],
-        dry_run=True
-    )
-    
-    async with sentinel:
+    async with Sentinel(
+        f"{sys.executable} {os.path.join(BASE_DIR, 'mock_server.py')}",
+        binary=SENTINEL_BIN,
+        language_profile=f"python:{sys.prefix}",
+        allow_read=[BASE_DIR, sys.base_prefix],
+    ) as sentinel:
         agent = ElegantAgent(sentinel)
-        
-        # 1. Initialize (List tools)
+
+        # Initialize (list tools via MCP handshake)
         await agent.initialize()
-        
-        console.print("\n[bold green]Sandbox active and handshake successful![/bold green]")
-        console.print("The agent is currently running inside an LPAC AppContainer.")
-        console.print("It can read its own Python libraries and the current directory, but nothing else.")
-        
-        # For demonstration, we'll just query one thing and exit
-        # This proves the full MCP + Sandbox pipeline is working.
-        console.print("\n[bold cyan]Sending test query...[/bold cyan]")
-        agent.history = [{"role": "system", "content": agent._get_system_prompt()}]
-        agent.history.append({"role": "user", "content": "Fetch the secret from the secret vault and then say goodbye."})
-        
-        await agent._reasoning_loop()
-        
-    console.print("\n[bold yellow]Demo Completed.[/bold yellow]")
+
+        # Interactive chat
+        await agent.chat()
+
 
 if __name__ == "__main__":
-    # Configure logging to see Sentinel's internal sandbox setup logs
-    # Using DEBUG to capture [Sentinel Stderr] output which contains Rust logs
-    logging.basicConfig(level=logging.DEBUG)
     try:
-        asyncio.run(run_demo())
-    except Exception as e:
-        if "I/O operation on closed pipe" not in str(e):
-            console.print(f"[bold red]Demo Error:[/bold red] {e}")
+        asyncio.run(main())
+    except (KeyboardInterrupt, EOFError):
+        pass
+    finally:
+        console.print("\n[bold yellow]Sandboxed Session Closed.[/bold yellow]")

@@ -1,383 +1,406 @@
-import os
-import logging
-import json
+"""
+Sentinel SDK - Secure MCP Middleware for AI Agents.
+
+This module provides the core Sentinel class for wrapping MCP tool servers
+with policy enforcement, session security, and process isolation.
+
+Example:
+    async with Sentinel("python mcp_server.py", policy="policy.yaml") as s:
+        tools = await s.list_tools()
+        result = await s.call_tool("my_tool", {"arg": "value"})
+
+Copyright 2024 Google DeepMind. All Rights Reserved.
+"""
+
 import asyncio
+import json
+import logging
+import os
+import shutil
 import uuid
-from typing import List, Optional, Any, Dict
+from typing import Any, Dict, List, Optional
 
-# Handle imports whether running as package or directly
-try:
-    from .constants import (
-        MCP_PROTOCOL_VERSION,
-        SDK_NAME,
-        SESSION_TIMEOUT_ITERATIONS,
-        SESSION_POLL_INTERVAL_SEC,
-        ENV_BINARY_PATH,
-        ENV_POLICY_PATH,
-        get_binary_name,
-    )
-    from .constants import __version__
-except ImportError:
-    from constants import (
-        MCP_PROTOCOL_VERSION,
-        SDK_NAME,
-        SESSION_TIMEOUT_ITERATIONS,
-        SESSION_POLL_INTERVAL_SEC,
-        ENV_BINARY_PATH,
-        ENV_POLICY_PATH,
-        get_binary_name,
-    )
-    from constants import __version__
+__all__ = ["Sentinel"]
 
-logger = logging.getLogger("sentinel_sdk")
+# Module-level constants
+_MCP_PROTOCOL_VERSION = "2024-11-05"
+_SDK_NAME = "sentinel-sdk"
+_SDK_VERSION = "0.2.0"
+_SESSION_TIMEOUT_SEC = 5.0
+_SESSION_POLL_INTERVAL_SEC = 0.1
+_ENV_BINARY_PATH = "SENTINEL_BINARY_PATH"
+_BINARY_NAME = "sentinel.exe" if os.name == "nt" else "sentinel"
+_BINARY_SEARCH_PATHS = [
+    "sentinel/target/release/",
+    "sentinel/target/debug/",
+    "target/release/",
+    "./",
+]
+
+_logger = logging.getLogger("sentinel_sdk")
+
+
+def _find_binary() -> Optional[str]:
+    """Discover Sentinel binary via environment, PATH, or relative paths."""
+    # 1. Environment variable
+    env_path = os.getenv(_ENV_BINARY_PATH)
+    if env_path and os.path.exists(env_path):
+        return os.path.abspath(env_path)
+
+    # 2. System PATH
+    path_binary = shutil.which(_BINARY_NAME)
+    if path_binary:
+        return path_binary
+
+    # 3. Relative search paths (development)
+    for search_path in _BINARY_SEARCH_PATHS:
+        candidate = os.path.join(search_path, _BINARY_NAME)
+        if os.path.exists(candidate):
+            return os.path.abspath(candidate)
+
+    return None
+
 
 class Sentinel:
+    """Sentinel Security Middleware for AI Agents.
+
+    Wraps an upstream MCP tool server with policy enforcement, session integrity,
+    and optional process sandboxing.
+
+    Attributes:
+        session_id: The HMAC-signed session identifier (set after connect).
+
+    Example:
+        async with Sentinel("python server.py", policy="policy.yaml") as s:
+            tools = await s.list_tools()
+            result = await s.call_tool("read_file", {"path": "/data/file.txt"})
     """
-    Sentinel - Deterministic Security Middleware for AI Agents.
-    
-    Wraps an upstream MCP tool server (subprocess) with policy enforcement,
-    session security, and taint tracking.
-    """
-    
-    def __init__(self, 
-                 upstream_cmd: str, 
-                 upstream_args: Optional[List[str]] = None,
-                 binary_path: Optional[str] = None,
-                 policy_path: Optional[str] = None,
-                 mcp_version: Optional[str] = None,
-                 audience_token: Optional[str] = None,
-                 # Sandbox flags
-                 language_profile: Optional[str] = None,
-                 allow_read: Optional[List[str]] = None,
-                 allow_write: Optional[List[str]] = None,
-                 allow_net: bool = False,
-                 allow_env: Optional[List[str]] = None,
-                 dry_run: bool = False,
-                 skip_handshake: bool = False):
-        
-        self.upstream_cmd = upstream_cmd
-        self.upstream_args = upstream_args if upstream_args is not None else []
-        
-        # Sandbox config
-        self.language_profile = language_profile
-        self.allow_read = allow_read or []
-        self.allow_write = allow_write or []
-        self.allow_net = allow_net
-        self.allow_env = allow_env or []
-        self.dry_run = dry_run
-        self.skip_handshake = skip_handshake
-        
-        # Resolve Binary Path
-        _bin_path = binary_path or os.getenv(ENV_BINARY_PATH, get_binary_name())
-        self.binary_path = os.path.abspath(_bin_path)
-        
-        # Resolve Policy Path
-        _pol_path = policy_path or os.getenv(ENV_POLICY_PATH)
-        self.policy_path = os.path.abspath(_pol_path) if _pol_path else None
-        
-        self.mcp_version_preference = mcp_version or MCP_PROTOCOL_VERSION
-        self.audience_token = audience_token
-        
-        self.process: Optional[asyncio.subprocess.Process] = None
-        self.session_id: Optional[str] = None
+
+    # -------------------------------------------------------------------------
+    # Construction
+    # -------------------------------------------------------------------------
+
+    def __init__(
+        self,
+        upstream: str,
+        *,
+        policy: Optional[str] = None,
+        binary: Optional[str] = None,
+        allow_read: Optional[List[str]] = None,
+        allow_write: Optional[List[str]] = None,
+        allow_net: bool = False,
+        allow_env: Optional[List[str]] = None,
+        language_profile: Optional[str] = None,
+    ) -> None:
+        """Initialize Sentinel middleware configuration.
+
+        Args:
+            upstream: Command to run the upstream MCP server (e.g., "python server.py").
+            policy: Path to policy YAML file for rule-based enforcement.
+            binary: Path to Sentinel binary (auto-discovered if not provided).
+            allow_read: Paths the sandboxed process may read.
+            allow_write: Paths the sandboxed process may write.
+            allow_net: Whether to allow network access from sandbox.
+            allow_env: Environment variables to expose to sandbox.
+            language_profile: Runtime profile (e.g., "python:/path/to/venv").
+
+        Raises:
+            ValueError: If upstream command is empty.
+            FileNotFoundError: If Sentinel binary cannot be found.
+        """
+        if not upstream or not upstream.strip():
+            raise ValueError("upstream command cannot be empty")
+
+        # Parse upstream command
+        parts = upstream.strip().split()
+        self._upstream_cmd = parts[0]
+        self._upstream_args = parts[1:] if len(parts) > 1 else []
+
+        # Resolve binary path
+        self._binary_path = binary or _find_binary()
+        if self._binary_path is None:
+            raise FileNotFoundError(
+                f"Sentinel binary not found. Set {_ENV_BINARY_PATH} or provide binary=."
+            )
+        self._binary_path = os.path.abspath(self._binary_path)
+
+        # Policy configuration
+        self._policy_path = os.path.abspath(policy) if policy else None
+
+        # Sandbox permissions (Deno-style)
+        self._allow_read = allow_read or []
+        self._allow_write = allow_write or []
+        self._allow_net = allow_net
+        self._allow_env = allow_env or []
+        self._language_profile = language_profile
+
+        # Runtime state
+        self._process: Optional[asyncio.subprocess.Process] = None
+        self._session_id: Optional[str] = None
         self._lock = asyncio.Lock()
         self._pending_requests: Dict[str, asyncio.Future] = {}
         self._reader_task: Optional[asyncio.Task] = None
         self._stderr_task: Optional[asyncio.Task] = None
-        
-        # Captured output
-        self.stdout_lines: List[str] = []
-        self.stderr_lines: List[str] = []
-    
-    @staticmethod
-    def start(
-        upstream: str, 
-        binary_path: Optional[str] = None,
-        policy_path: Optional[str] = None,
-        mcp_version: Optional[str] = None,
-        **kwargs
-    ):
-        """
-        Legacy/Sugar factory method to start Sentinel with a single command string.
-        """
-        parts = upstream.split()
-        if not parts:
-            raise ValueError("upstream command cannot be empty")
-        
-        return Sentinel(
-            upstream_cmd=parts[0],
-            upstream_args=parts[1:],
-            binary_path=binary_path,
-            policy_path=policy_path,
-            mcp_version=mcp_version,
-            **kwargs
-        )
 
-    async def __aenter__(self):
-        await self.start_session()
+    @property
+    def session_id(self) -> Optional[str]:
+        """The HMAC-signed session identifier."""
+        return self._session_id
+
+    # -------------------------------------------------------------------------
+    # Async Context Manager Protocol
+    # -------------------------------------------------------------------------
+
+    async def __aenter__(self) -> "Sentinel":
+        """Start the Sentinel middleware and perform MCP handshake."""
+        await self._connect()
         return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        if not self.dry_run:
-            await self.stop_session()
+    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
+        """Terminate the Sentinel process and cleanup resources."""
+        await self._disconnect()
 
-    async def start_session(self):
-        """Start the Sentinel middleware process."""
-        cmd = [self.binary_path]
-        if self.policy_path:
-            cmd.extend(["--policy", self.policy_path])
-        
-        # Sandbox Args
-        if self.language_profile:
-            cmd.extend(["--language-profile", self.language_profile])
-        
-        for p in self.allow_read:
-            cmd.extend(["--allow-read", p])
-            
-        for p in self.allow_write:
-            cmd.extend(["--allow-write", p])
-            
-        if self.allow_net:
-            cmd.append("--allow-net")
-            
-        for e in self.allow_env:
-            cmd.extend(["--allow-env", e])
-            
-        if self.dry_run:
-            cmd.append("--dry-run") # Hyphen fixed
+    # -------------------------------------------------------------------------
+    # Public API
+    # -------------------------------------------------------------------------
 
-        cmd.extend(["--upstream-cmd", self.upstream_cmd])
-        if self.upstream_args:
-            cmd.append("--")
-            cmd.extend(self.upstream_args)
+    async def list_tools(self) -> List[Dict[str, Any]]:
+        """Fetch available tools from the upstream MCP server.
 
-        logger.info(f"Spawning Sentinel: {cmd}")
-        
+        Returns:
+            List of tool configuration dictionaries with 'name', 'description',
+            and 'inputSchema' keys.
+        """
+        response = await self._send_request("tools/list", {})
+        return response.get("tools", [])
+
+    async def call_tool(self, name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
+        """Execute a tool call through Sentinel policy enforcement.
+
+        Args:
+            name: The name of the tool to invoke.
+            arguments: Dictionary of tool arguments.
+
+        Returns:
+            MCP result object (typically containing 'content' key).
+
+        Raises:
+            RuntimeError: If the tool call is blocked by policy or fails.
+        """
+        payload = {"name": name, "arguments": arguments}
+        return await self._send_request("tools/call", payload)
+
+    # -------------------------------------------------------------------------
+    # Connection Management (Private)
+    # -------------------------------------------------------------------------
+
+    async def _connect(self) -> None:
+        """Spawn Sentinel process and perform MCP handshake."""
+        cmd = self._build_command()
+        _logger.info("Spawning Sentinel: %s", " ".join(cmd))
+
         try:
-            self.process = await asyncio.create_subprocess_exec(
+            self._process = await asyncio.create_subprocess_exec(
                 *cmd,
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
         except FileNotFoundError:
-            raise FileNotFoundError(f"Sentinel binary not found at: {self.binary_path}")
-            
-        if self.dry_run:
-            return
+            raise FileNotFoundError(f"Sentinel binary not found: {self._binary_path}")
 
-        # Start reading stdout loop (optional if skip_handshake)
-        if not self.skip_handshake:
-            self._reader_task = asyncio.create_task(self._read_stdout_loop())
-        
-        # Start reading stderr to capture session ID
-        self._stderr_task = asyncio.create_task(self._process_stderr())
-        
-        if self.skip_handshake:
-            # We still wait for session_id if possible
-             for _ in range(SESSION_TIMEOUT_ITERATIONS):
-                if self.session_id: break
-                await asyncio.sleep(SESSION_POLL_INTERVAL_SEC)
-             return
+        # Start background readers
+        self._reader_task = asyncio.create_task(self._read_stdout_loop())
+        self._stderr_task = asyncio.create_task(self._read_stderr_loop())
 
-        # Wait for Session ID to be established (handshake)
-        for _ in range(SESSION_TIMEOUT_ITERATIONS):
-            if self.session_id:
-                break
-            await asyncio.sleep(SESSION_POLL_INTERVAL_SEC)
-            
-        if not self.session_id:
-            # Check if process died
-            if self.process.returncode is not None:
-                raise RuntimeError(f"Sentinel process died immediately. Return code: {self.process.returncode}")
-            raise TimeoutError("Timed out waiting for Sentinel Session ID")
-            
-        # Perform MCP Handshake
-        logger.info("Sending initialize request...")
-        init_result = await self._send_request("initialize", {
-            "protocolVersion": self.mcp_version_preference, 
-            "capabilities": {}, 
-            "clientInfo": {"name": SDK_NAME, "version": __version__},
-            "_audience_token": self.audience_token
-        })
-        logger.info(f"Initialized: {init_result}")
-        
-        # Send initialized notification
+        # Wait for session ID
+        await self._wait_for_session()
+
+        # MCP handshake
+        _logger.info("Performing MCP handshake...")
+        await self._send_request(
+            "initialize",
+            {
+                "protocolVersion": _MCP_PROTOCOL_VERSION,
+                "capabilities": {},
+                "clientInfo": {"name": _SDK_NAME, "version": _SDK_VERSION},
+            },
+        )
         await self._send_notification("notifications/initialized", {})
+        _logger.info("Handshake complete. Session: %s", self._session_id)
 
-    async def stop_session(self):
-        """
-        Terminate the Sentinel process and cleanup resources.
-        
-        This method cancels the reader tasks and terminates the subprocess.
-        """
+    async def _disconnect(self) -> None:
+        """Terminate subprocess and cancel background tasks."""
         if self._reader_task:
             self._reader_task.cancel()
         if self._stderr_task:
             self._stderr_task.cancel()
-            
-        if self.process:
+
+        if self._process:
             try:
-                self.process.terminate()
-                await self.process.wait()
-            except ProcessLookupError:
-                pass
-        self.session_id = None
+                self._process.terminate()
+                await asyncio.wait_for(self._process.wait(), timeout=5.0)
+            except (ProcessLookupError, asyncio.TimeoutError):
+                self._process.kill()
 
-    async def _process_stderr(self):
-        """
-        Internal task to read stderr for logs and session handshake.
-        
-        Extracts 'SENTINEL_SESSION_ID' printed by the middleware on startup.
-        """
-        if not self.process or not self.process.stderr:
+        self._session_id = None
+
+    def _build_command(self) -> List[str]:
+        """Construct the Sentinel CLI command."""
+        cmd = [self._binary_path]
+
+        if self._policy_path:
+            cmd.extend(["--policy", self._policy_path])
+
+        if self._language_profile:
+            cmd.extend(["--language-profile", self._language_profile])
+
+        for path in self._allow_read:
+            cmd.extend(["--allow-read", path])
+
+        for path in self._allow_write:
+            cmd.extend(["--allow-write", path])
+
+        if self._allow_net:
+            cmd.append("--allow-net")
+
+        for env_var in self._allow_env:
+            cmd.extend(["--allow-env", env_var])
+
+        cmd.extend(["--upstream-cmd", self._upstream_cmd])
+        if self._upstream_args:
+            cmd.append("--")
+            cmd.extend(self._upstream_args)
+
+        return cmd
+
+    async def _wait_for_session(self) -> None:
+        """Poll for session ID from stderr."""
+        iterations = int(_SESSION_TIMEOUT_SEC / _SESSION_POLL_INTERVAL_SEC)
+        for _ in range(iterations):
+            if self._session_id:
+                return
+            await asyncio.sleep(_SESSION_POLL_INTERVAL_SEC)
+
+        if self._process and self._process.returncode is not None:
+            raise RuntimeError(
+                f"Sentinel process exited with code {self._process.returncode}"
+            )
+        raise TimeoutError("Timed out waiting for Sentinel session ID")
+
+    # -------------------------------------------------------------------------
+    # I/O Handling (Private)
+    # -------------------------------------------------------------------------
+
+    async def _read_stderr_loop(self) -> None:
+        """Read stderr for logs and session handshake."""
+        if not self._process or not self._process.stderr:
             return
-            
+
         try:
             while True:
-                line = await self.process.stderr.readline()
+                line = await self._process.stderr.readline()
                 if not line:
                     break
-                
-                line_str = line.decode().strip()
-                self.stderr_lines.append(line_str)
-                # Check for Session ID handshake
-                if line_str.startswith("SENTINEL_SESSION_ID="):
-                    self.session_id = line_str.split("=", 1)[1]
-                    logger.info(f"Captured Session ID: {self.session_id}")
+
+                text = line.decode().strip()
+                if text.startswith("SENTINEL_SESSION_ID="):
+                    self._session_id = text.split("=", 1)[1]
+                    _logger.info("Session ID: %s", self._session_id)
                 else:
-                    # Forward other logs to python logger
-                    logger.debug(f"[Sentinel Stderr] {line_str}")
+                    _logger.debug("[stderr] %s", text)
         except asyncio.CancelledError:
             pass
-        except Exception as e:
-            logger.error(f"Error reading stderr: {e}")
 
-    async def _read_stdout_loop(self):
-        """
-        Internal loop to read JSON-RPC responses from the middleware's stdout.
-        
-        Dispatches responses to pending request futures.
-        """
-        if not self.process or not self.process.stdout:
+    async def _read_stdout_loop(self) -> None:
+        """Read JSON-RPC responses from stdout."""
+        if not self._process or not self._process.stdout:
             return
 
         try:
             while True:
-                line = await self.process.stdout.readline()
+                line = await self._process.stdout.readline()
                 if not line:
                     break
-                
-                line_str = line.decode().strip()
-                self.stdout_lines.append(line_str)
-                
+
+                text = line.decode().strip()
                 try:
-                    msg = json.loads(line_str)
-                    
-                    # Handle Response
+                    msg = json.loads(text)
                     if "id" in msg:
-                        req_id = str(msg["id"])
-                        if req_id in self._pending_requests:
-                            future = self._pending_requests.pop(req_id)
-                            if not future.done():
-                                if "error" in msg and msg["error"] is not None:
-                                    future.set_exception(RuntimeError(f"Sentinel RPC Error: {msg['error']}"))
-                                else:
-                                    future.set_result(msg.get("result", {}))
+                        self._dispatch_response(msg)
                 except json.JSONDecodeError:
-                    # Not a JSON line, maybe a log from upstream tool
-                    logger.debug(f"[Sentinel Stdout] {line_str}")
+                    _logger.debug("[stdout] %s", text)
         except asyncio.CancelledError:
             pass
-        except Exception as e:
-            logger.error(f"Error in read loop: {e}")
         finally:
-            # Mark all pending requests as failed if the loop ends
-            # This prevents _send_request from hanging indefinitely
-            for req_id, future in list(self._pending_requests.items()):
+            # Fail pending requests if loop ends
+            for future in self._pending_requests.values():
                 if not future.done():
-                    future.set_exception(RuntimeError("Sentinel process terminated unexpectedly"))
+                    future.set_exception(
+                        RuntimeError("Sentinel process terminated unexpectedly")
+                    )
             self._pending_requests.clear()
 
-    async def _send_notification(self, method: str, params: Dict[str, Any]):
-        """Sent a JSON-RPC notification (no ID) to the middleware."""
-        if not self.process or not self.process.stdin:
-            raise RuntimeError("Sentinel process not running")
-            
-        request = {
-            "jsonrpc": "2.0",
-            "method": method,
-            "params": params
-        }
-        
-        data = json.dumps(request) + "\n"
-        async with self._lock:
-            self.process.stdin.write(data.encode())
-            await self.process.stdin.drain()
+    def _dispatch_response(self, msg: Dict[str, Any]) -> None:
+        """Route JSON-RPC response to waiting future."""
+        req_id = str(msg["id"])
+        future = self._pending_requests.pop(req_id, None)
+        if future and not future.done():
+            if "error" in msg and msg["error"]:
+                future.set_exception(
+                    RuntimeError(f"Sentinel error: {msg['error']}")
+                )
+            else:
+                future.set_result(msg.get("result", {}))
 
-    async def _send_request(self, method: str, params: Optional[Dict[str, Any]]) -> Any:
-        """
-        Send a JSON-RPC request and wait for the response.
-        
-        Automatically injects the session ID into the parameters.
-        """
-        if not self.process or not self.process.stdin:
+    # -------------------------------------------------------------------------
+    # JSON-RPC Transport (Private)
+    # -------------------------------------------------------------------------
+
+    async def _send_notification(self, method: str, params: Dict[str, Any]) -> None:
+        """Send JSON-RPC notification (no response expected)."""
+        if not self._process or not self._process.stdin:
+            raise RuntimeError("Sentinel process not running")
+
+        request = {"jsonrpc": "2.0", "method": method, "params": params}
+        data = json.dumps(request) + "\n"
+
+        async with self._lock:
+            self._process.stdin.write(data.encode())
+            await self._process.stdin.drain()
+
+    async def _send_request(
+        self, method: str, params: Optional[Dict[str, Any]] = None
+    ) -> Any:
+        """Send JSON-RPC request and await response."""
+        if not self._process or not self._process.stdin:
             raise RuntimeError("Sentinel process not running")
 
         req_id = str(uuid.uuid4())
-        
-        # Inject Session ID for strict validation
-        if self.session_id:
-            if params is None: 
-                params = {}
-            params["_sentinel_session_id"] = self.session_id
+
+        # Inject session ID for validation
+        if params is None:
+            params = {}
+        if self._session_id:
+            params["_sentinel_session_id"] = self._session_id
 
         request = {
             "jsonrpc": "2.0",
             "method": method,
-            "params": params or {},
-            "id": req_id
+            "params": params,
+            "id": req_id,
         }
-        
-        future = asyncio.Future()
+
+        future: asyncio.Future = asyncio.Future()
         self._pending_requests[req_id] = future
-        
+
         data = json.dumps(request) + "\n"
         async with self._lock:
-            self.process.stdin.write(data.encode())
-            await self.process.stdin.drain()
-            
+            self._process.stdin.write(data.encode())
+            await self._process.stdin.drain()
+
         try:
             return await asyncio.wait_for(future, timeout=30.0)
         except asyncio.TimeoutError:
-            # Clean up pending request on timeout
-            if req_id in self._pending_requests:
-                del self._pending_requests[req_id]
-            raise RuntimeError(f"Sentinel request '{method}' timed out after 30 seconds")
-
-    async def get_tools_config(self) -> List[Dict[str, Any]]:
-        """
-        Fetch the list of available tools from the upstream server through Sentinel.
-        
-        Returns:
-            List of tool configuration dictionaries.
-        """
-        response = await self._send_request("tools/list", {})
-        return response.get("tools", [])
-
-    async def execute_tool(self, tool_name: str, args: Dict[str, Any]) -> Any:
-        """
-        Execute a tool call through the Sentinel Middleware.
-        
-        Args:
-            tool_name: The name of the tool to call.
-            args: Dictionary of arguments for the tool.
-            
-        Returns:
-            The MCP result object (often containing a 'content' key).
-        """
-        payload = {
-            "name": tool_name,
-            "arguments": args
-        }
-        return await self._send_request("tools/call", payload)
+            self._pending_requests.pop(req_id, None)
+            raise RuntimeError(f"Request '{method}' timed out after 30s")
