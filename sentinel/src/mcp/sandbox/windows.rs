@@ -13,10 +13,8 @@ use windows::Win32::Foundation::{HANDLE, CloseHandle, WIN32_ERROR, HLOCAL};
 use windows::Win32::Security::{
     PSID, ACL, DACL_SECURITY_INFORMATION, SUB_CONTAINERS_AND_OBJECTS_INHERIT,
     SECURITY_ATTRIBUTES, SECURITY_CAPABILITIES, PSECURITY_DESCRIPTOR,
-    DuplicateTokenEx, TokenIntegrityLevel,
-    TOKEN_ALL_ACCESS, SecurityImpersonation, TokenPrimary, 
-    SID_AND_ATTRIBUTES, TOKEN_MANDATORY_LABEL,
-    SetTokenInformation
+    TOKEN_ALL_ACCESS, 
+    CreateRestrictedToken, DISABLE_MAX_PRIVILEGE, LUA_TOKEN
 };
 use windows::Win32::Security::Isolation::{
     CreateAppContainerProfile, DeriveAppContainerSidFromAppContainerName
@@ -162,11 +160,11 @@ impl SandboxManager {
 
 
          // Create 'Everyone' SID (S-1-1-0) which includes Low Integrity processes.
-         let mut sid_auth = windows::Win32::Security::SID_IDENTIFIER_AUTHORITY { Value: [0, 0, 0, 0, 0, 1] };
+         let sid_auth = windows::Win32::Security::SID_IDENTIFIER_AUTHORITY { Value: [0, 0, 0, 0, 0, 1] };
          let mut sid_ptr = PSID::default();
          unsafe {
              windows::Win32::Security::AllocateAndInitializeSid(
-                &mut sid_auth, 
+                &sid_auth, 
                 1, 
                 0, // SECURITY_WORLD_RID (Everyone)
                 0, 0, 0, 0, 0, 0, 0, 
@@ -266,51 +264,37 @@ impl SandboxManager {
         }
         */
 
-        // 1. Create Low Integrity Token
+        // 1. Create Restricted Medium Token (Tier 2)
+        // We use CreateRestrictedToken to strip Admin privileges (DISABLE_MAX_PRIVILEGE)
+        // and create a LUA/Sandboxed token (LUA_TOKEN).
+        // It stays at Medium Integrity (allowing Traversal) but loses Admin power.
         let token = unsafe {
             let mut current_token = HANDLE::default();
             OpenProcessToken(GetCurrentProcess(), TOKEN_ALL_ACCESS, &mut current_token)?;
             
-            let mut new_token = HANDLE::default();
-            DuplicateTokenEx(
+            let mut restricted_token = HANDLE::default();
+            let flags = DISABLE_MAX_PRIVILEGE | LUA_TOKEN;
+            
+            // Invoke CreateRestrictedToken
+            // SidsToDisable: None (DISABLE_MAX_PRIVILEGE handles the important ones like Admin)
+            // PrivilegesToDelete: None (DISABLE_MAX_PRIVILEGE handles this)
+            // SidsToRestrict: None (We want to remain Medium User)
+            let success = CreateRestrictedToken(
                 current_token,
-                TOKEN_ALL_ACCESS,
-                None, // Security Attributes
-                SecurityImpersonation,
-                TokenPrimary,
-                &mut new_token
-            )?;
+                flags,
+                None, // Disable Sids
+                None, // Delete Privs
+                None, // Restrict Sids
+                &mut restricted_token
+            );
             
-            // Create Low Integrity SID (S-1-16-4096)
-            /*
-            let mut sid_auth = windows::Win32::Security::SID_IDENTIFIER_AUTHORITY { Value: [0, 0, 0, 0, 0, 16] };
-            let mut sid_ptr = PSID::default();
-            windows::Win32::Security::AllocateAndInitializeSid(
-                &mut sid_auth, 
-                1, 
-                4096, // SECURITY_MANDATORY_LOW_RID
-                0, 0, 0, 0, 0, 0, 0, 
-                &mut sid_ptr
-             )?;
-
-            let mut tml = TOKEN_MANDATORY_LABEL {
-                Label: SID_AND_ATTRIBUTES {
-                    Sid: sid_ptr,
-                    // 0x1 = SYSTEM_MANDATORY_LABEL_NO_WRITE_UP
-                    Attributes: 0x00000001, 
-                }
-            };
+            let _ = CloseHandle(current_token);
             
-            SetTokenInformation(
-                new_token,
-                TokenIntegrityLevel,
-                &mut tml as *mut _ as *const _,
-                std::mem::size_of::<TOKEN_MANDATORY_LABEL>() as u32
-            )?;
-
-            windows::Win32::Foundation::LocalFree(Some(HLOCAL(sid_ptr.0)));
-            */
-            new_token
+            if success.is_err() {
+                 return Err(anyhow::anyhow!("CreateRestrictedToken failed: {:?}", success));
+            }
+            
+            restricted_token
         };
 
         // 2. Create Job Object (Safety Net Limits)
@@ -329,13 +313,18 @@ impl SandboxManager {
 
         // 3. Spawn Process
         let (pipes, handles) = create_stdio_pipes()?;
-        let mut si = STARTUPINFOEXW::default();
-        si.StartupInfo.cb = std::mem::size_of::<STARTUPINFOEXW>() as u32;
-        si.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
-        si.StartupInfo.hStdInput = handles.h_stdin_read;
-        si.StartupInfo.hStdOutput = handles.h_stdout_write;
-        si.StartupInfo.hStdError = handles.h_stderr_write;
-        
+        let si = STARTUPINFOEXW {
+            StartupInfo: windows::Win32::System::Threading::STARTUPINFOW {
+                cb: std::mem::size_of::<STARTUPINFOEXW>() as u32,
+                dwFlags: STARTF_USESTDHANDLES,
+                hStdInput: handles.h_stdin_read,
+                hStdOutput: handles.h_stdout_write,
+                hStdError: handles.h_stderr_write,
+                ..Default::default()
+            },
+            lpAttributeList: LPPROC_THREAD_ATTRIBUTE_LIST(std::ptr::null_mut()),
+        };
+
         let mut pi = PROCESS_INFORMATION::default();
         let cmd_line_str = build_command_line(cmd_path, args);
         let mut cmd_line_w: Vec<u16> = cmd_line_str.encode_utf16().chain(std::iter::once(0)).collect();
@@ -348,7 +337,8 @@ impl SandboxManager {
                 Some(windows::core::PWSTR(cmd_line_w.as_mut_ptr())),
                 None, None, true,
                 EXTENDED_STARTUPINFO_PRESENT | CREATE_SUSPENDED | windows::Win32::System::Threading::CREATE_NO_WINDOW,
-                None, None,
+                None,
+                None,
                 &si.StartupInfo,
                 &mut pi
             );
@@ -391,7 +381,7 @@ impl SandboxManager {
         cmd: &str,
         args: &[String],
         policy: &SandboxPolicy,
-    ) -> Result<(SandboxedChild, Option<Box<dyn AsyncWrite + Unpin + Send>>, Option<Box<dyn AsyncRead + Unpin + Send>>, Option<Box<dyn AsyncRead + Unpin + Send>>)> {
+    ) -> Result<SpawnedProcess> {
         let cmd_path = resolve_binary(cmd)?;
         
         let should_use_fallback = is_system_path(&cmd_path);
@@ -399,33 +389,33 @@ impl SandboxManager {
         if should_use_fallback {
              warn!("System runtime detected ({}). AppContainer might fail. Pre-emptively using Safety Net (Tier 2).", cmd_path);
              let (child, pipes) = self.spawn_low_integrity(&cmd_path, args, policy)?;
-             return Ok((
+             Ok((
                 child,
                 Some(Box::new(pipes.stdin)),
                 Some(Box::new(pipes.stdout)),
                 Some(Box::new(pipes.stderr))
-            ));
-        }
-        
-        debug!("Attempting Tier 1 (AppContainer) spawn for {}...", cmd_path);
-        match self.spawn_app_container(&cmd_path, args, policy) {
-            Ok((child, pipes)) => {
-                return Ok((
-                    child,
-                    Some(Box::new(pipes.stdin)),
-                    Some(Box::new(pipes.stdout)),
-                    Some(Box::new(pipes.stderr))
-                ));
-            },
-            Err(e) => {
-                warn!("Tier 1 Spawn failed: {}. Falling back to Tier 2.", e);
-                let (child, pipes) = self.spawn_low_integrity(&cmd_path, args, policy)?;
-                return Ok((
-                    child,
-                    Some(Box::new(pipes.stdin)),
-                    Some(Box::new(pipes.stdout)),
-                    Some(Box::new(pipes.stderr))
-                ));
+            ))
+        } else {
+            debug!("Attempting Tier 1 (AppContainer) spawn for {}...", cmd_path);
+            match self.spawn_app_container(&cmd_path, args, policy) {
+                Ok((child, pipes)) => {
+                    Ok((
+                        child,
+                        Some(Box::new(pipes.stdin)),
+                        Some(Box::new(pipes.stdout)),
+                        Some(Box::new(pipes.stderr))
+                    ))
+                },
+                Err(e) => {
+                    warn!("Tier 1 Spawn failed: {}. Falling back to Tier 2.", e);
+                    let (child, pipes) = self.spawn_low_integrity(&cmd_path, args, policy)?;
+                    Ok((
+                        child,
+                        Some(Box::new(pipes.stdin)),
+                        Some(Box::new(pipes.stdout)),
+                        Some(Box::new(pipes.stderr))
+                    ))
+                }
             }
         }
     }
@@ -489,13 +479,17 @@ impl SandboxManager {
             UpdateProcThreadAttribute(lp_list, 0, PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES as usize, Some(&mut caps as *mut _ as *const _), std::mem::size_of::<SECURITY_CAPABILITIES>(), None, None)?;
         }
 
-        let mut si = STARTUPINFOEXW::default();
-        si.StartupInfo.cb = std::mem::size_of::<STARTUPINFOEXW>() as u32;
-        si.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
-        si.StartupInfo.hStdInput = handles.h_stdin_read;
-        si.StartupInfo.hStdOutput = handles.h_stdout_write;
-        si.StartupInfo.hStdError = handles.h_stderr_write;
-        si.lpAttributeList = lp_list;
+        let si = STARTUPINFOEXW {
+            StartupInfo: windows::Win32::System::Threading::STARTUPINFOW {
+                cb: std::mem::size_of::<STARTUPINFOEXW>() as u32,
+                dwFlags: STARTF_USESTDHANDLES,
+                hStdInput: handles.h_stdin_read,
+                hStdOutput: handles.h_stdout_write,
+                hStdError: handles.h_stderr_write,
+                ..Default::default()
+            },
+            lpAttributeList: lp_list,
+        };
 
         let mut pi = PROCESS_INFORMATION::default();
         let cmd_line_str = build_command_line(cmd_path, args);
@@ -521,6 +515,13 @@ impl SandboxManager {
     }
 }
 
+pub type SpawnedProcess = (
+    SandboxedChild,
+    Option<Box<dyn AsyncWrite + Unpin + Send>>,
+    Option<Box<dyn AsyncRead + Unpin + Send>>,
+    Option<Box<dyn AsyncRead + Unpin + Send>>
+);
+
 struct StdioPipes {
     stdin: tokio::fs::File,
     stdout: tokio::fs::File,
@@ -528,6 +529,7 @@ struct StdioPipes {
 }
 
 #[derive(Clone, Copy)]
+#[allow(dead_code)]
 struct StdioHandles {
     h_stdin_read: HANDLE,
     h_stdin_write: HANDLE,
@@ -621,12 +623,18 @@ unsafe fn grant_path_access_with_mask(path: &str, sid: PSID, mask: u32) -> Resul
     }
 
     // 2. Add our entry
-    let mut explicit = EXPLICIT_ACCESS_W::default();
-    explicit.grfAccessPermissions = mask; 
-    explicit.grfAccessMode = GRANT_ACCESS;
-    explicit.grfInheritance = SUB_CONTAINERS_AND_OBJECTS_INHERIT;
-    explicit.Trustee.TrusteeForm = TRUSTEE_IS_SID;
-    explicit.Trustee.ptstrName = windows::core::PWSTR(sid.0 as *mut _);
+    let explicit = EXPLICIT_ACCESS_W {
+        grfAccessPermissions: mask,
+        grfAccessMode: GRANT_ACCESS,
+        grfInheritance: SUB_CONTAINERS_AND_OBJECTS_INHERIT,
+        Trustee: windows::Win32::Security::Authorization::TRUSTEE_W {
+            TrusteeForm: TRUSTEE_IS_SID,
+            TrusteeType: windows::Win32::Security::Authorization::TRUSTEE_IS_UNKNOWN,
+            ptstrName: windows::core::PWSTR(sid.0 as *mut _),
+            pMultipleTrustee: std::ptr::null_mut(),
+            MultipleTrusteeOperation: windows::Win32::Security::Authorization::NO_MULTIPLE_TRUSTEE,
+        },
+    };
     
     let mut new_acl: *mut ACL = std::ptr::null_mut();
     let res = SetEntriesInAclW(Some(&[explicit]), Some(old_acl), &mut new_acl);
@@ -659,14 +667,24 @@ unsafe fn grant_path_access_with_mask(path: &str, sid: PSID, mask: u32) -> Resul
 
 fn is_system_path(path: &str) -> bool {
     let lower_path = path.to_lowercase();
-    lower_path.contains("program files") || lower_path.contains("programdata") || lower_path.contains("windows")
+    lower_path.contains("program files") || 
+    lower_path.contains("programdata") || 
+    lower_path.contains("windows") ||
+    lower_path.contains("venv")
 }
+
+pub type BoxedSpawnedProcess = (
+    Box<dyn ChildProcess + Send>,
+    Option<Box<dyn AsyncWrite + Unpin + Send>>,
+    Option<Box<dyn AsyncRead + Unpin + Send>>,
+    Option<Box<dyn AsyncRead + Unpin + Send>>
+);
 
 pub fn spawn_custom(
     cmd: &str, 
     args: &[String], 
     policy: &SandboxPolicy
-) -> Result<(Box<dyn ChildProcess + Send>, Option<Box<dyn AsyncWrite + Unpin + Send>>, Option<Box<dyn AsyncRead + Unpin + Send>>, Option<Box<dyn AsyncRead + Unpin + Send>>)> {
+) -> Result<BoxedSpawnedProcess> {
     let sandbox = SandboxManager::new("Sentinel")?;
     let (child, si, so, se) = sandbox.spawn_adaptive(cmd, args, policy)?;
     Ok((Box::new(child), si, so, se))

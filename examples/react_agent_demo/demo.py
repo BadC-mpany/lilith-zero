@@ -52,6 +52,7 @@ async def demo_policy_enforcement():
         f"{sys.executable} {MOCK_SERVER}",
         policy=POLICY_TAINT,
         binary=SENTINEL_BIN,
+        allow_read=[sys.prefix, sys.base_prefix, "C:\\Windows\\System32"],
     ) as sentinel:
         console.print(f"\n[dim]Session: {sentinel.session_id}[/dim]\n")
         
@@ -110,6 +111,7 @@ async def demo_sandbox_enforcement():
     
     async with Sentinel(
         f"{sys.executable} -B {MOCK_SERVER}",
+        policy=POLICY_TAINT,
         binary=SENTINEL_BIN,
         allow_read=[
             BASE_DIR,

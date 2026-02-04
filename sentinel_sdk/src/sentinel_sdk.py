@@ -247,7 +247,12 @@ class Sentinel:
 
     def _build_command(self) -> List[str]:
         """Construct the Sentinel CLI command."""
-        cmd = [self._binary_path]
+        if self._binary_path is None:
+            raise ValueError("Binary path not set")
+        if self._upstream_cmd is None:
+            raise ValueError("Upstream command not set")
+            
+        cmd: List[str] = [self._binary_path]
 
         if self._policy_path:
             cmd.extend(["--policy", self._policy_path])

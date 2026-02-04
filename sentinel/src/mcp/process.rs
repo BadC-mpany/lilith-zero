@@ -49,13 +49,20 @@ pub struct ProcessSupervisor {
     kill_tx: Option<oneshot::Sender<()>>,
 }
 
+pub type ProcessSpawnResult = (
+    ProcessSupervisor,
+    Option<Box<dyn AsyncWrite + Unpin + Send>>,
+    Option<Box<dyn AsyncRead + Unpin + Send>>,
+    Option<Box<dyn AsyncRead + Unpin + Send>>
+);
+
 impl ProcessSupervisor {
     pub fn spawn(
         cmd: &str, 
         args: &[String], 
         policy: Option<crate::mcp::sandbox::SandboxPolicy>,
         tx_events: mpsc::Sender<UpstreamEvent>,
-    ) -> Result<(Self, Option<Box<dyn AsyncWrite + Unpin + Send>>, Option<Box<dyn AsyncRead + Unpin + Send>>, Option<Box<dyn AsyncRead + Unpin + Send>>)> {
+    ) -> Result<ProcessSpawnResult> {
         
         let (child_handle, stdin, stdout, stderr) = if let Some(pol) = policy {
             #[cfg(windows)]

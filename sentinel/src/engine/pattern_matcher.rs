@@ -236,7 +236,7 @@ mod tests {
             LogicValue::Num(123.0)
         ]);
         
-        assert_eq!(PatternMatcher::evaluate_pattern_with_args(&cond1, &[], "", &[], &HashSet::new(), &args).await.unwrap(), true);
+        assert!(PatternMatcher::evaluate_pattern_with_args(&cond1, &[], "", &[], &HashSet::new(), &args).await.unwrap());
 
         // Test: user_id > 100
         let cond2 = LogicCondition::Gt(vec![
@@ -244,6 +244,6 @@ mod tests {
             LogicValue::Num(100.0)
         ]);
         
-        assert_eq!(PatternMatcher::evaluate_pattern_with_args(&cond2, &[], "", &[], &HashSet::new(), &args).await.unwrap(), true);
+        assert!(PatternMatcher::evaluate_pattern_with_args(&cond2, &[], "", &[], &HashSet::new(), &args).await.unwrap());
     }
 }

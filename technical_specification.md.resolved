@@ -1,12 +1,12 @@
 # Sentinel: MCP Security Middleware
 
-**Technical Specification v1.0**
+**Technical Specification v2.0 (Resolved)**
 
 ---
 
 ## 1. Overview
 
-Sentinel is a security middleware for the [Model Context Protocol (MCP)](https://spec.modelcontextprotocol.io/specification/2024-11-05/). It interposes between an MCP client (e.g., Claude Desktop, LangChain agent) and an upstream MCP tool server, enforcing access control, taint tracking, and prompt injection defenses.
+Sentinel is a high-assurance security middleware for the [Model Context Protocol (MCP)](https://spec.modelcontextprotocol.io/specification/2024-11-05/). It interposes between an MCP client (e.g., Claude Desktop, LangChain agent) and an upstream MCP tool server, providing **Process Isolation**, **Taint Tracking**, and **Policy Enforcement** with <1ms latency.
 
 ### 1.1 Architecture
 
@@ -19,33 +19,34 @@ graph LR
         B[SentinelClient]
     end
     subgraph "Rust Middleware (stdio JSON-RPC)"
-        C[McpMiddleware]
+        direction TB
+        C[Actor Core]
         D[PolicyEvaluator]
-        E[CryptoSigner]
+        E[Sandbox Supervisor]
         F[SecurityEngine]
     end
-    subgraph "Upstream"
+    subgraph "Upstream (Sandboxed)"
         G[MCP Tool Server]
     end
 
     A --> B
-    B -- "JSON-RPC 2.0 over stdio" --> C
-    C --> D
-    C --> E
-    C --> F
-    C -- "JSON-RPC 2.0 over stdio" --> G
+    B -- "JSON-RPC 2.0" --> C
+    C <--> D
+    C <--> F
+    C -- "Lifecycle" --> E
+    E -- "Process/Job" --> G
 ```
 
 ### 1.2 Key Properties
 
 | Property | Implementation |
 |----------|----------------|
-| Transport | stdio (newline-delimited JSON-RPC 2.0) |
-| Session Integrity | HMAC-SHA256 signed session IDs |
-| Access Control | Static ACL + dynamic taint rules |
-| Prompt Injection Defense | Randomized spotlighting delimiters |
-| Process Isolation | Windows Job Objects / Unix `PR_SET_PDEATHSIG` |
-| Observability | Structured JSON audit logs to stderr |
+| **Transport** | stdio (newline-delimited JSON-RPC 2.0) |
+| **Session Integrity** | HMAC-SHA256 signed session IDs |
+| **Access Control** | Static ACL + Taint Propagation + Resource Globbing |
+| **Prompt Injection** | Randomized spotlighting delimiters |
+| **Process Isolation** | **Tiered Adaptive Sandbox** (Win) / `landlock` (Linux) |
+| **Observability** | Structured JSON audit logs to stderr |
 
 ---
 
@@ -53,449 +54,144 @@ graph LR
 
 **Location:** `sentinel/src/`  
 **Entry Point:** `main.rs`  
-**Binary:** `sentinel.exe` (Windows) / `sentinel` (Unix)
+**Binary:** `sentinel.exe`
 
 ### 2.1 Module Structure
 
 ```
 sentinel/src/
-├── main.rs          # CLI entry point, tokio runtime
-├── lib.rs           # Public module exports
-├── config.rs        # Environment-based configuration
-├── constants.rs     # All magic numbers and protocol constants
+├── main.rs          # Entry point, tokio runtime
+├── config.rs        # Configuration
 ├── core/
-│   ├── auth.rs      # JWT audience binding validation
-│   ├── crypto.rs    # HMAC-SHA256 session ID generation
-│   ├── errors.rs    # Domain error types with HTTP mappings
-│   └── models.rs    # PolicyDefinition, Decision, HistoryEntry
+│   ├── auth.rs      # Audience binding
+│   ├── crypto.rs    # HMAC session signing
+│   ├── errors.rs    # Error mapping
+│   └── models.rs    # PolicyDefinition, ToolCall, Decision
 ├── engine/
-│   ├── evaluator.rs # Policy evaluation (static + taint rules)
-│   └── pattern_matcher.rs # Condition evaluation (MVP stub)
+│   ├── evaluator.rs # Policy logic (Static, Taint, Resource)
+│   └── pattern_matcher.rs # JsonLogic AST
 ├── mcp/
-│   ├── server.rs    # McpMiddleware main loop
-│   ├── transport.rs # StdioTransport (bounded reads)
-│   ├── process.rs   # ProcessSupervisor (lifecycle binding)
-│   └── security.rs  # Spotlighting engine
+│   ├── server.rs    # Actor Model (Tokio MPSC)
+│   ├── transport.rs # Async Stdio (Framed/Line)
+│   ├── security.rs  # Spotlighting
+│   └── sandbox/     # SANDBOX SUBSYSTEM
+│       ├── mod.rs   # ChildProcess Trait, SandboxPolicy
+│       ├── windows.rs # Tier 1 (AppContainer) & Tier 2 (Job+Token)
+│       └── profiles.rs # Runtime profiles (Python, Node)
 └── utils/
-    ├── audit_logger.rs # Structured JSON audit to stderr
-    └── time.rs         # Timestamp utility
+    └── audit_logger.rs # Structured Logging
 ```
 
-### 2.2 CLI Interface
+### 2.2 Tiered Adaptive Sandbox (Windows)
 
-```bash
-sentinel --upstream-cmd <COMMAND> [--policy <PATH>] -- [UPSTREAM_ARGS...]
-```
+Sentinel implements a "Google-Grade" adaptive security model that automatically selects the highest secure tier compatible with the target tool.
 
-| Argument | Required | Description |
-|----------|----------|-------------|
-| `--upstream-cmd` | Yes | Command to spawn the upstream MCP server |
-| `--policy` | No | Path to policy YAML file |
-| `--` | No | Separator for upstream arguments |
+| Tier | Technology | Security Model | Use Case |
+| :--- | :--- | :--- | :--- |
+| **Tier 1 (Ironclad)** | `AppContainer` | **Zero Trust**. Network Blocked. Read-only whitelist access to files. | User-owned dependencies (local venv). |
+| **Tier 2 (Safety Net)** | `Restricted Token` | **High Integrity**. `DISABLE_MAX_PRIVILEGE` (Strips Admin). `LUA_TOKEN`. Write-blocked via MIC. | System Runtimes (Miniconda, Global Python) that require User Profile traversal. |
 
-**Environment Variables:**
+**Containment Mechanisms:**
+1.  **Job Objects**: Enforce `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`.
+2.  **Tokens**: Hardened via `CreateRestrictedToken`.
+3.  **Permissions**: DACL modifications for Low/Medium Integrity Traversal.
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `POLICIES_YAML_PATH` | None | Fallback policy path |
-| `LOG_LEVEL` | `info` | Tracing filter (`debug`, `info`, `warn`, `error`) |
-| `LOG_FORMAT` | `text` | Output format (`text` or `json`) |
-| `SENTINEL_OWNER` | `unknown` | Owner identifier for audit logs |
-| `SENTINEL_EXPECTED_AUDIENCE` | None | Comma-separated list for JWT audience binding |
+### 2.3 Policy Definition
 
-### 2.3 Core Types
-
-#### 2.3.1 McpMiddleware
-
-**File:** [server.rs](file:///c:/Users/Peter/Documents/proj/active/bad/sentinel/sentinel/src/mcp/server.rs)
-
-```rust
-pub struct McpMiddleware {
-    transport: StdioTransport,           // Client-facing I/O
-    upstream: Option<ProcessSupervisor>, // Child process handle
-    upstream_stdin: Option<ChildStdin>,  // Write to upstream
-    upstream_stdout: Option<BufReader<ChildStdout>>,
-    session_id: String,                  // HMAC-signed session ID
-    signer: CryptoSigner,                // Ephemeral HMAC key
-    history: Vec<HistoryEntry>,          // Call history for taint rules
-    taints: HashSet<String>,             // Active session taints
-    policy: Option<PolicyDefinition>,    // Loaded policy
-}
-```
-
-**Request Handling Flow:**
-
-1. `initialize` → Spawn upstream, perform MCP handshake, validate audience binding
-2. `tools/list` → Validate session, forward to upstream
-3. `tools/call` → Validate session, evaluate policy, execute or block, apply spotlighting
-
-#### 2.3.2 PolicyDefinition
-
-**File:** [models.rs](file:///c:/Users/Peter/Documents/proj/active/bad/sentinel/sentinel/src/core/models.rs)
-
-```rust
-pub struct PolicyDefinition {
-    pub id: String,
-    pub customer_id: String,
-    pub name: String,
-    pub version: u32,
-    pub static_rules: HashMap<String, String>,  // tool_name → "ALLOW"|"DENY"
-    pub taint_rules: Vec<PolicyRule>,           // Dynamic rules
-    pub created_at: String,
-}
-```
-
-**YAML Schema:**
+**File:** [models.rs](sentinel/src/core/models.rs)
 
 ```yaml
-id: "my-policy"
-customer_id: "customer-123"
-name: "Production Policy"
+id: "hardened-policy"
 version: 1
+sandbox:
+  allow_network: false
+  read_paths: ["C:/Projects/Secrets"]
+  write_paths: ["C:/Projects/Output"]
+  allow_env: ["PYTHONPATH"]
+
 staticRules:
-  read_database: "ALLOW"
-  delete_user: "DENY"
+  read_file: "ALLOW"
+  exec_shell: "DENY"
+
 taintRules:
-  - tool: "read_database"
+  - tool: "read_secret"
     action: "ADD_TAINT"
-    tag: "PII"
-  - tool: "send_email"
+    tag: "CONFIDENTIAL"
+  - tool: "upload_data"
     action: "CHECK_TAINT"
-    forbidden_tags: ["PII"]
-    error: "Cannot send email with PII data"
-created_at: "2026-01-01T00:00:00Z"
+    forbidden_tags: ["CONFIDENTIAL"]
+    error: "Exfiltration blocked."
 ```
-
-#### 2.3.3 Decision
-
-```rust
-pub enum Decision {
-    Allowed,
-    Denied { reason: String },
-    AllowedWithSideEffects {
-        taints_to_add: Vec<String>,
-        taints_to_remove: Vec<String>,
-    },
-}
-```
-
-### 2.4 Security Mechanisms
-
-#### 2.4.1 Session Integrity
-
-**File:** [crypto.rs](file:///c:/Users/Peter/Documents/proj/active/bad/sentinel/sentinel/src/core/crypto.rs)
-
-Session IDs are cryptographically signed to prevent forgery:
-
-```
-Format: "{version}.{uuid_b64}.{hmac_sha256_b64}"
-Example: "1.0OfeWj0Rn0SWH+hNg74bAQ.5K1J2..."
-```
-
-The HMAC key is ephemeral (generated per process). Validation uses constant-time comparison.
-
-#### 2.4.2 Spotlighting
-
-**File:** [security.rs](file:///c:/Users/Peter/Documents/proj/active/bad/sentinel/sentinel/src/mcp/security.rs)
-
-Wraps tool outputs with randomized delimiters to prevent prompt injection:
-
-```
-<<<SENTINEL_DATA_START:aB3xK7pQ>>>
-<actual tool output>
-<<<SENTINEL_DATA_END:aB3xK7pQ>>>
-```
-
-The 8-character ID is randomly generated per response, making it unpredictable.
-
-#### 2.4.3 Process Isolation
-
-**File:** [process.rs](file:///c:/Users/Peter/Documents/proj/active/bad/sentinel/sentinel/src/mcp/process.rs)
-
-| Platform | Mechanism |
-|----------|-----------|
-| Windows | Job Object with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` |
-| Linux | `prctl(PR_SET_PDEATHSIG, SIGKILL)` before exec |
-
-This ensures the upstream process is terminated if Sentinel crashes or is killed.
-
-#### 2.4.4 DoS Protection
-
-**File:** [transport.rs](file:///c:/Users/Peter/Documents/proj/active/bad/sentinel/sentinel/src/mcp/transport.rs)
-
-Maximum message size enforced at 10 MB (`MAX_MESSAGE_SIZE_BYTES`).
-
-### 2.5 Audit Logging
-
-**File:** [audit_logger.rs](file:///c:/Users/Peter/Documents/proj/active/bad/sentinel/sentinel/src/utils/audit_logger.rs)
-
-Structured JSON logs emitted to stderr:
-
-```json
-{
-  "timestamp": 1706396400.123,
-  "session_id": "1.abc...",
-  "event_type": "Decision",
-  "tool": "read_database",
-  "decision": "ALLOWED_WITH_SIDE_EFFECTS",
-  "details": {"taints_added": ["PII"]}
-}
-```
-
-**Event Types:** `SessionStart`, `ToolCall`, `Decision`, `TaintViolation`, `SystemError`
 
 ---
 
 ## 3. Python SDK
 
-**Location:** `sentinel_sdk/`  
 **Package:** `sentinel_sdk`  
 **Version:** 0.1.0
 
-### 3.1 Module Structure
+### 3.1 Sentinel Client (`sentinel_sdk.Sentinel`)
 
-```
-sentinel_sdk/
-├── __init__.py      # Public API (Sentinel, SentinelClient)
-├── src/
-│   ├── sentinel_sdk.py  # SentinelClient implementation
-│   ├── constants.py     # SDK constants
-│   └── prompts.py       # LLM system prompts
-└── pyproject.toml
-```
-
-### 3.2 Public API
-
-#### 3.2.1 Sentinel (Facade)
-
-**File:** [__init__.py](file:///c:/Users/Peter/Documents/proj/active/bad/sentinel/sentinel_sdk/__init__.py)
+Implements the "Facade" pattern to manage the middleware lifecycle.
 
 ```python
-from sentinel_sdk import Sentinel
-
-client = Sentinel.start(
-    upstream="python tools.py",  # Upstream command
-    policy="policy.yaml",        # Optional policy path
-    security_level="high",       # "low", "medium", "high"
-    binary_path=None             # Optional explicit binary path
-)
-
-async with client:
-    result = await client.execute_tool("my_tool", {"arg": "value"})
+async with Sentinel(
+    upstream="python server.py",
+    policy="policy.yaml",
+    security_level="high"
+) as client:
+    result = await client.execute_tool("calculator", {"a": 1, "b": 2})
 ```
 
-**Security Levels:**
+**Lifecycle:**
+1.  **Spawn**: Launches `sentinel.exe` with config args.
+2.  **Handshake**: Exchanges capabilities and Session ID.
+3.  **Binding**: All subsequent calls sign requests with `_sentinel_session_id`.
+4.  **Termination**: Cleanup via `SIGTERM` / handle closure.
 
-| Level | Spotlighting | Strict Taint | Session Validation |
-|-------|--------------|--------------|-------------------|
-| `low` | Off | Off | Off |
-| `medium` | On | Off | On |
-| `high` | On | On | On |
+---
 
-#### 3.2.2 SentinelClient
+## 4. Security Mechanics
 
-**File:** [sentinel_sdk.py](file:///c:/Users/Peter/Documents/proj/active/bad/sentinel/sentinel_sdk/src/sentinel_sdk.py)
+### 4.1 Taint Tracking
+- **Tag Propagation**: Taints are sets of strings (`HashSet<String>`) attached to the *Session*.
+- **Persistence**: Taint state persists for the duration of the Sentinel session (lifetime of the upstream tool).
+- **Enforcement**: Checked *before* every tool execution.
 
-```python
-class SentinelClient:
-    async def start_session(self) -> None
-    async def stop_session(self) -> None
-    async def get_tools_config(self) -> List[Dict[str, Any]]
-    async def execute_tool(self, tool_name: str, args: Dict[str, Any]) -> Any
-    async def get_langchain_tools(self) -> List[StructuredTool]
+### 4.2 Spotlighting
+- **Defense**: Prevents LLM Prompt Injection by wrapping tool output.
+- **Format**: `<<<SENTINEL_DATA_START:{8_CHAR_RANDOM_ID}>>> ... <<<...END...>>>`
+- **Verification**: The SDK strips these delimiters before returning to the Agent logic, ensuring the Agent never sees raw, potentially malicious delimiters.
+
+### 4.3 Audit Logging
+Structured logs emitted to `stderr` (separate from `stdout` transport pipeline).
+
+```json
+{
+  "timestamp": 1709251200,
+  "event_type": "Decision",
+  "tool": "write_file",
+  "decision": "DENIED",
+  "reason": "Path not in sandbox write list"
+}
 ```
 
-**Session Lifecycle:**
-
-1. `start_session()` spawns Sentinel binary as subprocess
-2. SDK captures `SENTINEL_SESSION_ID=...` from stderr
-3. SDK sends `initialize` → `notifications/initialized`
-4. All subsequent requests include `_sentinel_session_id` in params
-5. `stop_session()` terminates the subprocess
-
-### 3.3 LangChain Integration
-
-```python
-from sentinel_sdk import Sentinel
-
-client = Sentinel.start(upstream="python tools.py")
-
-async with client:
-    tools = await client.get_langchain_tools()
-    # Returns List[langchain_core.tools.StructuredTool]
-```
-
-The SDK automatically:
-- Fetches tool schemas from `tools/list`
-- Creates Pydantic models for each tool's `inputSchema`
-- Wraps execution through Sentinel
-
 ---
 
-## 4. Wire Protocol
+## 5. Build & Verification
 
-### 4.1 Transport
+### 5.1 Prerequisites
+- **Rust**: 1.70+
+- **Python**: 3.10+
+- **OS**: Windows 10/11 (for Sandbox), Linux (Limited)
 
-- **Stream:** Newline-delimited JSON over stdio
-- **Protocol:** JSON-RPC 2.0
-- **Max Message Size:** 10 MB
-
-### 4.2 Message Flow
-
-```mermaid
-sequenceDiagram
-    participant SDK as Python SDK
-    participant MW as Sentinel Middleware
-    participant UP as Upstream Server
-
-    Note over MW: Prints "SENTINEL_SESSION_ID=..."
-    SDK->>MW: initialize {protocolVersion, clientInfo}
-    MW->>UP: initialize {...}
-    UP-->>MW: {capabilities}
-    MW-->>SDK: {capabilities}
-    
-    SDK->>MW: notifications/initialized {}
-    
-    SDK->>MW: tools/list {_sentinel_session_id}
-    MW->>UP: tools/list {}
-    UP-->>MW: {tools: [...]}
-    MW-->>SDK: {tools: [...]}
-    
-    SDK->>MW: tools/call {name, arguments, _sentinel_session_id}
-    Note over MW: Policy Evaluation
-    alt Allowed
-        MW->>UP: tools/call {name, arguments}
-        UP-->>MW: {content: [...]}
-        Note over MW: Apply Spotlighting
-        MW-->>SDK: {content: [...]}  (spotlighted)
-    else Denied
-        MW-->>SDK: {error: {code: -32000, message: "..."}}
-    end
-```
-
-### 4.3 Error Codes
-
-| Code | Meaning |
-|------|---------|
-| `-32000` | Security block (policy violation) |
-| `-32001` | Authentication error (session invalid) |
-| `-32600` | Invalid request |
-| `-32601` | Method not found |
-| `-32603` | Internal error |
-| `-32700` | Parse error |
-
----
-
-## 5. Policy Evaluation
-
-### 5.1 Evaluation Order
-
-1. **Static Rules (ACL):** Check `static_rules[tool_name]`. If `"DENY"`, reject immediately.
-2. **Taint Rules:** For each rule in `taint_rules`:
-   - If `action == "CHECK_TAINT"` and any `forbidden_tags` are present in session taints → deny (unless exception matches)
-   - If `action == "ADD_TAINT"` → queue taint to add
-   - If `action == "REMOVE_TAINT"` → queue taint to remove
-   - If `action == "BLOCK"` → deny
-
-3. **Return Decision:**
-   - If any denials occurred → `Denied { reason }`
-   - If taints modified → `AllowedWithSideEffects { taints_to_add, taints_to_remove }`
-   - Otherwise → `Allowed`
-
-### 5.2 Tool Classification
-
-Currently uses prefix-based auto-classification:
-- `read_*`, `get_*` → `["READ"]`
-- `write_*`, `delete_*` → `["WRITE"]`
-
----
-
-## 6. Configuration Reference
-
-### 6.1 Rust Constants
-
-**File:** [constants.rs](file:///c:/Users/Peter/Documents/proj/active/bad/sentinel/sentinel/src/constants.rs)
-
-| Module | Constant | Value |
-|--------|----------|-------|
-| `jsonrpc` | `ERROR_SECURITY_BLOCK` | `-32000` |
-| `jsonrpc` | `ERROR_AUTH` | `-32001` |
-| `crypto` | `SECRET_KEY_LENGTH` | `32` |
-| `spotlight` | `RANDOM_ID_LENGTH` | `8` |
-| `limits` | `MAX_MESSAGE_SIZE_BYTES` | `10 * 1024 * 1024` |
-| `session` | `SESSION_ID_PARAM` | `"_sentinel_session_id"` |
-
-### 6.2 Python Constants
-
-**File:** [constants.py](file:///c:/Users/Peter/Documents/proj/active/bad/sentinel/sentinel_sdk/src/constants.py)
-
-| Constant | Value |
-|----------|-------|
-| `MCP_PROTOCOL_VERSION` | `"2024-11-05"` |
-| `SESSION_TIMEOUT_SEC` | `5.0` |
-| `SESSION_POLL_INTERVAL_SEC` | `0.1` |
-| `DEFAULT_SECURITY_LEVEL` | `"high"` |
-
----
-
-## 7. Error Handling
-
-### 7.1 InterceptorError
-
-**File:** [errors.rs](file:///c:/Users/Peter/Documents/proj/active/bad/sentinel/sentinel/src/core/errors.rs)
-
-| Variant | HTTP Code | User-Facing Message |
-|---------|-----------|---------------------|
-| `InvalidApiKey` | 401 | "Invalid API Key" |
-| `AuthenticationError` | 401 | "Authentication failed: {reason}" |
-| `ValidationError` | 400 | "Validation failed: {reason}" |
-| `PolicyViolation` | 403 | "Policy violation: {reason}" |
-| `InfrastructureError` | 503 | "Service unavailable" |
-| `DependencyFailure` | 503 | "Service unavailable" |
-
----
-
-## 8. Build and Deployment
-
-### 8.1 Rust Build
-
+### 5.2 Compilation
 ```bash
-cd sentinel
 cargo build --release
-# Binary: target/release/sentinel(.exe)
+# Output: target/release/sentinel.exe
 ```
 
-### 8.2 Python Install
-
-```bash
-cd sentinel_sdk
-pip install -e .
-```
-
-### 8.3 Binary Discovery
-
-The SDK searches for the binary in this order:
-1. `SENTINEL_BINARY_PATH` environment variable
-2. System `PATH`
-3. Relative paths: `sentinel/target/release/`, `target/release/`, `./`
-
----
-
-## Appendix A: Files Summary
-
-| Component | File | Lines | Purpose |
-|-----------|------|-------|---------|
-| **Rust** | `main.rs` | 107 | CLI, tokio runtime |
-| | `server.rs` | 479 | Main middleware loop |
-| | `transport.rs` | 108 | Bounded stdio I/O |
-| | `process.rs` | 102 | Process lifecycle binding |
-| | `crypto.rs` | 90 | HMAC session IDs |
-| | `evaluator.rs` | 147 | Policy evaluation |
-| | `models.rs` | 189 | Domain types |
-| | `errors.rs` | 112 | Error types |
-| **Python** | `sentinel_sdk.py` | 353 | Client implementation |
-| | `__init__.py` | 187 | Public facade |
-| | `constants.py` | 91 | SDK constants |
-
-**Total Rust LOC:** ~1,800  
-**Total Python LOC:** ~630
+### 5.3 Test Suite
+- `tests/test_basic_flow.py`: Connectivity check.
+- `tests/test_security_hardening.py`: Policy enforcement verification.
+- `examples/react_agent_demo/demo.py`: End-to-End Sandbox integration test.

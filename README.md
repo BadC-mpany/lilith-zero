@@ -31,7 +31,7 @@ Sentinel intercepts MCP traffic via stdio, applying:
 | **Logic Engine** | Multi-stage Policy Evaluator (Static + Taint + Resource) |
 | **Taint Tracking** | Compile-time `Tainted<T>` enforcement (Rust) + Runtime Sink blocking |
 | **Spotlighting** | Per-response randomized delimiters (Prompt Injection defense) |
-| **Process Binding** | OS Job Objects (Win) / `PDEATHSIG` (Linux) process supervision |
+| **Process Binding** | **Tier 1**: AppContainer / **Tier 2**: Restricted Token + Job Object (Win) |
 | **Actor Model** | Fully async internal messaging (Tokio) - Deadlock-free I/O |
 
 ## Usage
@@ -148,6 +148,20 @@ TEST: Taint Propagation & Blocking ... Verified Taint Block
 TEST: Spotlighting Integrity ... Verified Spotlighting
 OK
 ```
+
+## Tiered Adaptive Sandbox (Windows)
+
+Sentinel employs a "Google-Grade" security architecture that adapts to the runtime environment:
+
+| Tier | Technology | Security Model | Use Case |
+| :--- | :--- | :--- | :--- |
+| **Tier 1: Ironclad** | `AppContainer` | **Zero Trust**. Network blocked, File whitelist only. | User-owned Runtimes (e.g., local venv) |
+| **Tier 2: Safety Net** | `Restricted Token` | **High Integrity**. Admin stripped, Write-blocked (MIC). | System Runtimes (e.g., Global Python) |
+
+The sandbox automatically detects if a tool acts like a "System Runtime" and switches to Tier 2 to ensure frictionless execution while preventing:
+- Ransomware (No Write Access to User Data)
+- Privilege Escalation (Token Stripping)
+- Resource Exhaustion (Job Object Limits)
 
 ## Competitive Advantage
 

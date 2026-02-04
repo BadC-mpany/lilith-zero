@@ -381,8 +381,10 @@ mod tests {
         // But we can test `SecurityLevel::AuditOnly` fallback if we could inject config.
         // Let's create a core with AuditOnly and see if it allows.
         
-        let mut audit_config = Config::default();
-        audit_config.security_level = crate::config::SecurityLevel::AuditOnly;
+        let audit_config = Config {
+            security_level: crate::config::SecurityLevel::AuditOnly,
+            ..Default::default()
+        };
         // Turn off session validation for this test to bypass signature check? 
         // No, AuditOnly logic in config.rs sets session_validation = true.
         // So we still need a valid token.
