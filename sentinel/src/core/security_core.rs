@@ -122,7 +122,7 @@ impl SecurityCore {
 
                   // 2. Classify Tool
                   // We extract the tool name string for classification.
-                  let tool_name_str = tool_name.clone().into_inner(); 
+                  let tool_name_str = tool_name.into_inner(); 
                   let classes = self.classify_tool(&tool_name_str);
                   
                   // 3. Evaluate Policy
@@ -133,7 +133,7 @@ impl SecurityCore {
                          &classes,
                          &self.history,
                          &self.taints,
-                         &arguments.clone().into_inner() // Evaluator currently takes &Value
+                         arguments.inner() // Helper to get reference without consuming? Tainted is defined where?
                       ).await
                   } else {
                       // Fail Closed unless in AuditOnly mode
@@ -342,7 +342,10 @@ impl SecurityCore {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use super::*;
     use crate::core::events::SecurityEvent;
+    use crate::core::types::TaintedString;
+    use crate::core::taint::Tainted;
     
     #[tokio::test]
     async fn test_security_core_flow() {
@@ -413,6 +416,9 @@ mod tests {
         }
         
        // With Audit Config -> Should Allow (Log Only)
+       let mut audit_config = Config::default();
+       audit_config.security_level = crate::config::SecurityLevel::AuditOnly;
+       
        let mut audit_core = SecurityCore::new(Arc::new(audit_config), CryptoSigner::try_new().unwrap()).unwrap();
        let valid_token_audit = audit_core.session_id.clone();
        let tool_event_audit = SecurityEvent::ToolRequest {

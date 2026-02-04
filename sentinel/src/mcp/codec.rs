@@ -72,10 +72,13 @@ impl Decoder for McpCodec {
                         
                         let mut len = 0;
                         for line in header_str.lines() {
-                            if line.to_lowercase().starts_with("content-length:") {
-                                let parts: Vec<&str> = line.split(':').collect();
-                                if parts.len() == 2 {
-                                    len = parts[1].trim().parse::<usize>().context("Invalid content-length value")?;
+                            if line.eq_ignore_ascii_case("content-length:") { // exact match unlikely, usually has value
+                                continue;
+                            }
+                            let lower = line.to_lowercase();
+                            if lower.starts_with("content-length:") {
+                                if let Some(val_str) = line.split(':').nth(1) {
+                                    len = val_str.trim().parse::<usize>().context("Invalid content-length value")?;
                                     debug!("Found Content-Length: {}", len);
                                 }
                             }
@@ -114,10 +117,10 @@ impl Decoder for McpCodec {
 }
 
 // Unified Encoder for both Request and Response
-impl Encoder<JsonRpcRequest> for McpCodec {
+impl<'a> Encoder<&'a JsonRpcRequest> for McpCodec {
     type Error = anyhow::Error;
-    fn encode(&mut self, item: JsonRpcRequest, dst: &mut BytesMut) -> Result<()> {
-        let body = serde_json::to_vec(&item)?;
+    fn encode(&mut self, item: &'a JsonRpcRequest, dst: &mut BytesMut) -> Result<()> {
+        let body = serde_json::to_vec(item)?;
         let header = format!("Content-Length: {}\r\n\r\n", body.len());
         dst.extend_from_slice(header.as_bytes());
         dst.extend_from_slice(&body);
@@ -125,10 +128,10 @@ impl Encoder<JsonRpcRequest> for McpCodec {
     }
 }
 
-impl Encoder<JsonRpcResponse> for McpCodec {
+impl<'a> Encoder<&'a JsonRpcResponse> for McpCodec {
     type Error = anyhow::Error;
-    fn encode(&mut self, item: JsonRpcResponse, dst: &mut BytesMut) -> Result<()> {
-        let body = serde_json::to_vec(&item)?;
+    fn encode(&mut self, item: &'a JsonRpcResponse, dst: &mut BytesMut) -> Result<()> {
+        let body = serde_json::to_vec(item)?;
         let header = format!("Content-Length: {}\r\n\r\n", body.len());
         dst.extend_from_slice(header.as_bytes());
         dst.extend_from_slice(&body);

@@ -1,0 +1,13 @@
+[project]
+name = "langchain-sentinel-demo"
+version = "0.1.0"
+description = "A textbook example of securing LangChain agents with Sentinel"
+requires-python = ">=3.10"
+dependencies = [
+    "langchain",
+    "langchain-openai",
+    "python-dotenv",
+    "sentinel-sdk",
+]
+[tool.uv.sources]
+sentinel-sdk = { path = "../../sentinel_sdk", editable = true }

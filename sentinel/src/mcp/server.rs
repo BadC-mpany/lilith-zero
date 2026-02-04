@@ -85,7 +85,7 @@ impl McpMiddleware {
                 Err(e) => error!("Failed to read policy file: {}", e),
             }
         } else {
-             warn!("No policy loaded. Using default permissive behavior.");
+             warn!("No policy loaded. Sentinel defaults to strict DENY-ALL behavior (unless SecurityLevel::AuditOnly is set).");
         }
 
         // Setup Channels
@@ -205,7 +205,9 @@ impl McpMiddleware {
                 if self.upstream_stdin.is_some() {
                     self.session.sanitize_for_upstream(req);
                     // Blessing the request as clean because Policy Allowed it.
-                    let clean_req = crate::core::taint::Clean::new_unchecked(req.clone());
+                    // Blessing the request as clean because Policy Allowed it.
+                    // New: Zero-Copy, passing reference
+                    let clean_req = crate::core::taint::Clean::new_unchecked(&*req);
                     self.write_upstream(clean_req).await?;
                 } else if let Some(id) = &req.id {
                     self.write_error(writer, id.clone(), jsonrpc::ERROR_METHOD_NOT_FOUND, "Upstream not connected").await?;
@@ -242,7 +244,7 @@ impl McpMiddleware {
         // Write to Downstream (Standard Framing)
         let mut codec = McpCodec::new();
         let mut dst = bytes::BytesMut::new();
-        codec.encode(secured_resp, &mut dst)?;
+        codec.encode(&secured_resp, &mut dst)?;
         writer.write_all(&dst).await?;
         writer.flush().await?;
 
@@ -272,11 +274,13 @@ impl McpMiddleware {
         Ok(())
     }
 
-    async fn write_upstream(&mut self, req: crate::core::taint::Clean<JsonRpcRequest>) -> Result<()> {
+    async fn write_upstream(&mut self, req: crate::core::taint::Clean<&JsonRpcRequest>) -> Result<()> {
         if let Some(stdin) = self.upstream_stdin.as_mut() {
             let mut codec = McpCodec::new();
             let mut dst = bytes::BytesMut::new();
-            codec.encode(req.into_inner(), &mut dst)?;
+            // encode takes &JsonRpcRequest. req is Clean<&JsonRpcRequest>. Derf calls to &T.
+            // *req gives &JsonRpcRequest.
+            codec.encode(*req, &mut dst)?;
             debug!("Writing {} bytes to upstream", dst.len());
             stdin.write_all(&dst).await?;
             stdin.flush().await?;
@@ -297,7 +301,7 @@ impl McpMiddleware {
         };
         let mut codec = McpCodec::new();
         let mut dst = bytes::BytesMut::new();
-        codec.encode(response, &mut dst)?;
+        codec.encode(&response, &mut dst)?;
         writer.write_all(&dst).await?;
         writer.flush().await?;
         Ok(())

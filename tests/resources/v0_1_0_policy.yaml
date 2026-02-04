@@ -1,0 +1,49 @@
+name: v0_1_0_verification_policy
+version: 1
+id: policy-v1-verify
+customerId: internal-test
+
+staticRules:
+  # Base Allow
+  "public_info": "ALLOW"
+  # Base Deny
+  "dangerous_op": "DENY"
+  "read_secret": "ALLOW"
+  "network_send": "ALLOW"
+  "redact_data": "ALLOW"
+  "conditional_access": "ALLOW"
+  "wildcard_access": "ALLOW"
+
+taintRules:
+  # 1. Source: Adds 'confidential' tag
+  - tool: "read_secret"
+    action: "ADD_TAINT"
+    tag: "confidential"
+
+  # 2. Sink: Blocks if 'confidential' tag is present
+  - tool: "network_send"
+    action: "CHECK_TAINT"
+    forbiddenTags: ["confidential"]
+
+  # 3. Cleaner: Removes 'confidential' tag
+  - tool: "redact_data"
+    action: "REMOVE_TAINT"
+    tag: "confidential"
+
+  # 4. Logic: Conditional Allow based on arguments
+  - tool: "conditional_access"
+    action: "BLOCK" # Default block
+    exceptions:
+      - when:
+          tool_args_match:
+             region: "us-west-1" # Only allow if region is us-west-1
+        reason: "Allowed region"
+
+  # 5. Regex Matching on Arguments
+  - tool: "wildcard_access"
+    action: "BLOCK"
+    exceptions:
+      - when:
+          tool_args_match:
+             file: "*.log"
+        reason: "Log files allowed"

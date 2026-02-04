@@ -8,7 +8,7 @@
 
 Sentinel is a high-performance security runtime designed to mitigate data exfiltration and unauthorized tool invocation in LLM-based agent systems. By interposing at the transport layer, Sentinel enforces security invariants through deterministic policy evaluation and strictly framed execution.
 
-It's OS/framework/lang agnostic and 
+Sentinel is OS, framework, and language agnostic, providing uniform security primitives across diverse implementation environments.
 
 ---
 
@@ -29,8 +29,8 @@ It's OS/framework/lang agnostic and
 | **Dynamic Taint Tracking** | Information flow control using session-bound sensitivity tags (e.g., `CONFIDENTIAL`). |
 | **Conditional Logic** | Argument-level enforcement using logical predicates (e.g., geographic region constraints). |
 | **Zero-Copy Runtime** | Low-latency processing (<1ms overhead) via reference-based internal message passing. |
-| **Transport Hardening** | Randomized spotlighting delimiters suppress prompt injection by encapsulating tool outputs. |
 | **Process Supervision** | OS-level lifecycle management for upstream processes to prevent resource leakage. |
+| **Transport Hardening** | Basic spotlighting delimiters to support injection suppression (secondary). |
 
 ---
 
@@ -123,6 +123,11 @@ if __name__ == "__main__":
     import asyncio
     asyncio.run(main())
 ```
+
+### 4. Examples
+Full integration examples are available in the `examples/` directory:
+- **[LangChain Agent](file:///c:/Users/Peter/Documents/proj/active/bad/sentinel/examples/langchain_agent)**: Complete ReAct agent demonstrating static rules, taint tracking, and logic exceptions.
+- **[ReAct Agent](file:///c:/Users/Peter/Documents/proj/active/bad/sentinel/examples/react_agent_demo)**: Minimalist demonstration of security middleware.
 
 ---
 

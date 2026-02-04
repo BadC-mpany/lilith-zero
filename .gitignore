@@ -89,4 +89,7 @@ target/.rustc_info.json
 target\.future-incompat-report.json
 target/*
 
+.agent/*
+.gemini/
+.ruff_cache/
 docs/

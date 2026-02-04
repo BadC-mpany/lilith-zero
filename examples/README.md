@@ -28,6 +28,19 @@ A minimal "Hello World" for Sentinel.
 python examples/simple_demo/main.py
 ```
 
+## 3. LangChain Agent (`langchain_agent/`)
+
+A sophisticated ReAct agent demonstration using LangChain.
+
+- **`agent.py`**: Minimalist LangChain agent integrated with `sentinel_sdk`.
+- **`policy.yaml`**: Full suite of v0.1.0 security policies (ACL, Taint, Logic).
+- **`upstream.py`**: Binary-safe MCP server implementation.
+
+**Run:**
+```bash
+uv run python examples/langchain_agent/agent.py
+```
+
 ## Prerequisites
 Ensure the `sentinel_sdk` is installed:
 ```bash

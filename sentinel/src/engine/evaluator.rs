@@ -98,6 +98,20 @@ impl PolicyEvaluator {
                         }
                     }
                     "BLOCK" => {
+                        if let Some(ref exceptions) = rule.exceptions {
+                            if Self::check_exceptions(
+                                exceptions,
+                                session_history,
+                                tool_name,
+                                tool_classes,
+                                current_taints,
+                                tool_args,
+                            )
+                            .await?
+                            {
+                                continue;
+                            }
+                        }
                         let error_msg = rule
                             .error
                             .clone()

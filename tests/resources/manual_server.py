@@ -101,6 +101,31 @@ class ManualMCPServer:
                         "content": [{"type": "text", "text": str(result)}],
                         "isError": False
                     }
+                elif name == "read_secret":
+                    response["result"] = {
+                        "content": [{"type": "text", "text": "super_secret_value"}],
+                        "isError": False
+                    }
+                elif name == "network_send":
+                    response["result"] = {
+                        "content": [{"type": "text", "text": "sent"}],
+                        "isError": False
+                    }
+                elif name == "redact_data":
+                    response["result"] = {
+                        "content": [{"type": "text", "text": "redacted"}],
+                        "isError": False
+                    }
+                elif name == "conditional_access":
+                    response["result"] = {
+                        "content": [{"type": "text", "text": "access_granted"}],
+                        "isError": False
+                    }
+                elif name == "wildcard_access":
+                    response["result"] = {
+                        "content": [{"type": "text", "text": "access_granted"}],
+                        "isError": False
+                    }
                 else:
                     raise ValueError(f"Tool not found: {name}")
                     

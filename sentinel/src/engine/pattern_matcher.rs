@@ -140,38 +140,76 @@ impl PatternMatcher {
         }
     }
 
-    /// Simple matching with '*' support
+    /// Simple matching with '*' support (Optimized: Zero Allocation)
     fn wildcard_match(pattern: &str, text: &str) -> bool {
-        let parts: Vec<&str> = pattern.split('*').collect();
-        if parts.len() == 1 {
-            return pattern == text;
-        }
-
-        // Check prefix
-        if !text.starts_with(parts[0]) {
+        let mut parts = pattern.split('*');
+        
+        // 1. Check prefix (first part)
+        let first_part = match parts.next() {
+            Some(p) => p,
+            None => return text.is_empty(), // pattern is empty -> exact match ""
+        };
+        
+        if !text.starts_with(first_part) {
             return false;
         }
+        
+        let mut text_slice = &text[first_part.len()..];
 
-        // Check suffix
-        if !text.ends_with(parts.last().unwrap_or(&"")) {
-            return false;
-        }
-
-        // Check internal parts (simple greedy scan)
-        let mut text_slice = &text[parts[0].len()..];
-        for part in &parts[1..parts.len()-1] {
-            if part.is_empty() { continue; }
+        // 2. Check remaining parts
+        for part in parts {
+            if part.is_empty() {
+                // Consecutive '*' or trailing '*'
+                continue;
+            }
+            
             match text_slice.find(part) {
-                Some(idx) => text_slice = &text_slice[idx + part.len()..],
+                Some(idx) => {
+                    text_slice = &text_slice[idx + part.len()..];
+                },
                 None => return false,
             }
         }
         
-        // Final suffix check was already done, but we need to ensure we didn't overshoot?
-        // Actually typical simple wildcard: Verify parts appear in order.
-        // The above simple logic works for standard cases like "Start*End" or "*Contains*".
-        // Use regex for rigorousness if needed, but this suffix-prefix scan is 99% used.
-        // Correction: if pattern is "*", parts=["", ""]. starts_with "" ok. ends_with "" ok. slice whole.
+        // 3. Suffix check logic
+        // If the pattern ended with '*', we are good (loops skipped empty last part).
+        // If the pattern did NOT end with '*', the last part in the loop MUST match the END of the string.
+        // But our greedy loop just searched for the *first* occurrence.
+        // Standard "A*B" logic: StartsWith A, EndsWith B.
+        // My optimized loop finds 'B' *somewhere*.
+        // Need to be careful. The split iterator Logic is safer but tricky to get right in one pass.
+        // Let's stick to the Correct Logic but valid optimization:
+        // Use `split` but don't collect.
+        
+        // Simpler correct implementation without collecting:
+        // Re-implementing parts logic from scratch is risky for bugs.
+        // Let's rely on standard iterator methods.
+        
+        if !pattern.contains('*') {
+            return pattern == text;
+        }
+
+        let mut parts_rev = pattern.split('*');
+        let prefix = parts_rev.next().unwrap_or(""); 
+        if !text.starts_with(prefix) { return false; }
+        
+        let suffix = pattern.rsplit('*').next().unwrap_or("");
+        if !text.ends_with(suffix) { return false; }
+        
+        if prefix.len() + suffix.len() > text.len() {
+            return false;
+        }
+        let mut remainder = &text[prefix.len()..text.len()-suffix.len()];
+        
+        // Check inner parts
+        let inner_parts = pattern[prefix.len()..pattern.len()-suffix.len()].split('*');
+        for part in inner_parts {
+             if part.is_empty() { continue; }
+             match remainder.find(part) {
+                 Some(idx) => remainder = &remainder[idx+part.len()..],
+                 None => return false,
+             }
+        }
         true
     }
 
@@ -246,4 +284,5 @@ mod tests {
         
         assert!(PatternMatcher::evaluate_pattern_with_args(&cond2, &[], "", &[], &HashSet::new(), &args).await.unwrap());
     }
+
 }
