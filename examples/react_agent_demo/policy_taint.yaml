@@ -25,5 +25,11 @@ taintRules:
     forbiddenTags: ["CONFIDENTIAL"]
     error: "Policy Violation: Exfiltration of confidential data blocked."
 
+  # 3. Block unauthorized file reads at the policy layer (Sandbox Safety Net)
+  - tool: "unauthorized_read"
+    action: "CHECK_TAINT"
+    # This is a simplified resource check for the demo
+    # In a full implementation, we'd use resourceRules
+
 # Resource Rules
 resourceRules: []

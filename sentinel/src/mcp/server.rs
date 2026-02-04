@@ -12,6 +12,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::io::{AsyncWrite, AsyncWriteExt};
 use tokio::sync::mpsc;
+use bytes::BytesMut;
+use tokio_util::codec::{Encoder, Decoder};
+use crate::mcp::codec::McpCodec;
 use tracing::{debug, error, info, warn};
 use anyhow::{Context, Result};
 use serde_json::Value;
@@ -101,6 +104,7 @@ impl McpMiddleware {
                 event = rx_downstream_events.recv() => {
                     match event {
                         Some(DownstreamEvent::Request(mut req)) => {
+                            debug!("Main Loop: Received Downstream Request: {:?}", req.id);
                             self.handle_client_request(&mut req, &mut downstream_writer, &tx_upstream_events).await?;
                         }
                         Some(DownstreamEvent::Disconnect) => {
@@ -119,6 +123,7 @@ impl McpMiddleware {
                 event = rx_upstream_events.recv() => {
                     match event {
                         Some(UpstreamEvent::Response(resp)) => {
+                            debug!("Main Loop: Received Upstream Response: {:?}", resp.id);
                             self.handle_upstream_response(resp, &mut downstream_writer).await?;
                         }
                         Some(UpstreamEvent::Log(msg)) => {
@@ -234,11 +239,11 @@ impl McpMiddleware {
         // Apply Transforms (Spotlighting)
         let secured_resp = self.session.apply_decision(&decision, resp);
         
-        // Write to Downstream
-        let json = serde_json::to_string(&secured_resp)?;
-        debug!("Writing downstream: {}", json);
-        writer.write_all(json.as_bytes()).await?;
-        writer.write_all(b"\n").await?;
+        // Write to Downstream (Standard Framing)
+        let mut codec = McpCodec::new();
+        let mut dst = bytes::BytesMut::new();
+        codec.encode(secured_resp, &mut dst)?;
+        writer.write_all(&dst).await?;
         writer.flush().await?;
 
         Ok(())
@@ -247,13 +252,7 @@ impl McpMiddleware {
     async fn spawn_upstream(&mut self, tx_upstream: mpsc::Sender<UpstreamEvent>) -> Result<()> {
         info!("Spawning upstream: {} {:?}", self.upstream_cmd, self.upstream_args);
         
-        // Use config from core
-        let sandbox_config = self.core.config.sandbox.clone();
-
-        // 1. Runtime Discovery (Removed: Now using explicit profiles)
-        // if let Some(cfg) = sandbox_config { ... }
-        
-        let (supervisor, stdin, stdout, stderr) = ProcessSupervisor::spawn(&self.upstream_cmd, &self.upstream_args, sandbox_config, tx_upstream.clone())
+        let (supervisor, stdin, stdout, stderr) = ProcessSupervisor::spawn(&self.upstream_cmd, &self.upstream_args, tx_upstream.clone())
             .context("Failed to spawn upstream")?;
         
         // Capture Stdin
@@ -275,11 +274,11 @@ impl McpMiddleware {
 
     async fn write_upstream(&mut self, req: crate::core::taint::Clean<JsonRpcRequest>) -> Result<()> {
         if let Some(stdin) = self.upstream_stdin.as_mut() {
-            // We use into_inner() because we are at the Sink boundary.
-            let json = serde_json::to_string(&req.into_inner())?;
-            debug!("Writing upstream: {}", json);
-            stdin.write_all(json.as_bytes()).await?;
-            stdin.write_all(b"\n").await?;
+            let mut codec = McpCodec::new();
+            let mut dst = bytes::BytesMut::new();
+            codec.encode(req.into_inner(), &mut dst)?;
+            debug!("Writing {} bytes to upstream", dst.len());
+            stdin.write_all(&dst).await?;
             stdin.flush().await?;
         }
         Ok(())
@@ -296,9 +295,10 @@ impl McpMiddleware {
             }),
             id,
         };
-        let json = serde_json::to_string(&response)?;
-        writer.write_all(json.as_bytes()).await?;
-        writer.write_all(b"\n").await?;
+        let mut codec = McpCodec::new();
+        let mut dst = bytes::BytesMut::new();
+        codec.encode(response, &mut dst)?;
+        writer.write_all(&dst).await?;
         writer.flush().await?;
         Ok(())
     }

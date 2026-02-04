@@ -16,12 +16,14 @@ use crate::core::models::{Decision, HistoryEntry, PolicyDefinition};
 use crate::engine::evaluator::PolicyEvaluator;
 use crate::core::auth;
 use crate::core::constants::jsonrpc;
+use anyhow::Result;
 
 pub struct SecurityCore {
     pub config: Arc<Config>,
     signer: CryptoSigner,
     pub session_id: String,
     pub policy: Option<PolicyDefinition>,
+    /// Set of active taint tags in the session
     taints: HashSet<String>,
     history: Vec<HistoryEntry>,
 }
@@ -33,7 +35,7 @@ impl SecurityCore {
             config,
             signer,
             session_id,
-            policy: None,
+            policy: None, // Changed        _policy: &SandboxPolicy, to policy: None to match struct definition
             taints: HashSet::new(),
             history: Vec::new(),
         })
@@ -118,38 +120,39 @@ impl SecurityCore {
                      }
                  }
 
-                 // 2. Classify Tool
-                 let classes = self.classify_tool(&tool_name);
-                 
-                 // 3. Evaluate Policy
-                 let evaluator_result = if let Some(policy) = &self.policy {
-                     PolicyEvaluator::evaluate_with_args(
-                        policy,
-                        &tool_name,
-                        &classes,
-                        &self.history,
-                        &self.taints,
-                        &arguments
-                     ).await
-                 } else {
-                     // Fail Closed unless in AuditOnly mode
-                     // "Google-grade" best practice: Default Deny.
-                     match self.config.security_level {
-                         crate::config::SecurityLevel::AuditOnly => {
-                             warn!("No policy loaded. allowing request due to AuditOnly mode.");
-                             Ok(Decision::Allowed)
-                         },
-                         _ => {
-                             warn!("No policy loaded. Denying request due to strict security settings.");
-                             Ok(Decision::Denied { 
-                                 reason: "No security policy loaded. Sentinel defaults to Deny-All.".to_string() 
-                             })
-                         }
-                     }
-                 };
+                  // 2. Classify Tool
+                  // We extract the tool name string for classification.
+                  let tool_name_str = tool_name.clone().into_inner(); 
+                  let classes = self.classify_tool(&tool_name_str);
+                  
+                  // 3. Evaluate Policy
+                  let evaluator_result = if let Some(policy) = &self.policy {
+                      PolicyEvaluator::evaluate_with_args(
+                         policy,
+                         &tool_name_str,
+                         &classes,
+                         &self.history,
+                         &self.taints,
+                         &arguments.clone().into_inner() // Evaluator currently takes &Value
+                      ).await
+                  } else {
+                      // Fail Closed unless in AuditOnly mode
+                      match self.config.security_level {
+                          crate::config::SecurityLevel::AuditOnly => {
+                              warn!("No policy loaded. allowing request due to AuditOnly mode.");
+                              Ok(Decision::Allowed)
+                          },
+                          _ => {
+                              warn!("No policy loaded. Denying request due to strict security settings.");
+                              Ok(Decision::Denied { 
+                                  reason: "No security policy loaded. Sentinel defaults to Deny-All.".to_string() 
+                              })
+                          }
+                      }
+                  };
 
-                 match evaluator_result {
-                     Ok(decision) => self.process_evaluator_decision(&tool_name, &classes, decision),
+                  match evaluator_result {
+                      Ok(decision) => self.process_evaluator_decision(&tool_name_str, &classes, decision),
                      Err(e) => {
                          warn!("Policy evaluation internal error: {}", e);
                          SecurityDecision::Deny {
@@ -183,7 +186,7 @@ impl SecurityCore {
                 
                 if let Some(policy) = &self.policy {
                     for rule in &policy.resource_rules {
-                         if self.match_resource_pattern(&uri, &rule.uri_pattern) {
+                         if self.match_resource_pattern(&uri.clone().into_inner(), &rule.uri_pattern) {
                              if rule.action == "BLOCK" {
                                  return SecurityDecision::Deny {
                                      error_code: jsonrpc::ERROR_SECURITY_BLOCK,
@@ -208,10 +211,10 @@ impl SecurityCore {
                 }
 
                 if !allow_access {
-                     return SecurityDecision::Deny {
-                        error_code: jsonrpc::ERROR_SECURITY_BLOCK,
-                        reason: format!("Access to resource denied (Default Deny): {}", uri),
-                    };
+                      return SecurityDecision::Deny {
+                         error_code: jsonrpc::ERROR_SECURITY_BLOCK,
+                         reason: format!("Access to resource denied (Default Deny): {}", uri.into_inner()),
+                     };
                 }
 
                  SecurityDecision::AllowWithTransforms {
@@ -363,8 +366,8 @@ mod tests {
         // 2. Tool Request (No Session) -> Should Fail
         let tool_event = SecurityEvent::ToolRequest {
             request_id: serde_json::Value::String("1".to_string()),
-            tool_name: "read_file".to_string(),
-            arguments: serde_json::Value::Null,
+            tool_name: TaintedString::new("read_file".to_string()),
+            arguments: Tainted::new(serde_json::Value::Null, vec![]),
             session_token: None,
         };
         let decision = core.evaluate(tool_event).await;
@@ -381,10 +384,6 @@ mod tests {
         // But we can test `SecurityLevel::AuditOnly` fallback if we could inject config.
         // Let's create a core with AuditOnly and see if it allows.
         
-        let audit_config = Config {
-            security_level: crate::config::SecurityLevel::AuditOnly,
-            ..Default::default()
-        };
         // Turn off session validation for this test to bypass signature check? 
         // No, AuditOnly logic in config.rs sets session_validation = true.
         // So we still need a valid token.
@@ -399,8 +398,8 @@ mod tests {
         
         let tool_event = SecurityEvent::ToolRequest {
             request_id: serde_json::Value::String("2".to_string()),
-            tool_name: "read_file".to_string(),
-            arguments: serde_json::Value::Null,
+            tool_name: TaintedString::new("read_file".to_string()),
+            arguments: Tainted::new(serde_json::Value::Null, vec![]),
             session_token: Some(valid_token),
         };
         
@@ -418,8 +417,8 @@ mod tests {
        let valid_token_audit = audit_core.session_id.clone();
        let tool_event_audit = SecurityEvent::ToolRequest {
             request_id: serde_json::Value::String("3".to_string()),
-            tool_name: "read_file".to_string(),
-            arguments: serde_json::Value::Null,
+            tool_name: TaintedString::new("read_file".to_string()),
+            arguments: Tainted::new(serde_json::Value::Null, vec![]),
             session_token: Some(valid_token_audit),
         };
         

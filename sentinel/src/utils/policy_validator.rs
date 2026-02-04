@@ -297,7 +297,7 @@ mod tests {
         static_rules.insert("read_file".to_string(), "ALLOW".to_string());
 
         let policy = PolicyDefinition {
-            sandbox: None,
+
             id: "test-policy".to_string(),
             customer_id: "test-customer".to_string(),
             name: "test_policy".to_string(),

@@ -7,14 +7,14 @@ use std::path::PathBuf;
 pub enum SecurityLevel {
     AuditOnly,
     BlockParams,
-    FullIsolation,
+
 }
 
 impl SecurityLevel {
     pub fn parse_safe(s: &str) -> Self {
         match s.to_lowercase().as_str() {
             "audit_only" | "low" => SecurityLevel::AuditOnly,
-            "full_isolation" | "high" => SecurityLevel::FullIsolation,
+            "full_isolation" | "high" => SecurityLevel::BlockParams,
             _ => SecurityLevel::BlockParams,
         }
     }
@@ -35,7 +35,7 @@ pub struct Config {
     pub security_level: SecurityLevel,
     pub mcp_version: String,
     pub jwt_secret: Option<String>,
-    pub sandbox: Option<crate::mcp::sandbox::SandboxPolicy>,
+
 }
 
 impl Config {
@@ -53,7 +53,7 @@ impl Config {
             ),
             mcp_version: env::var(crate::core::constants::config::ENV_MCP_VERSION).unwrap_or_else(|_| "2024-11-05".to_string()),
             jwt_secret: env::var("SENTINEL_JWT_SECRET").ok(),
-            sandbox: None, // Populated via CLI or Policy, not ENV for now (too complex object)
+
         })
     }
 
@@ -69,10 +69,7 @@ impl Config {
                 session_validation: true,
                 spotlighting: true,
             },
-            SecurityLevel::FullIsolation => SecurityConfig {
-                session_validation: true,
-                spotlighting: true,
-            },
+
         }
     }
 }
@@ -88,7 +85,7 @@ impl Default for Config {
             security_level: SecurityLevel::BlockParams,
             mcp_version: "2024-11-05".to_string(),
             jwt_secret: None,
-            sandbox: None,
+
         }
     }
 }

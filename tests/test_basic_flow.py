@@ -21,7 +21,7 @@ class TestBasicFlow(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.test_dir = os.path.dirname(os.path.abspath(__file__))
         self.policy_path = os.path.join(self.test_dir, "policy.yaml")
-        self.upstream_script = os.path.join(self.test_dir, "resources", "vulnerable_tools.py")
+        self.upstream_script = os.path.join(self.test_dir, "resources", "manual_server.py")
         self.upstream_cmd = f"{sys.executable} -u {self.upstream_script}"
         
         if not os.path.exists(self.policy_path):
@@ -32,10 +32,9 @@ class TestBasicFlow(unittest.IsolatedAsyncioTestCase):
     async def test_full_integration_flow(self):
         logger.info("Initializing Sentinel Client...")
         
-        client = Sentinel.start(
+        client = Sentinel(
             upstream=self.upstream_cmd,
             policy=self.policy_path,
-            security_level="high"
         )
         
         async with client:
@@ -44,7 +43,7 @@ class TestBasicFlow(unittest.IsolatedAsyncioTestCase):
 
             # 1. Test Tools List
             logger.info("Testing 'tools/list'...")
-            tools = await client.get_tools_config()
+            tools = await client.list_tools()
             tool_names = [t['name'] for t in tools]
             self.assertIn("read_db", tool_names)
             self.assertIn("send_slack", tool_names)
@@ -52,7 +51,7 @@ class TestBasicFlow(unittest.IsolatedAsyncioTestCase):
             # 2. Test Allowed Tool (read_db) with Spotlighting
             logger.info("Testing allowed tool 'read_db'...")
             mock_query = "SELECT * FROM users"
-            result = await client.execute_tool("read_db", {"query": mock_query})
+            result = await client.call_tool("read_db", {"query": mock_query})
             
             # Check for Spotlighting in 'content'
             self.assertIn("content", result)
@@ -65,7 +64,7 @@ class TestBasicFlow(unittest.IsolatedAsyncioTestCase):
             # 3. Test Denied Tool (send_slack) - Explicit Deny in policy.yaml
             logger.info("Testing denied tool 'send_slack'...")
             try:
-                await client.execute_tool("send_slack", {"msg": "Should fail"})
+                await client.call_tool("send_slack", {"msg": "Should fail"})
                 self.fail("Tool 'send_slack' should have been blocked")
             except RuntimeError as e:
                 logger.info(f"Blocked correctly: {e}")

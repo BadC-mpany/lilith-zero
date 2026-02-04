@@ -3,11 +3,13 @@
 //! This module defines the internal event stream that the Security Core operates on.
 //! It is completely decoupled from the specific MCP wire protocol version.
 
-use serde::{Deserialize, Serialize};
+use serde::{Serialize, Deserialize};
+use crate::core::types::{TaintedString};
+use crate::core::taint::Tainted;
 use serde_json::Value;
 
 /// Protocol-agnostic security events derived from wire protocol messages
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub enum SecurityEvent {
     /// Session initialization (e.g. MCP "initialize")
     Handshake {
@@ -23,9 +25,9 @@ pub enum SecurityEvent {
         /// Request ID for correlation (opaque)
         request_id: Value,
         /// Name of the tool being called
-        tool_name: String,
+        tool_name: TaintedString,
         /// Arguments provided to the tool
-        arguments: Value,
+        arguments: Tainted<Value>,
         /// Session token for validation
         session_token: Option<String>,
     },
@@ -33,7 +35,7 @@ pub enum SecurityEvent {
     ResourceRequest {
         request_id: Value,
         /// URI of the resource
-        uri: String,
+        uri: TaintedString,
         session_token: Option<String>,
     },
     /// A generic passthrough event (notifications, pings, or method-not-found)

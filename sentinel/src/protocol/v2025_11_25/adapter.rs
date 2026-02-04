@@ -8,6 +8,8 @@ use crate::core::events::{SecurityEvent, SecurityDecision, OutputTransform};
 use crate::core::traits::McpSessionHandler;
 use crate::core::models::{JsonRpcRequest, JsonRpcResponse};
 use crate::utils::security::SecurityEngine;
+use crate::core::types::TaintedString;
+use crate::core::taint::Tainted;
 use serde_json::Value;
 
 #[derive(Debug)]
@@ -56,8 +58,8 @@ impl McpSessionHandler for Mcp2025Adapter {
 
                  SecurityEvent::ToolRequest {
                     request_id,
-                    tool_name,
-                    arguments,
+                    tool_name: TaintedString::new(tool_name),
+                    arguments: Tainted::new(arguments, vec![]),
                     session_token,
                 }
             },

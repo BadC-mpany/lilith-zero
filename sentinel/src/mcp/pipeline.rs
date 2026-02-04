@@ -39,28 +39,31 @@ pub fn spawn_downstream_reader(
         
         while let Some(result) = framed.next().await {
             match result {
-                Ok(req) => {
-                    if tx.send(DownstreamEvent::Request(req)).await.is_err() {
-                        break;
+                Ok(val) => {
+                    match serde_json::from_value::<JsonRpcRequest>(val) {
+                        Ok(req) => {
+                            if tx.send(DownstreamEvent::Request(req)).await.is_err() {
+                                break;
+                            }
+                        }
+                        Err(e) => {
+                            error!("JSON-RPC Request parse error: {}", e);
+                            let _ = tx.send(DownstreamEvent::Error(e.to_string())).await;
+                        }
                     }
                 }
                 Err(e) => {
                     error!("Framing error: {}", e);
                     let _ = tx.send(DownstreamEvent::Error(e.to_string())).await;
-                    // If strict, we might break here. Codec helps recovery though.
-                    // For now, continue but warn? 
-                    // Actually, breaking on error is safer if stream is desynced.
-                    // break; 
                 }
             }
         }
-        // EOF
         let _ = tx.send(DownstreamEvent::Disconnect).await;
     });
 }
 
 
-/// Spawns a background task to read from Upstream Stdout
+/// Spawns a background task to read from Upstream Stdout (using McpCodec for framing)
 pub fn spawn_upstream_reader<R>(
     stream: R,
     tx: mpsc::Sender<UpstreamEvent>,
@@ -68,44 +71,25 @@ pub fn spawn_upstream_reader<R>(
     R: AsyncRead + Unpin + Send + 'static 
 {
     tokio::spawn(async move {
-        let mut reader = BufReader::new(stream);
-        let mut line = String::new();
+        let mut framed = FramedRead::new(stream, McpCodec::new());
         
-        loop {
-            line.clear();
-            match reader.read_line(&mut line).await {
-                Ok(0) => {
-                    // EOF on stdout usually means process died.
-                    // We rely on the explicit waiter task in server.rs for Terminated event.
-                    break; 
-                }
-                Ok(_) => {
+        while let Some(result) = framed.next().await {
+            match result {
+                Ok(val) => {
                     // Try to parse as JSON-RPC Response
-                    let trimmed = line.trim();
-                    if trimmed.is_empty() { continue; }
-                    
-                    if trimmed.starts_with('{') {
-                         match serde_json::from_str::<JsonRpcResponse>(trimmed) {
-                            Ok(resp) => {
-                                if tx.send(UpstreamEvent::Response(resp)).await.is_err() {
-                                    break;
-                                }
-                            }
-                            Err(_) => {
-                                // Fallback: Treat as log noise if it looks like JSON but fails, 
-                                // or generally just send as noise?
-                                // Context says: "Treat... as potentially malicious fuzzing input".
-                                // For now, we log it as noise but don't crash.
-                                debug!("Upstream non-JSON stdout: {}", trimmed);
+                    match serde_json::from_value::<JsonRpcResponse>(val) {
+                        Ok(resp) => {
+                            if tx.send(UpstreamEvent::Response(resp)).await.is_err() {
+                                break;
                             }
                         }
-                    } else {
-                        // Plain text noise
-                         debug!("Upstream stdout noise: {}", trimmed);
+                        Err(e) => {
+                            debug!("Upstream non-JSON-RPC response: {}", e);
+                        }
                     }
                 }
                 Err(e) => {
-                    error!("Error reading upstream stdout: {}", e);
+                    error!("Upstream framing error: {}", e);
                     break;
                 }
             }

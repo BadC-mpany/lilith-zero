@@ -7,6 +7,8 @@
 use anyhow::{Result, anyhow, Context};
 use bytes::BytesMut;
 use tokio_util::codec::{Decoder, Encoder};
+use serde_json::Value;
+use tracing::{trace, debug, error};
 use crate::core::models::{JsonRpcRequest, JsonRpcResponse};
 use crate::core::constants::limits;
 
@@ -34,46 +36,38 @@ impl Default for McpCodec {
 }
 
 impl Decoder for McpCodec {
-    type Item = JsonRpcRequest;
+    type Item = Value; // Changed to Value to be more generic for both Req/Resp
     type Error = anyhow::Error;
 
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>> {
+        trace!("Decoder attempting to read from {} bytes buffer", src.len());
         loop {
             match self.state {
                 DecodeState::Head => {
-                    // Check for standard newline delimited JSON first (legacy/simple mode)
-                    // If line starts with '{', assume NDJSON.
-                    if !src.is_empty() && src[0] == b'{' {
-                        if let Some(i) = src.iter().position(|&b| b == b'\n') {
-                            let line = src.split_to(i + 1);
-                            let line = &line[..line.len() - 1]; // strip \n
-                            if line.is_empty() { return Ok(None); }
-                            
-                            let req: JsonRpcRequest = serde_json::from_slice(line)?;
-                            return Ok(Some(req));
-                        } else {
-                            // Wait for more data
-                            return Ok(None);
-                        }
-                    }
-
-                    // Otherwise, look for Content-Length header (LSP style)
-                    // "Content-Length: 123\r\n\r\n"
                     let mut i = 0;
                     let mut found_header = false;
                     
-                    // Naive header parsing: scan for \r\n\r\n
-                    // Windows: \r\n\r\n, Linux: \r\n\r\n or \n\n. strict spec says \r\n.
-                    while i + 3 < src.len() {
-                        if src[i] == b'\r' && src[i+1] == b'\n' && src[i+2] == b'\r' && src[i+3] == b'\n' {
-                             found_header = true;
-                             break;
+                    // Robust header parsing: scan for \r\n\r\n or \n\n
+                    while i < src.len() {
+                        if src[i] == b'\n' {
+                            if i >= 1 && src[i-1] == b'\n' {
+                                // \n\n case
+                                found_header = true;
+                                i += 1;
+                                break;
+                            }
+                            if i >= 3 && src[i-1] == b'\r' && src[i-2] == b'\n' && src[i-3] == b'\r' {
+                                // \r\n\r\n case
+                                found_header = true;
+                                i += 1;
+                                break;
+                            }
                         }
                         i += 1;
                     }
 
                     if found_header {
-                        let header_bytes = src.split_to(i + 4);
+                        let header_bytes = src.split_to(i);
                         let header_str = std::str::from_utf8(&header_bytes).context("Invalid UTF-8 in headers")?;
                         
                         let mut len = 0;
@@ -82,6 +76,7 @@ impl Decoder for McpCodec {
                                 let parts: Vec<&str> = line.split(':').collect();
                                 if parts.len() == 2 {
                                     len = parts[1].trim().parse::<usize>().context("Invalid content-length value")?;
+                                    debug!("Found Content-Length: {}", len);
                                 }
                             }
                         }
@@ -96,8 +91,6 @@ impl Decoder for McpCodec {
 
                         self.state = DecodeState::Body(len);
                     } else {
-                        // Wait for more data
-                        // Check for header limit to prevent DoS
                         if src.len() > 4096 {
                              return Err(anyhow!("Header too large"));
                         }
@@ -107,11 +100,12 @@ impl Decoder for McpCodec {
                 DecodeState::Body(len) => {
                     if src.len() >= len {
                         let body = src.split_to(len);
-                        self.state = DecodeState::Head; // Reset
-                        let req: JsonRpcRequest = serde_json::from_slice(&body)?;
-                        return Ok(Some(req));
+                        self.state = DecodeState::Head;
+                        let val: Value = serde_json::from_slice(&body)?;
+                        trace!("Decoded message: {:?}", val);
+                        return Ok(Some(val));
                     } else {
-                        return Ok(None); // Wait for body
+                        return Ok(None);
                     }
                 }
             }
@@ -119,24 +113,25 @@ impl Decoder for McpCodec {
     }
 }
 
-// Encoder for responses (always NDJSON for now to be simple, or LSP style?)
-// Plan says: Enforce Content-Length for INPUT.
-// For OUTPUT, we can stick to NDJSON if the client supports it, OR switch to LSP style.
-// Best practice: Be strict on input, liberal on output, OR match input style.
-// For MCP/LSP, Headers are preferred.
-pub struct McpResponseEncoder;
-
-impl Encoder<JsonRpcResponse> for McpResponseEncoder {
+// Unified Encoder for both Request and Response
+impl Encoder<JsonRpcRequest> for McpCodec {
     type Error = anyhow::Error;
+    fn encode(&mut self, item: JsonRpcRequest, dst: &mut BytesMut) -> Result<()> {
+        let body = serde_json::to_vec(&item)?;
+        let header = format!("Content-Length: {}\r\n\r\n", body.len());
+        dst.extend_from_slice(header.as_bytes());
+        dst.extend_from_slice(&body);
+        Ok(())
+    }
+}
 
+impl Encoder<JsonRpcResponse> for McpCodec {
+    type Error = anyhow::Error;
     fn encode(&mut self, item: JsonRpcResponse, dst: &mut BytesMut) -> Result<()> {
         let body = serde_json::to_vec(&item)?;
-        // Write LSP header if needed? Or just NDJSON.
-        // Let's stick to NDJSON for the MVP-2 unless strictly required. 
-        // "Transport Protocol will be updated to strictly enforce Content-Length... This may require updates to SDK"
-        // Let's output NDJSON for compatibility with current SDK. The Codec mostly protects INPUT smuggling.
+        let header = format!("Content-Length: {}\r\n\r\n", body.len());
+        dst.extend_from_slice(header.as_bytes());
         dst.extend_from_slice(&body);
-        dst.extend_from_slice(b"\n");
         Ok(())
     }
 }

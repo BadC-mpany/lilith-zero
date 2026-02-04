@@ -23,33 +23,7 @@ struct Cli {
     #[arg(last = true)]
     upstream_args: Vec<String>,
 
-    /// explicit read permissions
-    #[arg(long)]
-    allow_read: Vec<String>,
 
-    /// explicit write permissions
-    #[arg(long)]
-    allow_write: Vec<String>,
-
-    /// explicit network permission
-    #[arg(long)]
-    allow_net: bool,
-
-    /// explicit env vars
-    #[arg(long)]
-    allow_env: Vec<String>,
-
-    /// Use a pre-defined language profile (e.g. "python:./venv")
-    #[arg(long)]
-    language_profile: Option<String>,
-
-    /// Dry run: Prints the effective sandbox configuration and exits via stdout.
-    #[arg(long)]
-    dry_run: bool,
-
-    /// Inspect a binary to find its dependencies (DLLs).
-    #[arg(long)]
-    inspect: Option<PathBuf>,
 }
 
 #[tokio::main]
@@ -73,113 +47,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         config.policies_yaml_path = Some(p.clone());
     }
 
-    // Configure Sandbox Policy
-    let mut policy = sentinel::mcp::sandbox::SandboxPolicy::default();
-    let mut use_sandbox = false;
 
-    // 1. Load from YAML if exists (Base Layer)
-    if let Some(path) = &config.policies_yaml_path {
-        if let Ok(content) = std::fs::read_to_string(path) {
-             if let Ok(policy_def) = serde_yaml::from_str::<sentinel::core::models::PolicyDefinition>(&content) {
-                 if let Some(s) = policy_def.sandbox {
-                     info!("Loaded sandbox policy from YAML");
-                     policy = s;
-                     use_sandbox = true;
-                 }
-             }
-        }
-    }
-
-    // 2. Apply CLI Flags (Overlay Layer)
-    if !cli.allow_read.is_empty() {
-        use_sandbox = true;
-        for p in cli.allow_read {
-            policy.read_paths.push(PathBuf::from(p));
-        }
-    }
-    if !cli.allow_write.is_empty() {
-        use_sandbox = true;
-        for p in cli.allow_write {
-            policy.write_paths.push(PathBuf::from(p));
-        }
-    }
-    if cli.allow_net {
-        use_sandbox = true;
-        policy.allow_network = true;
-    }
-    if !cli.allow_env.is_empty() {
-        use_sandbox = true;
-        policy.allow_env.extend(cli.allow_env);
-    }
-
-    // 3. Apply Language Profile (Profile Layer)
-    if let Some(profile_str) = cli.language_profile {
-        use_sandbox = true;
-        let parts: Vec<&str> = profile_str.splitn(2, ':').collect();
-        if parts.len() < 2 {
-            eprintln!("Error: profile must be format 'lang:env_path[,core_path]', e.g. 'python:./venv' or 'python:./venv,C:\\Python312'");
-            std::process::exit(1);
-        }
-        let lang = parts[0];
-        let paths_str = parts[1];
-        let paths: Vec<&str> = paths_str.split(',').collect();
-        
-        let env_path = paths[0];
-        let core_path = paths.get(1).map(|&p| PathBuf::from(p));
-        
-        info!("Applying language profile: {} for env_path {}", lang, env_path);
-        
-        use sentinel::mcp::sandbox::SandboxProfile;
-        match lang {
-            "python" => {
-                 let profile = sentinel::mcp::sandbox::profiles::python::PythonProfile::new(env_path, core_path);
-                 profile.apply(&mut policy)?;
-            },
-            _ => {
-                eprintln!("Error: Unknown language profile '{}'", lang);
-                std::process::exit(1);
-            }
-        }
-    }
-
-    if use_sandbox {
-        info!("Sandbox Enabled. Policy: {:?}", policy);
-        config.sandbox = Some(policy.clone());
-    } else {
-        info!("Sandbox Disabled.");
-    }
     
     if let Err(e) = init_tracing(&config) {
         eprintln!("Failed to init tracing: {}", e);
     }
 
-    // DRY RUN / INSPECT LOGIC
-    if cli.dry_run {
-        println!("--- Dry Run: Effective Sandbox Configuration ---");
-        if use_sandbox {
-            println!("{}", serde_json::to_string_pretty(&policy).unwrap());
-        } else {
-            println!("No sandbox configuration.");
-        }
-        return Ok(());
-    }
 
-    if let Some(path) = cli.inspect {
-        println!("--- Binary Inspection: {} ---", path.display());
-        match sentinel::utils::pe::get_dependencies(&path) {
-            Ok(deps) => {
-                println!("Dependencies found:");
-                for dep in deps {
-                    println!("  - {}", dep);
-                }
-            },
-            Err(e) => {
-                eprintln!("Error inspecting binary: {}", e);
-                std::process::exit(1);
-            }
-        }
-        return Ok(());
-    }
 
 
     info!("Starting Sentinel in Middleware Mode");

@@ -5,11 +5,11 @@ import inspect
 from typing import Callable, Any, Dict, List
 
 # Configure minimal logging to stderr
-logging.basicConfig(level=logging.INFO, stream=sys.stderr, format='[MCP] %(message)s')
+logging.basicConfig(level=logging.INFO, stream=sys.stderr, format='[MCP-Manual] %(message)s')
 logger = logging.getLogger(__name__)
 
-class MCPServer:
-    """Minimalistic MCP Server implementation."""
+class ManualMCPServer:
+    """Minimalistic MCP Server implementation with LSP-style framing."""
     
     def __init__(self):
         self._tools: Dict[str, Callable] = {}
@@ -28,7 +28,7 @@ class MCPServer:
                 "inputSchema": {
                     "type": "object",
                     "properties": {
-                        k: {"type": "string"} # Simplified schema inference
+                        k: {"type": "string"} 
                         for k in inspect.signature(func).parameters
                     }
                 }
@@ -38,9 +38,10 @@ class MCPServer:
 
     def run(self):
         """Main JSON-RPC loop."""
-        logger.info("Server started (Stio Transport)")
+        logger.info("Server started (Stdio Transport)")
         while True:
             try:
+                # Read Headers
                 line = sys.stdin.readline()
                 if not line: break
                 
@@ -52,14 +53,24 @@ class MCPServer:
                         l = sys.stdin.readline()
                         if not l.strip(): break
                     
+                    # Read Body
                     body = sys.stdin.read(length)
+                    if not body: break
+                    
                     req = json.loads(body)
                     self._handle_request(req)
                 elif text:
-                    # Fallback for old style (test compatibility)
-                    req = json.loads(text)
-                    self._handle_request(req)
-            except (json.JSONDecodeError, ValueError):
+                    # Ignore non-header lines or try to parse if it looks like JSON (resilience)
+                     try:
+                        req = json.loads(text)
+                        # If we successfully parsed JSON from a line without headers, 
+                        # we might want to handle it, but for this strict test we ignore or log.
+                        # Sentinel sends headers, so we expect headers.
+                        pass
+                     except:
+                        pass
+            except (json.JSONDecodeError, ValueError) as e:
+                logger.error(f"JSON Error: {e}")
                 continue
 
     def _handle_request(self, req: Dict[str, Any]):
@@ -74,7 +85,7 @@ class MCPServer:
                 response["result"] = {
                     "protocolVersion": "2024-11-05",
                     "capabilities": {},
-                    "serverInfo": {"name": "DemoServer", "version": "1.0"}
+                    "serverInfo": {"name": "ManualServer", "version": "1.0"}
                 }
             
             elif method == "tools/list":
@@ -97,46 +108,56 @@ class MCPServer:
                 return # No response needed
 
             else:
-                return # Ignore unsupported methods
+                # Method not found
+                raise ValueError(f"Method not found: {method}")
 
         except Exception as e:
-            logger.error(f"Error: {e}")
+            logger.error(f"Error handling {method}: {e}")
             response["error"] = {"code": -32603, "message": str(e)}
 
         if msg_id is not None:
             body = json.dumps(response).encode("utf-8")
+            # Write with Content-Length header
             header = f"Content-Length: {len(body)}\r\n\r\n".encode("ascii")
             sys.stdout.buffer.write(header + body)
             sys.stdout.buffer.flush()
 
-# --- Tool Implementation ---
+# --- Tool Definitions matching tests/resources/vulnerable_tools.py ---
 
-server = MCPServer()
-
-@server.tool
-def get_financial_report() -> str:
-    """Retrieves the confidential financial report."""
-    return "CONFIDENTIAL REPORT: Revenue $50M. Project Code: PHOENIX."
+server = ManualMCPServer()
 
 @server.tool
-def analyze_data(data: str) -> str:
-    """Analyzes provided text data."""
-    return f"Analysis: {len(data)} chars. Sentiment: Positive."
+def read_db(query: str) -> str:
+    """Mock database read for basic flow tests."""
+    return f"Result for {query}"
 
 @server.tool
-def upload_to_cloud(url: str, content: str) -> str:
-    """Uploads data to external cloud storage."""
-    logger.info(f"Uploading to {url}...")
-    return f"Uploaded successfully to {url}"
+def send_slack(msg: str) -> str:
+    """Mock slack send."""
+    return f"Sent: {msg}"
 
 @server.tool
-def unauthorized_read(path: str) -> str:
-    """Read a file from the host system. (ATTACK TEST)"""
-    try:
-        with open(path, 'r') as f:
-            return f.read(100)
-    except Exception as e:  
-        return f"ACCESS_DENIED: {str(e)}"
+def read_user_db(user_id: str) -> str:
+    """Reads sensitive user data (PII)."""
+    return f"User data for {user_id}: Sensitive PII Data. [CONFIDENTIAL]"
+
+@server.tool
+def export_to_cloud(data: str, destination: str = "default-sink") -> str:
+    """Exports data to an external cloud sink."""
+    return f"Successfully exported data to {destination}: {data}"
+
+@server.tool
+def sleep_tool(seconds: str) -> str:
+    """Simulates a long-running process."""
+    import time
+    sec = float(seconds)
+    time.sleep(sec)
+    return f"Slept for {sec} seconds"
+
+@server.tool
+def ping() -> str:
+    """Simple health check."""
+    return "pong"
 
 if __name__ == "__main__":
     server.run()

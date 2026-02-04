@@ -30,12 +30,7 @@ _SESSION_TIMEOUT_SEC = 5.0
 _SESSION_POLL_INTERVAL_SEC = 0.1
 _ENV_BINARY_PATH = "SENTINEL_BINARY_PATH"
 _BINARY_NAME = "sentinel.exe" if os.name == "nt" else "sentinel"
-_BINARY_SEARCH_PATHS = [
-    "sentinel/target/release/",
-    "sentinel/target/debug/",
-    "target/release/",
-    "./",
-]
+_BINARY_SEARCH_PATHS = [] # Removed dev paths for zero-bloat SDK
 
 _logger = logging.getLogger("sentinel_sdk")
 
@@ -86,11 +81,7 @@ class Sentinel:
         *,
         policy: Optional[str] = None,
         binary: Optional[str] = None,
-        allow_read: Optional[List[str]] = None,
-        allow_write: Optional[List[str]] = None,
-        allow_net: bool = False,
-        allow_env: Optional[List[str]] = None,
-        language_profile: Optional[str] = None,
+
     ) -> None:
         """Initialize Sentinel middleware configuration.
 
@@ -128,11 +119,7 @@ class Sentinel:
         self._policy_path = os.path.abspath(policy) if policy else None
 
         # Sandbox permissions (Deno-style)
-        self._allow_read = allow_read or []
-        self._allow_write = allow_write or []
-        self._allow_net = allow_net
-        self._allow_env = allow_env or []
-        self._language_profile = language_profile
+
 
         # Runtime state
         self._process: Optional[asyncio.subprocess.Process] = None
@@ -257,21 +244,6 @@ class Sentinel:
         if self._policy_path:
             cmd.extend(["--policy", self._policy_path])
 
-        if self._language_profile:
-            cmd.extend(["--language-profile", self._language_profile])
-
-        for path in self._allow_read:
-            cmd.extend(["--allow-read", path])
-
-        for path in self._allow_write:
-            cmd.extend(["--allow-write", path])
-
-        if self._allow_net:
-            cmd.append("--allow-net")
-
-        for env_var in self._allow_env:
-            cmd.extend(["--allow-env", env_var])
-
         cmd.extend(["--upstream-cmd", self._upstream_cmd])
         if self._upstream_args:
             cmd.append("--")
@@ -324,17 +296,38 @@ class Sentinel:
 
         try:
             while True:
+                # Read Content-Length header
                 line = await self._process.stdout.readline()
                 if not line:
                     break
-
+                
                 text = line.decode().strip()
-                try:
-                    msg = json.loads(text)
-                    if "id" in msg:
-                        self._dispatch_response(msg)
-                except json.JSONDecodeError:
-                    _logger.debug("[stdout] %s", text)
+                if not text:
+                    continue
+                
+                if text.lower().startswith("content-length:"):
+                    try:
+                        length = int(text.split(":")[1].strip())
+                        # Consume exactly ONE \r\n or \n (the empty line)
+                        # MCP/LSP transport says \r\n\r\n separates header and body.
+                        # We already read the first line (Content-Length: ...).
+                        # Now we skip everything until we hit the empty line.
+                        while True:
+                            line = await self._process.stdout.readline()
+                            if not line.strip():
+                                break
+                        
+                        # Read body
+                        body = await self._process.stdout.readexactly(length)
+                        msg = json.loads(body)
+                        if "id" in msg:
+                            self._dispatch_response(msg)
+                    except (ValueError, asyncio.IncompleteReadError) as e:
+                        _logger.error("Failed to read body: %s", e)
+                elif text.startswith("SENTINEL_SESSION_ID="):
+                     self._session_id = text.split("=", 1)[1]
+                else:
+                    _logger.debug("[stdout noise] %s", text)
         except asyncio.CancelledError:
             pass
         finally:
@@ -368,10 +361,11 @@ class Sentinel:
             raise RuntimeError("Sentinel process not running")
 
         request = {"jsonrpc": "2.0", "method": method, "params": params}
-        data = json.dumps(request) + "\n"
+        body = json.dumps(request).encode("utf-8")
+        header = f"Content-Length: {len(body)}\r\n\r\n".encode("ascii")
 
         async with self._lock:
-            self._process.stdin.write(data.encode())
+            self._process.stdin.write(header + body)
             await self._process.stdin.drain()
 
     async def _send_request(
@@ -399,9 +393,11 @@ class Sentinel:
         future: asyncio.Future = asyncio.Future()
         self._pending_requests[req_id] = future
 
-        data = json.dumps(request) + "\n"
+        body = json.dumps(request).encode("utf-8")
+        header = f"Content-Length: {len(body)}\r\n\r\n".encode("ascii")
+        
         async with self._lock:
-            self._process.stdin.write(data.encode())
+            self._process.stdin.write(header + body)
             await self._process.stdin.drain()
 
         try:
