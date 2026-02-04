@@ -1,137 +1,54 @@
-# Sentinel Interceptor
+# Sentinel Core (Rust)
 
-Rust MCP security middleware.
+High-performance, memory-safe middleware for MCP security enforcement.
 
 ## Build
 
 ```bash
 cargo build --release
-cargo test
-cargo clippy -- -D warnings
+# Binary: ./target/release/sentinel
 ```
 
-## Run
+## Usage
+
+Sentinel is typically invoked via the SDK, but can be run manually:
 
 ```bash
-sentinel-interceptor \
+sentinel \
   --policy policy.yaml \
   --upstream-cmd "python" \
   -- tools.py
 ```
 
-## Flags
+## Architecture
 
-| Flag | Description |
-|------|-------------|
-| `--upstream-cmd` | Tool server executable |
-| `--policy` | YAML policy file |
-| `--` | Upstream arguments |
+Sentinel uses an async Actor Model to handle concurrent I/O streams without deadlocks.
 
-## Environment
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `LOG_LEVEL` | `info` | trace, debug, info, warn, error |
-
-## Components
-
+```
 src/
 ├── mcp/
-│   ├── server.rs     # Actor coordinator
-│   ├── pipeline.rs   # Async reader/writer tasks
-│   ├── codec.rs      # LSP/JSON-RPC framing
-│   ├── process.rs    # OS-level supervision
+│   ├── server.rs     # Actor Coordinator
+│   ├── codec.rs      # Hardened Line/LSP Framing
+│   ├── process.rs    # Cross-platform Process Supervision
 │   └── mod.rs
 ├── core/
-│   ├── security_core.rs # Logic kernel
-│   ├── types.rs      # SafeString/TaintedString types
-│   ├── taint.rs      # Taint analysis logic
-│   ├── crypto.rs     # HMAC session logic
-│   └── mod.rs
-└── engine/           # Rule evaluation logic
+│   ├── crypto.rs     # HMAC Session Logic
+│   └── models.rs     # Policy Data Structures
+└── engine/           # Policy Evaluation (Static + Taint)
 ```
 
-## Security
+## Security Features
 
-### Session ID Format
+1.  **Session Binding**: Ephemeral HMAC-SHA256 signatures per session.
+2.  **Spotlighting**: Randomized output delimiters to prevent prompt injection.
+3.  **Taint Tracking**: Information flow control for sensitive data.
+4.  **Fail-Closed**: All policies deny by default.
 
-```
-{version}.{uuid_b64}.{hmac_b64}
-    │         │           │
-    │         │           └── HMAC-SHA256 signature
-    │         └── UUID (16 bytes)
-    └── Version (for algorithm upgrades)
-```
+## Environment Variables
 
-- Ephemeral secret per process
-- Constant-time comparison
-- Bound to session lifecycle
-
-### Spotlighting
-
-```
-<<<SENTINEL_DATA_START:a1b2c3d4>>>
-{untrusted tool output}
-<<<SENTINEL_DATA_END:a1b2c3d4>>>
-```
-
-Random ID per response prevents delimiter injection.
-
-### Process Isolation
-
-**Windows:**
-```rust
-let job = Job::create()?;
-info.limit_kill_on_job_close();
-job.assign_process(&child)?;
-```
-
-**Linux:**
-```rust
-prctl(PR_SET_PDEATHSIG, SIGKILL);
-```
-
-Parent death terminates child.
-
-## Policy Format
-
-```yaml
-id: policy-id
-customerId: customer-id
-name: Policy Name
-version: 1
-
-staticRules:
-  tool_name: ALLOW | DENY
-
-taintRules:
-  - tool: source_tool
-    action: ADD_TAINT
-    tag: TAG
-    
-  - tool: sink_tool
-    action: CHECK_TAINT
-    forbiddenTags: [TAG]
-    error: "Error message"
-
-resourceRules:
-  - uriPattern: "file:///allowed/*"
-    action: ALLOW
-```
-
-## Dependencies
-
-| Crate | Purpose |
-|-------|---------|
-| `tokio` | Async |
-| `serde_json` | JSON |
-| `clap` | CLI |
-| `tracing` | Logging |
-| `hmac` + `sha2` | Signing |
-| `ring` | Random |
-| `win32job` | Windows isolation |
-| `libc` | Linux syscalls |
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `RUST_LOG` | Logging level (`info`, `debug`, `trace`) | `info` |
 
 ## License
-
-[Apache-2.0](../LICENSE)
+Apache-2.0

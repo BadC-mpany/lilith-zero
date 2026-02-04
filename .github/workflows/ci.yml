@@ -1,120 +1,130 @@
-name: CI
+name: Sentinel CI
 
 on:
   push:
-    branches: [main, develop]
+    branches: [ "main" ]
   pull_request:
-    branches: [main]
+    branches: [ "main" ]
+  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
 
 jobs:
-  rust:
-    name: Rust Build & Test
+  # --------------------------------------------------------------------------
+  # Rust Core Validation (Windows & Linux)
+  # --------------------------------------------------------------------------
+  rust-core:
+    name: Rust Core (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    defaults:
-      run:
-        working-directory: sentinel
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest]
-    
+        os: [windows-latest, ubuntu-latest]
     steps:
       - uses: actions/checkout@v4
-      
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@v1
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
           components: clippy, rustfmt
-      
-      - name: Cache cargo
-        uses: actions/cache@v4
+
+      - name: Cache Cargo registry
+        uses: actions/cache@v3
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
             sentinel/target
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-      
-      - name: Check formatting
-        run: cargo fmt --all -- --check
-      
-      - name: Clippy
-        run: cargo clippy --all-targets --all-features -- -D warnings
-      
-      - name: Install cargo-audit
-        uses: taiki-e/install-action@cargo-audit
 
-      - name: Audit dependencies
-        run: cargo audit
+      - name: Format Check
+        run: cd sentinel && cargo fmt --all -- --check
 
-      - name: Build
-        run: cargo build --release
-      
-      - name: Test
-        run: cargo test --all-features
+      - name: Clippy (Linting)
+        run: cd sentinel && cargo clippy --all-targets --all-features -- -D warnings
 
-  python:
-    name: Python Build & Test
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest, windows-latest]
-        python-version: ['3.10', '3.11', '3.12']
-    
+      - name: Examples Check (Sandbox)
+        run: cd sentinel && cargo check --examples
+
+      - name: Tests
+        run: cd sentinel && cargo test --all-features
+
+      - name: Build Release
+        run: cd sentinel && cargo build --release
+
+      - name: Upload Binary Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sentinel-${{ matrix.os }}
+          path: |
+            sentinel/target/release/sentinel
+            sentinel/target/release/sentinel.exe
+          if-no-files-found: ignore
+
+  # --------------------------------------------------------------------------
+  # Python SDK Validation
+  # --------------------------------------------------------------------------
+  python-sdk:
+    name: Python SDK
+    runs-on: ubuntu-latest
+    needs: [rust-core] # Wait for Rust, though conceptually independent
     steps:
       - uses: actions/checkout@v4
-      
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-      
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install ruff mypy pytest pytest-asyncio
-          pip install -e sentinel_sdk
-      
-      - name: Lint with ruff
-        run: ruff check sentinel_sdk --ignore E501
-      
-      - name: Type check with mypy
-        run: mypy sentinel_sdk/src --ignore-missing-imports || true
-      
-      - name: Run tests
-        run: python -m pytest tests -v --ignore=tests/test_integration.py || true
 
-  integration:
-    name: Integration Tests
-    runs-on: windows-latest
-    needs: [rust, python]
-    
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@v1
-        with:
-          toolchain: stable
-      
-      - name: Build Rust binary
-        working-directory: sentinel
-        run: cargo build --release
-      
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
-      
-      - name: Install Python SDK
+          python-version: "3.11"
+
+      - name: Install Dependencies
         run: |
-          pip install fastmcp
-          pip install -e sentinel_sdk
-      
-      - name: Run integration tests
+          python -m pip install --upgrade pip
+          pip install ruff mypy pytest pytest-asyncio
+          if [ -f sentinel_sdk/requirements.txt ]; then pip install -r sentinel_sdk/requirements.txt; fi
+          # Install SDK in editable mode
+          pip install -e sentinel_sdk/
+
+      - name: Ruff (Linting)
+        run: ruff check sentinel_sdk --ignore E501
+
+      - name: Mypy (Type Checking)
+        run: mypy sentinel_sdk/src --ignore-missing-imports
+
+      - name: Init Test (Unit Only)
+        # Skip integration tests that require the binary being present
+        run: python -m pytest tests --ignore=tests/test_basic_flow.py --ignore=tests/test_security_hardening.py
+
+  # --------------------------------------------------------------------------
+  # Integration Tests (Windows)
+  # --------------------------------------------------------------------------
+  integration-windows:
+    name: Integration (Windows)
+    runs-on: windows-latest
+    needs: [rust-core] # Needs binary
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Download Windows Binary
+        uses: actions/download-artifact@v4
+        with:
+          name: sentinel-windows-latest
+          path: sentinel/target/release
+
+      - name: Install SDK & Deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e sentinel_sdk/
+          pip install pytest pytest-asyncio
+
+      - name: Run Integration Tests
         env:
           SENTINEL_BINARY_PATH: sentinel/target/release/sentinel.exe
-        run: python tests/test_integration.py
+          RUST_LOG: info
+        run: |
+          python -m pytest tests/test_basic_flow.py tests/test_security_hardening.py

@@ -1,27 +1,51 @@
-# Sentinel SDK
+# Sentinel Python SDK
 
-The Sentinel SDK allows you to easily wrap your MCP Tool Servers with the Sentinel security middleware.
+The official Python client for the Sentinel Security Middleware.
 
 ## Installation
+
 ```bash
-pip install -e ./sentinel_sdk
+pip install sentinel_sdk
 ```
 
+*Note: This package requires the `sentinel` binary core. The SDK will attempt to find it automatically or guide you to install it.*
+
 ## Usage
-Wrap any MCP command to instantly apply security policies.
+
+### Zero-Config Connection
+Sentinel automatically discovers the binary on your PATH or in standard locations.
 
 ```python
-from sentinel_sdk import Sentinel
+from sentinel_sdk import Sentinel, PolicyViolationError
 
-client = Sentinel.start(
-    upstream="python tools.py",
-    policy="policy.yaml"
+client = Sentinel(
+    upstream="python my_tool_server.py", # The command to run your tools
+    policy="policy.yaml"                 # Security rules
 )
 
 async with client:
-    # Deterministic policy enforcement active here
-    result = await client.execute_tool("read_db", {"q": "..."})
+    try:
+        tools = await client.list_tools()
+        result = await client.call_tool("read_file", {"path": "secret.txt"})
+    except PolicyViolationError as e:
+        print(f"Security Alert: {e}")
 ```
 
-See `examples/` for attack simulation and enterprise deployment demos.
-Requires `SENTINEL_BINARY_PATH` to be set to the Rust release binary.
+### Manual Binary Path
+If you need to point to a specific build (e.g. during development):
+
+```python
+client = Sentinel(
+    upstream="...",
+    binary="/path/to/custom/sentinel" 
+)
+```
+
+## Exceptions
+
+- `PolicyViolationError`: Raised when the Policy Engine determines a request is unsafe (Static Rule, Taint Check, or Resource Access).
+- `SentinelConnectionError`: Raised if the middleware process cannot start or crashes.
+- `SentinelConfigError`: Raised if the binary is missing or arguments are invalid.
+
+## License
+Apache-2.0

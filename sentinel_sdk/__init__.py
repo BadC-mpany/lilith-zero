@@ -18,6 +18,21 @@ Copyright 2024 Google DeepMind. All Rights Reserved.
 """
 
 from .src.sentinel_sdk import Sentinel
+from .src.exceptions import (
+    SentinelError,
+    SentinelConfigError,
+    SentinelConnectionError,
+    SentinelProcessError,
+    PolicyViolationError,
+)
 
 __version__ = "0.2.0"
-__all__ = ["Sentinel", "__version__"]
+__all__ = [
+    "Sentinel",
+    "SentinelError",
+    "SentinelConfigError",
+    "SentinelConnectionError",
+    "SentinelProcessError",
+    "PolicyViolationError",
+    "__version__"
+]

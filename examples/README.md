@@ -1,37 +1,35 @@
-# Sentinel Demo: LangChain & Observability
+# Sentinel Examples
 
-This demo showcases Sentinel's ability to provide deterministic security and observability to a LangChain-based agent.
+This directory contains reference implementations and demos for the Sentinel middleware.
 
-## Components
-1. **`tools_server.py`**: A `FastMCP` server providing database and communication tools.
-2. **`demo_policy.yaml`**: A Sentinel policy that implements **Taint Tracking**:
-   - `read_database` -> Adds a `PII` taint to the session.
-   - `send_email` -> Blocked if a `PII` taint is present (preventing exfiltration).
-3. **`observability_demo.py`**: A LangChain agent that uses these tools through Sentinel.
+## 1. React Agent Demo (`react_agent_demo/`)
 
-## Prerequisites
-- **Python Dependencies**:
-  ```bash
-  pip install langchain langchain-openai python-dotenv fastmcp
-  ```
-- **OpenRouter API Key**:
-  Provide an API key via environment variable:
-  ```bash
-  # Windows
-  set OPENROUTER_API_KEY=your_key_here
-  # Or create a .env file
-  ```
+A comprehensive showcase of Sentinel protecting a ReAct-style agent.
 
-## Running the Demo
+- **`demo.py`**: Properties of Sentinel (Taint Tracking, Fail-Closed, Spotlighting).
+- **`agent.py`**: A minimal ReAct agent implementation.
+- **`mock_server.py`**: A compliant MCP server for testing without external dependencies.
+- **`policy.yaml`**: The security rules enforcing the demo logic.
+
+**Run:**
 ```bash
-python examples/observability_demo.py
+python examples/react_agent_demo/demo.py
 ```
 
-## What to Observe
-- **Deterministic Security**: The agent is allowed to read data, but as soon as it tries to "send" data to an external service *after* reading, Sentinel blocks the call.
-- **Audit Logs**: Watch the `stderr` output (printed to console) for structured JSON logs. Every decision is logged with:
-  - `event_type`: "Decision"
-  - `tool`: The tool being called
-  - `decision`: "Allowed" or "Denied"
-  - `session_id`: Unique HMAC-signed ID for the session
-- **Spotlighting**: Sentinel wraps tool outputs in randomized delimiters (e.g., `<<<SENTINEL_DATA_START:XXXX>>>`) to prevent the LLM from being tricked by "fake" tool outputs in its prompt.
+## 2. Simple Demo (`simple_demo/`)
+
+A minimal "Hello World" for Sentinel.
+
+- Shows basic connection and tool listing.
+- Good starting point for understanding the SDK `Sentinel` class.
+
+**Run:**
+```bash
+python examples/simple_demo/main.py
+```
+
+## Prerequisites
+Ensure the `sentinel_sdk` is installed:
+```bash
+pip install -e sentinel_sdk
+```

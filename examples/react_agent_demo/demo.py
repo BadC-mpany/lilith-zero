@@ -20,7 +20,7 @@ from rich.markdown import Markdown
 
 # Import Sentinel SDK
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
-from sentinel_sdk import Sentinel
+from sentinel_sdk import Sentinel, PolicyViolationError
 
 # Configuration
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -79,7 +79,7 @@ async def demo_policy_enforcement():
                 "content": text
             })
             console.print("[red]SECURITY FAILURE: Upload was allowed![/red]")
-        except RuntimeError as e:
+        except PolicyViolationError as e:
             console.print(Panel(
                 str(e),
                 title="[red]BLOCKED by Taint Policy[/red]",

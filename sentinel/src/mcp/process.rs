@@ -1,6 +1,9 @@
-//! Upstream process management.
+//! Upstream process management with Zombie Process Protection.
+//! 
+//! Implements strict parent-child binding to ensure upstream tools are eliminated
+//! if the Sentinel middleware crashes or is terminated.
 
-use anyhow::Result;
+use anyhow::{Result, Context};
 use tracing::debug;
 use std::process::Stdio;
 use tokio::process::Command;
@@ -8,9 +11,20 @@ use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::sync::{mpsc, oneshot};
 use crate::mcp::pipeline::UpstreamEvent;
 
+// Windows-specific imports
+#[cfg(windows)]
+use win32job::Job;
+
+// Unix-specific imports
+#[cfg(unix)]
+use std::os::unix::process::CommandExt;
+
 pub struct ProcessSupervisor {
     // Channel to trigger manual kill
     kill_tx: Option<oneshot::Sender<()>>,
+    // Keep job object alive (Windows only)
+    #[cfg(windows)]
+    _job: Option<Job>,
 }
 
 pub type ProcessSpawnResult = (
@@ -29,17 +43,60 @@ impl ProcessSupervisor {
         debug!("ProcessSupervisor: spawning '{}' with args {:?}", cmd, args);
         
         let mut command = Command::new(cmd);
-        command.args(args).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
+        command.args(args)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
         
-        // Windows-specific creation flags could be added here if needed (e.g. CREATE_NO_WINDOW), 
-        // but keeping it simple for now.
-        #[cfg(windows)]
-        command.creation_flags(0x08000000); // CREATE_NO_WINDOW to hide console window? 
-        // actually standard stdio redirection usually hides it if not detached. 
-        // keeping it standard.
+        // ------------------------------------------------------------------
+        // UNIX: PR_SET_PDEATHSIG
+        // ------------------------------------------------------------------
+        #[cfg(unix)]
+        unsafe {
+            command.pre_exec(|| {
+                // Send SIGKILL to child if parent (Sentinel) dies
+                let ret = libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL);
+                if ret != 0 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
 
-        let mut child = command.spawn()?;
+        // ------------------------------------------------------------------
+        // WINDOWS: Job Objects (Part 1 - Creation)
+        // ------------------------------------------------------------------
+        #[cfg(windows)]
+        let job = {
+            let job = Job::create().context("Failed to create Job Object")?;
+            let mut info = job.query_extended_limit_info().context("Failed to query job info")?;
+            info.limit_kill_on_job_close();
+            job.set_extended_limit_info(&mut info).context("Failed to set job limits")?;
+            debug!("Initialized Windows Job Object for automatic cleanup");
+            Some(job)
+        };
+
+        // Note: On Windows, we need to creation_flags(CREATE_SUSPENDED) if we wanted to 
+        // strictly ensure assignment before execution, but Job Object assignment works 
+        // on the handle immediately after spawn, which is usually sufficient for "crash protection".
+        // To be strictly atomic (preventing runaway if assignment fails), we'd use suspended.
+        // For Sentinel v0.1 simplification, we assign immediately after.
+
+        // Spawn
+        let mut child = command.spawn().context("Failed to spawn upstream process")?;
         
+        // ------------------------------------------------------------------
+        // WINDOWS: Job Objects (Part 2 - Assignment)
+        // ------------------------------------------------------------------
+        #[cfg(windows)]
+        if let Some(ref job) = job {
+            // Safety: We are using the raw handle from the standard library Child
+            if let Some(handle) = child.raw_handle() {
+                job.assign_process(handle as isize).context("Failed to assign process to Job Object")?;
+                debug!("Assigned process {} to Job Object", child.id().unwrap_or(0));
+            }
+        }
+
         let stdin = child.stdin.take().map(|s| Box::new(s) as Box<dyn AsyncWrite + Unpin + Send>);
         let stdout = child.stdout.take().map(|s| Box::new(s) as Box<dyn AsyncRead + Unpin + Send>);
         let stderr = child.stderr.take().map(|s| Box::new(s) as Box<dyn AsyncRead + Unpin + Send>);
@@ -66,7 +123,9 @@ impl ProcessSupervisor {
 
         Ok((
             Self { 
-                kill_tx: Some(kill_tx)
+                kill_tx: Some(kill_tx),
+                #[cfg(windows)]
+                _job: job,
             },
             stdin,
             stdout,
@@ -84,5 +143,7 @@ impl ProcessSupervisor {
 impl Drop for ProcessSupervisor {
     fn drop(&mut self) {
         self.kill();
+        // On Windows, _job is dropped here, which triggers LIMIT_KILL_ON_JOB_CLOSE
+        // if the process is still running.
     }
 }

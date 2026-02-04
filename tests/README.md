@@ -2,19 +2,31 @@
 
 Validated security hardening for the Sentinel MCP middleware.
 
-## Running Tests
-Ensure you have built the Sentinel binary first:
+## Quickstart
+
+Run all integration tests:
 ```bash
-cd sentinel
-cargo build --release
+python -m pytest tests/
 ```
 
-Run all tests from the project root:
-```bash
-python -m unittest discover tests
-```
+*Note: The test suite automatically finds the `sentinel` binary using the rules defined in the SDK (or `SENTINEL_BINARY_PATH`).*
 
-## Structure
-- `test_security_hardening.py`: Deep dive into PII taint tracking, resource blocks, and JWT auth.
-- `test_basic_flow.py`: High-level E2E integration sanity check.
-- `resources/`: contains the mock tools and noisy upstream simulations.
+## Test Modules
+
+### 1. `test_basic_flow.py`
+**End-to-End Connectivity Sanity Check.**
+- Verifies that the Agent can talk to the Sentinel.
+- Verifies that Sentinel can talk to the Tool Server.
+- Verifies basic `tools/list` and `tools/call`.
+
+### 2. `test_security_hardening.py`
+**Security Policy Enforcement.**
+- **Fail-Closed**: Blocks execution if no policy is present.
+- **Taint Tracking**: Verifies that tainted data (e.g., from `read_database`) cannot be passed to sensitive sinks (e.g., `upload`).
+- **Resource Globbing**: Checks path-based access controls (`file:///allowed/*`).
+- **Spotlighting**: Ensures tool outputs are wrapped in randomized delimiters.
+- **Noise Resilience**: Verifies that the protocol adapter handles non-JSON stdout garbage handled gracefully.
+
+## Resources
+- `resources/manual_server.py`: A strictly compliant MCP server for testing.
+- `resources/noisy_tool.py`: A server that intentionally emits garbage to test protocol robustness.

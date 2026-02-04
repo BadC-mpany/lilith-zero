@@ -6,7 +6,7 @@ import logging
 
 # Add project root to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from sentinel_sdk import Sentinel
+from sentinel_sdk import Sentinel, PolicyViolationError
 
 # Setup logging
 logging.basicConfig(level=logging.DEBUG)
@@ -66,7 +66,7 @@ class TestBasicFlow(unittest.IsolatedAsyncioTestCase):
             try:
                 await client.call_tool("send_slack", {"msg": "Should fail"})
                 self.fail("Tool 'send_slack' should have been blocked")
-            except RuntimeError as e:
+            except PolicyViolationError as e:
                 logger.info(f"Blocked correctly: {e}")
                 self.assertIn("forbidden by static policy", str(e))
 
