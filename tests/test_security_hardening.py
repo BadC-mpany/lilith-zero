@@ -27,7 +27,7 @@ class TestSecurityHardening(unittest.IsolatedAsyncioTestCase):
         self.upstream_script = os.path.join(self.resources_dir, "manual_server.py")
         self.noisy_script = os.path.join(self.resources_dir, "noisy_tool.py")
         self.policy_path = os.path.join(self.test_dir, "policy_hardening.yaml")
-        self.binary_path = os.path.abspath("./sentinel/target/release/sentinel.exe")
+        self.binary_path = os.environ.get("SENTINEL_BINARY_PATH")
         
         # Temp policy file for resource tests
         self.temp_policy = os.path.join(self.test_dir, "temp_resource_policy.yaml")

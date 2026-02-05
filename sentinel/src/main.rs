@@ -57,10 +57,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 
     info!("Starting Sentinel in Middleware Mode");
-    let cmd = cli.upstream_cmd.ok_or_else(|| anyhow::anyhow!("Missing --upstream-cmd"))?;
-    info!("Upstream: {} {:?}", cmd, cli.upstream_args);
+    let upstream_cmd = cli.upstream_cmd.ok_or_else(|| anyhow::anyhow!("Missing --upstream-cmd"))?;
+    info!("Upstream: {} {:?}", upstream_cmd, cli.upstream_args);
 
-    let mut middleware = McpMiddleware::new(cmd, cli.upstream_args, Arc::new(config))?;
+    let mut middleware = McpMiddleware::new(upstream_cmd, cli.upstream_args, Arc::new(config))?;
 
     middleware.run().await?;
 

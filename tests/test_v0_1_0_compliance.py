@@ -13,7 +13,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from sentinel_sdk import Sentinel, SentinelError, PolicyViolationError
 
 # Configuration
-BINARY_PATH = os.environ.get("SENTINEL_BINARY_PATH", "target/debug/sentinel.exe" if os.name == 'nt' else "target/debug/sentinel")
+BINARY_PATH = os.environ.get("SENTINEL_BINARY_PATH")
 TEST_DIR = os.path.dirname(os.path.abspath(__file__))
 POLICY_PATH = os.path.join(TEST_DIR, "resources", "v0_1_0_policy.yaml")
 UPSTREAM_PATH = os.path.join(TEST_DIR, "resources", "manual_server.py")
