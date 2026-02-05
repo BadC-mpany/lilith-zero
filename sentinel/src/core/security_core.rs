@@ -135,21 +135,20 @@ impl SecurityCore {
                          &self.taints,
                          arguments.inner() // Helper to get reference without consuming? Tainted is defined where?
                       ).await
-                  } else {
-                      // Fail Closed unless in AuditOnly mode
-                      match self.config.security_level {
-                          crate::config::SecurityLevel::AuditOnly => {
-                              warn!("No policy loaded. allowing request due to AuditOnly mode.");
-                              Ok(Decision::Allowed)
-                          },
-                          _ => {
-                              warn!("No policy loaded. Denying request due to strict security settings.");
-                              Ok(Decision::Denied { 
-                                  reason: "No security policy loaded. Sentinel defaults to Deny-All.".to_string() 
-                              })
-                          }
-                      }
-                  };
+                   } else {
+                       match self.config.security_level {
+                           crate::config::SecurityLevel::AuditOnly => {
+                               warn!("No security policy loaded. Allowing request due to AuditOnly mode.");
+                               Ok(Decision::Allowed)
+                           },
+                           crate::config::SecurityLevel::BlockParams => {
+                               warn!("No security policy loaded. Denying request due to strict security settings (Fail-Closed).");
+                               Ok(Decision::Denied { 
+                                   reason: "No security policy loaded. Sentinel defaults to Deny-All.".to_string() 
+                               })
+                           }
+                       }
+                   };
 
                   match evaluator_result {
                       Ok(decision) => self.process_evaluator_decision(&tool_name_str, &classes, decision),
@@ -342,8 +341,7 @@ impl SecurityCore {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use super::*;
-    use crate::core::events::SecurityEvent;
+    use crate::core::events::{SecurityEvent, SecurityDecision};
     use crate::core::types::TaintedString;
     use crate::core::taint::Tainted;
     
@@ -431,7 +429,10 @@ mod tests {
         let decision_audit = audit_core.evaluate(tool_event_audit).await;
         match decision_audit {
              SecurityDecision::Allow | SecurityDecision::AllowWithTransforms { .. } => {}
-             _ => panic!("Expected Allow for AuditOnly mode"),
+             other => {
+                 eprintln!("In AuditOnly mode, got unexpected decision: {:?}", other);
+                 panic!("Expected Allow for AuditOnly mode");
+             }
         }
     }
 }
