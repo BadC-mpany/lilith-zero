@@ -18,7 +18,8 @@ import logging
 import os
 import shutil
 import uuid
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Type, cast
+from asyncio import Future, Task
 
 from .exceptions import (
     SentinelError,
@@ -146,9 +147,9 @@ class Sentinel:
         self._process: Optional[asyncio.subprocess.Process] = None
         self._session_id: Optional[str] = None
         self._lock = asyncio.Lock()
-        self._pending_requests: Dict[str, asyncio.Future] = {}
-        self._reader_task: Optional[asyncio.Task] = None
-        self._stderr_task: Optional[asyncio.Task] = None
+        self._pending_requests: Dict[str, Future[Any]] = {}
+        self._reader_task: Optional[Task[None]] = None
+        self._stderr_task: Optional[Task[None]] = None
 
     @property
     def session_id(self) -> Optional[str]:
@@ -156,7 +157,7 @@ class Sentinel:
         return self._session_id
         
     @staticmethod
-    def install_binary():
+    def install_binary() -> None:
         """Helper to invoke the installer interactively."""
         install_sentinel(interactive=True)
 
@@ -168,7 +169,12 @@ class Sentinel:
         await self._connect()
         return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
+    async def __aexit__(
+        self,
+        exc_type: Optional[Type[BaseException]],
+        exc_val: Optional[BaseException],
+        exc_tb: Any,
+    ) -> None:
         await self._disconnect()
 
     # -------------------------------------------------------------------------
@@ -178,7 +184,8 @@ class Sentinel:
     async def list_tools(self) -> List[Dict[str, Any]]:
         """Fetch available tools from the upstream MCP server."""
         response = await self._send_request("tools/list", {})
-        return response.get("tools", [])
+        tools = response.get("tools", [])
+        return cast(List[Dict[str, Any]], tools)
 
     async def call_tool(self, name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
         """Execute a tool call through Sentinel policy enforcement.
@@ -189,7 +196,8 @@ class Sentinel:
             SentinelProcessError: If communication fails.
         """
         payload = {"name": name, "arguments": arguments}
-        return await self._send_request("tools/call", payload)
+        result = await self._send_request("tools/call", payload)
+        return cast(Dict[str, Any], result)
 
     # -------------------------------------------------------------------------
     # Connection Management (Private)
@@ -278,6 +286,8 @@ class Sentinel:
 
         if self._process and self._process.returncode is not None:
              # Read remaining stderr to give a clue
+             if self._process.stderr is None:
+                 raise SentinelProcessError(f"Sentinel process exited early with code {self._process.returncode}")
              err = await self._process.stderr.read()
              raise SentinelProcessError(
                 f"Sentinel process exited early with code {self._process.returncode}. Stderr: {err.decode()}"
@@ -407,7 +417,7 @@ class Sentinel:
             "id": req_id,
         }
 
-        future: asyncio.Future = asyncio.Future()
+        future: Future[Any] = asyncio.Future()
         self._pending_requests[req_id] = future
 
         body = json.dumps(request).encode("utf-8")
