@@ -78,8 +78,8 @@ def _find_binary() -> str:
     # This is a heuristic for local development convenience.
     try:
         current_dir = os.path.dirname(os.path.abspath(__file__))
-        # Go up to repo root (src -> sentinel_sdk -> repo)
-        repo_root = os.path.dirname(os.path.dirname(os.path.dirname(current_dir))) 
+        # Go up to repo root: sdk/sdk/client.py -> sdk/sdk -> sdk -> repo
+        repo_root = os.path.dirname(os.path.dirname(current_dir)) 
         dev_binary = os.path.join(repo_root, "sentinel", "target", "release", _BINARY_NAME)
         if os.path.exists(dev_binary):
              _logger.debug(f"Found dev binary at {dev_binary}")

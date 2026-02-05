@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from sentinel_sdk import Sentinel, SentinelError
 
 
-BINARY_PATH = os.environ.get("SENTINEL_BINARY_PATH", "target/debug/sentinel.exe" if os.name == 'nt' else "target/debug/sentinel")
+BINARY_PATH = os.environ.get("SENTINEL_BINARY_PATH")
 UPSTREAM_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "resources", "manual_server.py")
 UPSTREAM_CMD = f"python {UPSTREAM_PATH}"
 
