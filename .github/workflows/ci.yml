@@ -73,16 +73,21 @@ jobs:
   # --------------------------------------------------------------------------
   # Rust Security Audit
   # --------------------------------------------------------------------------
+  # --------------------------------------------------------------------------
+  # Rust Security Audit
+  # --------------------------------------------------------------------------
   rust-security-audit:
     name: Rust Security Audit
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Run Cargo Audit
-        uses: rustsec/audit-check@v1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          working-directory: sentinel
+      
+      - name: Install cargo-audit
+        run: cargo install cargo-audit
+        
+      - name: Run Audit
+        run: cargo audit
+        working-directory: sentinel
 
   # --------------------------------------------------------------------------
   # Python SDK Validation (Standardized)
@@ -120,11 +125,8 @@ jobs:
 
       - name: SDK Unit Tests (Hermetic)
         run: |
-          # Only run real unit tests that don't need the sentinel binary
-          pytest tests --ignore=tests/test_basic_flow.py \
-                       --ignore=tests/test_security_hardening.py \
-                       --ignore=tests/test_v0_1_0_compliance.py \
-                       --ignore=tests/test_robustness.py
+          # Only run hermetic tests that verify SDK logic without binaries
+          pytest tests/test_sdk_hermetic.py
 
   # --------------------------------------------------------------------------
   # Multi-OS Integration Tests (The Bulletproof Layer)
