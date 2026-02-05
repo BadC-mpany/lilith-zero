@@ -109,17 +109,17 @@ jobs:
 
       - name: Install Dependencies & SDK
         run: |
-          uv pip install ruff mypy pytest pytest-asyncio
-          uv pip install -e sentinel_sdk/
+          uv pip install --system ruff mypy pytest pytest-asyncio
+          uv pip install --system -e sentinel_sdk/
 
       - name: Ruff Check (Linting)
-        run: uv run ruff check sentinel_sdk
+        run: ruff check sentinel_sdk
 
       - name: Mypy (Strong Typing)
-        run: uv run mypy sentinel_sdk/sentinel_sdk --strict --ignore-missing-imports
+        run: mypy sentinel_sdk/sentinel_sdk --strict --ignore-missing-imports
 
       - name: SDK Unit Tests (Hermetic)
-        run: uv run pytest tests --ignore=tests/test_basic_flow.py --ignore=tests/test_security_hardening.py
+        run: pytest tests --ignore=tests/test_basic_flow.py --ignore=tests/test_security_hardening.py
 
   # --------------------------------------------------------------------------
   # Multi-OS Integration Tests (The Bulletproof Layer)
@@ -154,8 +154,8 @@ jobs:
 
       - name: Install SDK & Test Hooks
         run: |
-          uv pip install -e sentinel_sdk/
-          uv pip install pytest pytest-asyncio
+          uv pip install --system -e sentinel_sdk/
+          uv pip install --system pytest pytest-asyncio
 
       - name: Run End-to-End Security Validation
         env:
@@ -163,5 +163,5 @@ jobs:
           RUST_LOG: info
         run: |
           if [ "${{ runner.os }}" = "Linux" ]; then chmod +x $SENTINEL_BINARY_PATH; fi
-          uv run pytest tests/test_basic_flow.py tests/test_security_hardening.py
+          pytest tests/test_basic_flow.py tests/test_security_hardening.py
         shell: bash
