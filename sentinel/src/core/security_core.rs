@@ -430,7 +430,7 @@ mod tests {
         
         let decision_audit = audit_core.evaluate(tool_event_audit).await;
         match decision_audit {
-             SecurityDecision::Allow | SecurityDecision::AllowWithTransforms { .. } => {},
+             SecurityDecision::Allow | SecurityDecision::AllowWithTransforms { .. } => {}
              _ => panic!("Expected Allow for AuditOnly mode"),
         }
     }
