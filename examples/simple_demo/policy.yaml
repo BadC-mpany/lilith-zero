@@ -18,3 +18,14 @@ taintRules:
     action: "CHECK_TAINT"
     forbiddenTags: ["PII"]
     error: "BLOCKED: Attempted to exfiltrate PII to external cloud storage."
+
+resourceRules:
+  - uriPattern: "file:///private/*"
+    action: "ALLOW"
+    taintsToAdd: ["ACCESS_PRIVATE"]
+  - uriPattern: "http*"
+    action: "ALLOW"
+    taintsToAdd: ["UNTRUSTED_SOURCE"]
+
+# Lethal trifecta protection (disabled in this demo)
+protect_lethal_trifecta: false

@@ -27,6 +27,7 @@ Sentinel is OS, framework, and language agnostic, providing uniform security pri
 | :--- | :--- |
 | **Deterministic ACLs** | Static allow/deny mapping for tool execution and resource identifiers. |
 | **Dynamic Taint Tracking** | Information flow control using session-bound sensitivity tags (e.g., `CONFIDENTIAL`). |
+| **Lethal Trifecta Protection** | Automatic blocking of data exfiltration when private data is accessed from untrusted sources. |
 | **Conditional Logic** | Argument-level enforcement using logical predicates (e.g., geographic region constraints). |
 | **Zero-Copy Runtime** | Low-latency processing (<1ms overhead) via reference-based internal message passing. |
 | **Process Supervision** | OS-level lifecycle management for upstream processes to prevent resource leakage. |
@@ -91,6 +92,17 @@ taintRules:
   - tool: export_analytics
     action: CHECK_TAINT
     forbiddenTags: [pii]
+
+resourceRules:
+  - uriPattern: "file:///private/*"
+    action: ALLOW
+    taintsToAdd: [ACCESS_PRIVATE]
+  - uriPattern: "http*"
+    action: ALLOW
+    taintsToAdd: [UNTRUSTED_SOURCE]
+
+# Enable lethal trifecta protection
+protect_lethal_trifecta: true
 
 logicRules:
   - tool: system_maintenance

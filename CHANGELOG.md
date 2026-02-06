@@ -13,6 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - HMAC-signed session IDs with constant-time validation
 - Static policy enforcement (ALLOW/DENY per tool)
 - Dynamic taint tracking with ADD_TAINT/CHECK_TAINT rules
+- Lethal trifecta protection against data exfiltration attacks
+- Resource rules with taint propagation (taintsToAdd)
+- AND-logic taint checking (requiredTaints) for complex security patterns
 - Spotlighting for prompt injection defense
 - Process isolation via Windows Job Objects
 - Process isolation via Linux PR_SET_PDEATHSIG

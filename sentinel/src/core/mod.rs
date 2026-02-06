@@ -14,3 +14,6 @@ pub mod taint;
 pub mod traits;
 pub mod constants;
 pub mod types;
+
+#[cfg(test)]
+mod lethal_trifecta_tests;

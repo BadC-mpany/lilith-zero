@@ -74,3 +74,15 @@ taint_rules:
     action: "CHECK_TAINT"
     forbidden_tags: ["PII", "INTERNAL_DATA"]
     error: "Cannot call external API after accessing sensitive data"
+
+# Resource Rules for lethal trifecta
+resource_rules:
+  - uri_pattern: "file:///private/*"
+    action: "ALLOW"
+    taints_to_add: ["ACCESS_PRIVATE"]
+  - uri_pattern: "http*"
+    action: "ALLOW"
+    taints_to_add: ["UNTRUSTED_SOURCE"]
+
+# Lethal trifecta protection
+protect_lethal_trifecta: false

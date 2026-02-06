@@ -154,21 +154,15 @@ impl PolicyValidator {
     ) -> Result<(), InterceptorError> {
         match rule.action.as_str() {
             "CHECK_TAINT" => {
-                // CHECK_TAINT requires forbidden_tags
-                match &rule.forbidden_tags {
-                    None => {
-                        return Err(InterceptorError::ConfigurationError(format!(
-                            "{}: CHECK_TAINT action requires 'forbidden_tags'",
-                            context
-                        )));
-                    }
-                    Some(tags) if tags.is_empty() => {
-                        return Err(InterceptorError::ConfigurationError(format!(
-                            "{}: CHECK_TAINT 'forbidden_tags' cannot be empty",
-                            context
-                        )));
-                    }
-                    _ => {}
+                // CHECK_TAINT requires either forbidden_tags OR required_taints
+                let has_forbidden = rule.forbidden_tags.as_ref().map_or(false, |tags| !tags.is_empty());
+                let has_required = rule.required_taints.as_ref().map_or(false, |tags| !tags.is_empty());
+                
+                if !has_forbidden && !has_required {
+                    return Err(InterceptorError::ConfigurationError(format!(
+                        "{}: CHECK_TAINT action requires either 'forbidden_tags' or 'required_taints'",
+                        context
+                    )));
                 }
             }
             "ADD_TAINT" | "REMOVE_TAINT" => {
@@ -310,11 +304,13 @@ mod tests {
                 action: "ADD_TAINT".to_string(),
                 tag: Some("sensitive".to_string()),
                 forbidden_tags: None,
+                required_taints: None,
                 error: None,
                 pattern: None,
                 exceptions: None,
             }],
             created_at: Some("2024-01-01T00:00:00Z".to_string()),
+            protect_lethal_trifecta: false,
         };
 
         assert!(PolicyValidator::validate_policy(&policy).is_ok());
@@ -335,11 +331,13 @@ mod tests {
                 action: "ADD_TAINT".to_string(),
                 tag: Some("test".to_string()),
                 forbidden_tags: None,
+                required_taints: None,
                 error: None,
                 pattern: None,
                 exceptions: None,
             }],
             created_at: Some("2024-01-01T00:00:00Z".to_string()),
+            protect_lethal_trifecta: false,
         };
 
         let result = PolicyValidator::validate_policy(&policy);
@@ -362,16 +360,19 @@ mod tests {
                 action: "CHECK_TAINT".to_string(),
                 tag: None,
                 forbidden_tags: None, // Missing!
+                required_taints: None,
                 error: None,
                 pattern: None,
                 exceptions: None,
             }],
             created_at: Some("2024-01-01T00:00:00Z".to_string()),
+            protect_lethal_trifecta: false,
         };
 
         let result = PolicyValidator::validate_policy(&policy);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("requires 'forbidden_tags'"));
+        let err_msg = result.unwrap_err().to_string();
+        assert!(err_msg.contains("forbidden_tags") || err_msg.contains("required_taints"));
     }
 
     #[test]
@@ -391,6 +392,7 @@ mod tests {
                 action: "CHECK_TAINT".to_string(),
                 tag: None,
                 forbidden_tags: Some(vec!["sensitive".to_string()]),
+                required_taints: None,
                 error: None,
                 pattern: None,
                 exceptions: Some(vec![RuleException {
@@ -401,6 +403,7 @@ mod tests {
                 }]),
             }],
             created_at: Some("2024-01-01T00:00:00Z".to_string()),
+            protect_lethal_trifecta: false,
         };
 
         let result = PolicyValidator::validate_policy(&policy);
@@ -427,6 +430,7 @@ mod tests {
                 action: "CHECK_TAINT".to_string(),
                 tag: None,
                 forbidden_tags: Some(vec!["sensitive".to_string()]),
+                required_taints: None,
                 error: None,
                 pattern: None,
                 exceptions: Some(vec![RuleException {
@@ -437,6 +441,7 @@ mod tests {
                 }]),
             }],
             created_at: Some("2024-01-01T00:00:00Z".to_string()),
+            protect_lethal_trifecta: false,
         };
 
         assert!(PolicyValidator::validate_policy(&policy).is_ok());
