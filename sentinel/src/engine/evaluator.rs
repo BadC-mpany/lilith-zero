@@ -38,13 +38,27 @@ impl PolicyEvaluator {
         let mut taints_to_add = Vec::new();
         let mut taints_to_remove = Vec::new();
 
+        // collect taints that will be added
+        for rule in &policy.taint_rules {
+            if rule.matches_tool(tool_name, tool_classes) && rule.action == "ADD_TAINT" {
+                if let Some(ref tag) = rule.tag {
+                    taints_to_add.push(tag.clone());
+                }
+            }
+        }
+
+        // Augment tool_classes with taints about to be added
+        // This allows tools that add "EXFILTRATION" taint to match rules with toolClass: "EXFILTRATION"
+        let mut augmented_classes = tool_classes.to_vec();
+        augmented_classes.extend(taints_to_add.clone());
+
         for rule in &policy.taint_rules {
             if let Some(pattern) = &rule.pattern {
                 let pattern_matched = PatternMatcher::evaluate_pattern_with_args(
                     pattern,
                     session_history,
                     tool_name,
-                    tool_classes,
+                    &augmented_classes,
                     current_taints,
                     tool_args,
                 )
@@ -57,9 +71,10 @@ impl PolicyEvaluator {
                         .unwrap_or_else(|| "Pattern block".to_string());
                     return Ok(Decision::Denied { reason: error_msg });
                 }
-            } else if rule.matches_tool(tool_name, tool_classes) {
+            } else if rule.matches_tool(tool_name, &augmented_classes) {
                 match rule.action.as_str() {
                     "CHECK_TAINT" => {
+                        // Check forbidden tags (OR logic - block if ANY present)
                         if let Some(ref forbidden_tags) = rule.forbidden_tags {
                             for forbidden_tag in forbidden_tags {
                                 if current_taints.contains(forbidden_tag) {
@@ -86,10 +101,39 @@ impl PolicyEvaluator {
                                 }
                             }
                         }
-                    }
-                    "ADD_TAINT" => {
-                        if let Some(ref tag) = rule.tag {
-                            taints_to_add.push(tag.clone());
+                        
+                        // Check required tags (AND logic - block if ALL present)
+                        if let Some(ref required_tags) = rule.required_taints {
+                            let all_present = required_tags.iter()
+                                .all(|tag| current_taints.contains(tag));
+                            
+                            if all_present {
+                                // Check exceptions
+                                if let Some(ref exceptions) = rule.exceptions {
+                                    if !Self::check_exceptions(
+                                        exceptions,
+                                        session_history,
+                                        tool_name,
+                                        tool_classes,
+                                        current_taints,
+                                        tool_args,
+                                    )
+                                    .await?
+                                    {
+                                        let error_msg = rule
+                                            .error
+                                            .clone()
+                                            .unwrap_or_else(|| "Required taints detected".to_string());
+                                        return Ok(Decision::Denied { reason: error_msg });
+                                    }
+                                } else {
+                                    let error_msg = rule
+                                        .error
+                                        .clone()
+                                        .unwrap_or_else(|| "Required taints detected".to_string());
+                                    return Ok(Decision::Denied { reason: error_msg });
+                                }
+                            }
                         }
                     }
                     "REMOVE_TAINT" => {

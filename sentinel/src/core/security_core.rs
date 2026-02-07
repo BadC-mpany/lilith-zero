@@ -12,7 +12,7 @@ use serde_json::json;
 use crate::config::Config;
 use crate::core::crypto::CryptoSigner;
 use crate::core::events::{SecurityEvent, SecurityDecision, OutputTransform};
-use crate::core::models::{Decision, HistoryEntry, PolicyDefinition};
+use crate::core::models::{Decision, HistoryEntry, PolicyDefinition, PolicyRule};
 use crate::engine::evaluator::PolicyEvaluator;
 use crate::core::auth;
 use crate::core::constants::jsonrpc;
@@ -41,7 +41,25 @@ impl SecurityCore {
         })
     }
 
-    pub fn set_policy(&mut self, policy: PolicyDefinition) {
+    pub fn set_policy(&mut self, mut policy: PolicyDefinition) {
+        // Auto-inject lethal trifecta protection rule if enabled
+        if policy.protect_lethal_trifecta {
+            info!("Lethal trifecta protection enabled - auto-injecting EXFILTRATION blocking rule");
+            policy.taint_rules.push(PolicyRule {
+                tool: None,
+                tool_class: Some("EXFILTRATION".to_string()),
+                action: "CHECK_TAINT".to_string(),
+                tag: None,
+                forbidden_tags: None,
+                required_taints: Some(vec![
+                    "ACCESS_PRIVATE".to_string(),
+                    "UNTRUSTED_SOURCE".to_string(),
+                ]),
+                error: Some("Blocked by lethal trifecta protection".to_string()),
+                pattern: None,
+                exceptions: None,
+            });
+        }
         self.policy = Some(policy);
     }
 
@@ -182,6 +200,7 @@ impl SecurityCore {
                 
                 // Resource Policy Enforcement (Fail Closed)
                 let mut allow_access = false;
+                let mut taints_to_add = vec![];
                 
                 if let Some(policy) = &self.policy {
                     for rule in &policy.resource_rules {
@@ -193,7 +212,10 @@ impl SecurityCore {
                                  };
                              } else if rule.action == "ALLOW" {
                                  allow_access = true;
-                                 break;
+                                 // Collect taints from matching rules
+                                 if let Some(ref taints) = rule.taints_to_add {
+                                     taints_to_add.extend(taints.clone());
+                                 }
                              }
                          }
                     }
@@ -216,8 +238,13 @@ impl SecurityCore {
                      };
                 }
 
+                // Apply taints to session state
+                for t in &taints_to_add {
+                    self.taints.insert(t.clone());
+                }
+
                  SecurityDecision::AllowWithTransforms {
-                    taints_to_add: vec![],
+                    taints_to_add,
                     taints_to_remove: vec![],
                     output_transforms: vec![OutputTransform::Spotlight { json_paths: vec![] }], // contents spotlighting
                 }

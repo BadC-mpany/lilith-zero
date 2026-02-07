@@ -32,4 +32,13 @@ taintRules:
     # In a full implementation, we'd use resourceRules
 
 # Resource Rules
-resourceRules: []
+resourceRules:
+  - uriPattern: "file:///sensitive/*"
+    action: "ALLOW"
+    taintsToAdd: ["ACCESS_PRIVATE"]
+  - uriPattern: "http*"
+    action: "ALLOW"
+    taintsToAdd: ["UNTRUSTED_SOURCE"]
+
+# Lethal trifecta protection (disabled)
+protect_lethal_trifecta: false

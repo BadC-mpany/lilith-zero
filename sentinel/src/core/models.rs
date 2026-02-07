@@ -160,6 +160,9 @@ pub struct PolicyRule {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub forbidden_tags: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(alias = "required_taints")]
+    pub required_taints: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pattern: Option<LogicCondition>,
@@ -186,6 +189,9 @@ pub struct PolicyDefinition {
     /// Resource access rules
     #[serde(alias = "resource_rules", default)]
     pub resource_rules: Vec<ResourceRule>,
+    /// Enable automatic lethal trifecta protection
+    #[serde(alias = "protect_lethal_trifecta", default)]
+    pub protect_lethal_trifecta: bool,
 
 
 }
@@ -197,6 +203,9 @@ pub struct ResourceRule {
     pub action: String, // ALLOW, BLOCK
     #[serde(skip_serializing_if = "Option::is_none")]
     pub exceptions: Option<Vec<RuleException>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(alias = "taints_to_add")]
+    pub taints_to_add: Option<Vec<String>>,
 }
 
 impl PolicyRule {

@@ -31,4 +31,13 @@ taintRules:
     error: "Policy Violation: Exfiltration of confidential data blocked."
 
 # Resource Rules
-resourceRules: []
+resourceRules:
+  - uriPattern: "file:///sensitive/*"
+    action: "ALLOW"
+    taintsToAdd: ["ACCESS_PRIVATE"]
+  - uriPattern: "http*"
+    action: "ALLOW"
+    taintsToAdd: ["UNTRUSTED_SOURCE"]
+
+# Enable lethal trifecta protection
+protect_lethal_trifecta: false
