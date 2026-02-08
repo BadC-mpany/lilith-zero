@@ -14,9 +14,8 @@ use tracing::debug;
 #[cfg(windows)]
 use win32job::Job;
 
-// Linux-specific imports (for PR_SET_PDEATHSIG)
-#[cfg(target_os = "linux")]
-use std::os::unix::process::CommandExt;
+// Linux-specific: PR_SET_PDEATHSIG is only available on Linux via libc
+
 
 pub struct ProcessSupervisor {
     // Channel to trigger manual kill
