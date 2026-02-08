@@ -1,6 +1,6 @@
 use crate::core::constants::spotlight;
 use rand::distr::Alphanumeric;
-use rand::{Rng, RngExt};
+use rand::RngExt;
 
 pub struct SecurityEngine;
 
