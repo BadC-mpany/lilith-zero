@@ -9,7 +9,9 @@ import sys
 # Add parent directory to path to import SDK
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from sentinel_sdk import Sentinel, SentinelError
+
+from sentinel_sdk import Sentinel, SentinelError, PolicyViolationError
+
 
 
 BINARY_PATH = os.environ.get("SENTINEL_BINARY_PATH")
