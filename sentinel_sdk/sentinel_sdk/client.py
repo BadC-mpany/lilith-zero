@@ -18,7 +18,7 @@ import logging
 import os
 import shutil
 import uuid
-from typing import Any, Dict, List, Optional, Type, cast
+from typing import Any, Dict, List, Optional, Type, cast, TypedDict, Union
 from asyncio import Future, Task
 
 from .exceptions import (
@@ -29,8 +29,27 @@ from .exceptions import (
     SentinelProcessError,
 )
 from .installer import get_default_install_dir, install_sentinel
+from .exceptions import *
 
-__all__ = ["Sentinel", "SentinelError", "PolicyViolationError"]
+__all__ = ["Sentinel", "SentinelError", "PolicyViolationError", "ToolCall", "ToolResult"]
+
+# -------------------------------------------------------------------------
+# Type Definitions
+# -------------------------------------------------------------------------
+
+class ToolRef(TypedDict):
+    name: str
+    description: Optional[str]
+    inputSchema: Dict[str, Any]
+
+class ToolCall(TypedDict):
+    name: str
+    arguments: Dict[str, Any]
+
+class ToolResult(TypedDict):
+    content: List[Dict[str, Any]]
+    isError: Optional[bool]
+
 
 # Module-level constants
 _MCP_PROTOCOL_VERSION = "2024-11-05"
@@ -181,13 +200,13 @@ class Sentinel:
     # Public API
     # -------------------------------------------------------------------------
 
-    async def list_tools(self) -> List[Dict[str, Any]]:
+    async def list_tools(self) -> List[ToolRef]:
         """Fetch available tools from the upstream MCP server."""
         response = await self._send_request("tools/list", {})
         tools = response.get("tools", [])
-        return cast(List[Dict[str, Any]], tools)
+        return cast(List[ToolRef], tools)
 
-    async def call_tool(self, name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
+    async def call_tool(self, name: str, arguments: Dict[str, Any]) -> ToolResult:
         """Execute a tool call through Sentinel policy enforcement.
 
         Raises:
@@ -197,7 +216,7 @@ class Sentinel:
         """
         payload = {"name": name, "arguments": arguments}
         result = await self._send_request("tools/call", payload)
-        return cast(Dict[str, Any], result)
+        return cast(ToolResult, result)
 
     # -------------------------------------------------------------------------
     # Connection Management (Private)
@@ -323,34 +342,46 @@ class Sentinel:
 
         try:
             while True:
-                line = await self._process.stdout.readline()
-                if not line:
-                    break
-                
-                text = line.decode().strip()
-                if not text:
-                    continue
-                
-                if text.lower().startswith("content-length:"):
+                # 1. Read Headers
+                headers = {}
+                while True:
+                    line_bytes = await self._process.stdout.readline()
+                    if not line_bytes:
+                        return # EOF
+
+                    line = line_bytes.decode().strip()
+                    if not line:
+                        # End of headers (empty line)
+                        break
+                    
+                    if ":" in line:
+                        key, value = line.split(":", 1)
+                        headers[key.lower().strip()] = value.strip()
+                    elif line.startswith("SENTINEL_SESSION_ID="):
+                        self._session_id = line.split("=", 1)[1]
+                        _logger.info("Session ID: %s", self._session_id)
+                    else:
+                        _logger.debug("[stdout noise] %s", line)
+
+                # 2. Check Content-Length
+                if "content-length" in headers:
                     try:
-                        length = int(text.split(":")[1].strip())
-                        # Consume exactly ONE \r\n or \n (the empty line)
-                        while True:
-                            line = await self._process.stdout.readline()
-                            if not line.strip():
-                                break
-                        
-                        # Read body
-                        body = await self._process.stdout.readexactly(length)
-                        msg = json.loads(body)
-                        if "id" in msg:
-                            self._dispatch_response(msg)
+                        length = int(headers["content-length"])
+                        if length > 0:
+                            body = await self._process.stdout.readexactly(length)
+                            msg = json.loads(body)
+                            if "id" in msg:
+                                self._dispatch_response(msg)
                     except (ValueError, asyncio.IncompleteReadError) as e:
                         _logger.error("Failed to read body: %s", e)
-                elif text.startswith("SENTINEL_SESSION_ID="):
-                     self._session_id = text.split("=", 1)[1]
                 else:
-                    _logger.debug("[stdout noise] %s", text)
+                    # If we got headers but no content-length, and strictly speaking 
+                    # we should have broken on empty line... 
+                    # Actually, if noise lines were printed, we might not have a valid message.
+                    # This minimal state machine assumes a valid MCP message block.
+                    # Noise lines often don't end with an empty line unless they are accidental printfs.
+                    pass
+
         except asyncio.CancelledError:
             pass
         finally:

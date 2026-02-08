@@ -18,9 +18,12 @@ use crate::core::models::{Decision, HistoryEntry, PolicyDefinition, PolicyRule};
 use crate::engine::evaluator::PolicyEvaluator;
 use anyhow::Result;
 
+use crate::core::audit::AuditLogger;
+
 pub struct SecurityCore {
     pub config: Arc<Config>,
     signer: CryptoSigner,
+    audit: AuditLogger,
     pub session_id: String,
     pub policy: Option<PolicyDefinition>,
     /// Set of active taint tags in the session
@@ -34,9 +37,11 @@ impl SecurityCore {
         signer: CryptoSigner,
     ) -> Result<Self, crate::core::errors::InterceptorError> {
         let session_id = signer.generate_session_id()?;
+        let audit = AuditLogger::new(signer.clone());
         Ok(Self {
             config,
             signer,
+            audit,
             session_id,
             policy: None, // Changed        _policy: &SandboxPolicy, to policy: None to match struct definition
             taints: HashSet::new(),
@@ -46,7 +51,7 @@ impl SecurityCore {
 
     pub fn set_policy(&mut self, mut policy: PolicyDefinition) {
         // Auto-inject lethal trifecta protection rule if enabled
-        if policy.protect_lethal_trifecta {
+        if policy.protect_lethal_trifecta || self.config.protect_lethal_trifecta {
             info!("Lethal trifecta protection enabled - auto-injecting EXFILTRATION blocking rule");
             policy.taint_rules.push(PolicyRule {
                 tool: None,
@@ -74,6 +79,7 @@ impl SecurityCore {
                 audience_token,
                 ..
             } => {
+                // ... audience validation ...
                 // 1. Validate Audience Binding (if configured)
                 if let Some(expected) = &self.config.expected_audience {
                     if let Some(token) = audience_token {
@@ -98,11 +104,10 @@ impl SecurityCore {
                 }
 
                 // Log Session Start
-                info!(
-                    target: "audit",
-                    event_type = "SessionStart",
-                    session_id = %self.session_id,
-                    timestamp = %crate::utils::time::now(),
+                self.audit.log(
+                    &self.session_id,
+                    "SessionStart",
+                    json!({ "timestamp": crate::utils::time::now() }),
                 );
 
                 SecurityDecision::Allow
@@ -114,6 +119,7 @@ impl SecurityCore {
                 session_token,
                 ..
             } => {
+                // ... session validation ...
                 // 1. Validate Session
                 if self.config.security_level_config().session_validation {
                     match session_token {
@@ -142,7 +148,7 @@ impl SecurityCore {
                             warn!("Missing session token");
                             return SecurityDecision::Deny {
                                 error_code: jsonrpc::ERROR_AUTH,
-                                reason: "Missing Session ID".to_string(),
+                                    reason: "Missing Session ID".to_string(),
                             };
                         }
                     }
@@ -197,6 +203,7 @@ impl SecurityCore {
             SecurityEvent::ResourceRequest {
                 uri, session_token, ..
             } => {
+                // ... resource implementation ...
                 // Similar session validation
                 if self.config.security_level_config().session_validation {
                     if let Some(token) = session_token {
@@ -296,13 +303,13 @@ impl SecurityCore {
         match decision {
             Decision::Allowed => {
                 self.record_history(tool_name, classes);
-                info!(
-                    target: "audit",
-                    event_type = "Decision",
-                    session_id = %self.session_id,
-                    timestamp = %crate::utils::time::now(),
-                    tool_name = %tool_name,
-                    decision = "ALLOW",
+                self.audit.log(
+                    &self.session_id,
+                    "Decision",
+                    json!({
+                        "tool_name": tool_name,
+                        "decision": "ALLOW"
+                    }),
                 );
 
                 // If spotlighting is enabled, we apply it
@@ -317,17 +324,17 @@ impl SecurityCore {
                 }
             }
             Decision::Denied { reason } => {
-                info!(
-                    target: "audit",
-                    event_type = "Decision",
-                    session_id = %self.session_id,
-                    timestamp = %crate::utils::time::now(),
-                    tool_name = %tool_name,
-                    decision = "DENY",
-                    details = %json!({
-                        "reason": reason,
-                        "error_code": jsonrpc::ERROR_SECURITY_BLOCK
-                    })
+                self.audit.log(
+                    &self.session_id,
+                    "Decision",
+                    json!({
+                        "tool_name": tool_name,
+                        "decision": "DENY",
+                        "details": {
+                            "reason": reason,
+                            "error_code": jsonrpc::ERROR_SECURITY_BLOCK
+                        }
+                    }),
                 );
                 SecurityDecision::Deny {
                     error_code: jsonrpc::ERROR_SECURITY_BLOCK,
@@ -347,23 +354,19 @@ impl SecurityCore {
                     self.taints.remove(t);
                 }
 
-                let _details = serde_json::json!({
-                    "taints_added": taints_to_add,
-                    "taints_removed": taints_to_remove
-                });
-
-                info!(
-                    target: "audit",
-                    event_type = "Decision",
-                    session_id = %self.session_id,
-                    timestamp = %crate::utils::time::now(),
-                    tool_name = %tool_name,
-                    decision = "ALLOW_WITH_SIDE_EFFECTS",
-                    details = %json!({
-                        "taints_to_add": taints_to_add,
-                        "taints_to_remove": taints_to_remove
-                    })
+                self.audit.log(
+                    &self.session_id,
+                    "Decision",
+                    json!({
+                        "tool_name": tool_name,
+                        "decision": "ALLOW_WITH_SIDE_EFFECTS",
+                        "details": {
+                            "taints_to_add": taints_to_add,
+                            "taints_to_remove": taints_to_remove
+                        }
+                    }),
                 );
+
                 if self.config.security_level_config().spotlighting {
                     SecurityDecision::AllowWithTransforms {
                         taints_to_add,

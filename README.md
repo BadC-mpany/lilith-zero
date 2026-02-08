@@ -27,11 +27,12 @@ Sentinel is OS, framework, and language agnostic, providing uniform security pri
 | :--- | :--- |
 | **Deterministic ACLs** | Static allow/deny mapping for tool execution and resource identifiers. |
 | **Dynamic Taint Tracking** | Information flow control using session-bound sensitivity tags (e.g., `CONFIDENTIAL`). |
-| **Lethal Trifecta Protection** | Automatic blocking of data exfiltration when private data is accessed from untrusted sources. |
-| **Conditional Logic** | Argument-level enforcement using logical predicates (e.g., geographic region constraints). |
+| **Lethal Trifecta Protection** | Automatic blocking of the "Access Private -> Access Untrusted -> Exfiltrate" pattern. |
+| **Tamper-Proof Audit Logs** | Cryptographically signed (HMAC-SHA256) execution logs for non-repudiation. |
+| **Logic-Based Policies** | Argument-level enforcement using recursive logical predicates (e.g., region constraints). |
 | **Zero-Copy Runtime** | Low-latency processing (<1ms overhead) via reference-based internal message passing. |
 | **Process Supervision** | OS-level lifecycle management for upstream processes to prevent resource leakage. |
-| **Transport Hardening** | Basic spotlighting delimiters to support injection suppression (secondary). |
+| **Transport Hardening** | Strict content-length framing to prevent JSON-RPC smuggling and desynchronization. |
 
 ---
 
@@ -69,29 +70,29 @@ graph TD
 
 ## Implementation
 
-### 1. SDK Integration
-The Python SDK automates the core runtime lifecycle and manages the underlying binary execution.
+### 1. Installation & Auto-Discovery
+The Python SDK handles the entire lifecycle. It automatically downloads the correct `sentinel` binary for your OS/Arch (Windows, Linux, macOS) from GitHub Releases if not found locally.
 
 ```bash
-# Install the SDK
 uv add sentinel-sdk
+# or
+pip install sentinel-sdk
 ```
+
+No manual binary compilation is required. The SDK ensures strict hermetic execution.
 
 ### 2. Policy Configuration (`policy.yaml`)
 Security boundaries are defined in a structured YAML schema.
 
-```yaml
-staticRules:
-  calculator: ALLOW
-  shell_exec: DENY
+#### Lethal Trifecta Protection
+The "Lethal Trifecta" (Access Private Data + Access Untrusted Source + Exfiltration) is the most critical agentic risk. Sentinel can block this pattern **automatically**, without complex rule definitions.
 
-taintRules:
-  - tool: read_customer_data
-    action: ADD_TAINT
-    tag: pii
-  - tool: export_analytics
-    action: CHECK_TAINT
-    forbiddenTags: [pii]
+**Option A: Global Enforcement (Ops / CI)**
+Set `SENTINEL_FORCE_LETHAL_TRIFECTA=true` in your environment. This overrides local policies and enforces protection globally.
+
+**Option B: Policy-Level (Dev)**
+```yaml
+protect_lethal_trifecta: true  # Enable automatic exfiltration blocking
 
 resourceRules:
   - uriPattern: "file:///private/*"
@@ -101,14 +102,15 @@ resourceRules:
     action: ALLOW
     taintsToAdd: [UNTRUSTED_SOURCE]
 
-# Enable lethal trifecta protection
-protect_lethal_trifecta: true
+taintRules:
+  - tool: curl
+    action: ADD_TAINT
+    tag: UNTRUSTED_SOURCE
 
-logicRules:
-  - tool: system_maintenance
-    allow_if: 
-      region: "eu-west-1"
+# ... existing rules ...
 ```
+
+When enabled, if a session acquires both `ACCESS_PRIVATE` and `UNTRUSTED_SOURCE` taints, any tool classified as `EXFILTRATION` (or performing network writes) is **automatically blocked**.
 
 ### 3. Agent Integration
 Sentinel integrates with standard agent architectures by wrapping the tool server invocation.
@@ -136,10 +138,21 @@ if __name__ == "__main__":
     asyncio.run(main())
 ```
 
-### 4. Examples
+### 4. Observability & Auditing
+Sentinel emits **cryptographically signed** audit logs to `stderr` (visible in agent logs).
+
+**Format**: `[AUDIT] <HMAC-SHA256 Signature> <JSON Payload>`
+
+**Example**:
+```log
+[AUDIT] 8f3...a1b {"session_id": "uuid", "event": "Decision", "decision": "DENY", "details": {...}}
+```
+This ensures non-repudiation. Even if the log file is tampered with, the signature will fail verification against the session's ephemeral secret (or a configured shared secret).
+
+### 5. Examples
 Full integration examples are available in the `examples/` directory:
-- **[LangChain Agent](file:///c:/Users/Peter/Documents/proj/active/bad/sentinel/examples/langchain_agent)**: Complete ReAct agent demonstrating static rules, taint tracking, and logic exceptions.
-- **[ReAct Agent](file:///c:/Users/Peter/Documents/proj/active/bad/sentinel/examples/react_agent_demo)**: Minimalist demonstration of security middleware.
+- **[LangChain Agent](examples/langchain_agent)**: Complete ReAct agent demonstrating static rules, taint tracking, and logic exceptions.
+- **[ReAct Agent](examples/react_agent_demo)**: Minimalist demonstration of security middleware.
 
 ---
 

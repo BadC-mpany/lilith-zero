@@ -34,6 +34,7 @@ pub struct Config {
     pub security_level: SecurityLevel,
     pub mcp_version: String,
     pub jwt_secret: Option<String>,
+    pub protect_lethal_trifecta: bool,
 }
 
 impl Config {
@@ -58,6 +59,9 @@ impl Config {
             mcp_version: env::var(crate::core::constants::config::ENV_MCP_VERSION)
                 .unwrap_or_else(|_| "2024-11-05".to_string()),
             jwt_secret: env::var("SENTINEL_JWT_SECRET").ok(),
+            protect_lethal_trifecta: env::var("SENTINEL_FORCE_LETHAL_TRIFECTA")
+                .map(|v| v.to_lowercase() == "true" || v == "1")
+                .unwrap_or(false),
         })
     }
 
@@ -88,6 +92,7 @@ impl Default for Config {
             security_level: SecurityLevel::BlockParams,
             mcp_version: "2024-11-05".to_string(),
             jwt_secret: None,
+            protect_lethal_trifecta: false,
         }
     }
 }

@@ -50,6 +50,14 @@ pub enum InterceptorError {
     /// Used for retryable conditions like timeouts or temporary network issues
     #[error("Transient error: {0}")]
     TransientError(String),
+
+    /// I/O Error
+    #[error("I/O error: {0}")]
+    IoError(#[from] std::io::Error),
+
+    /// Process Management Error
+    #[error("Process error: {0}")]
+    ProcessError(String),
 }
 
 /// Cryptographic operation errors
@@ -93,6 +101,8 @@ impl InterceptorError {
             InterceptorError::StateError(_) => "Internal error".to_string(),
             InterceptorError::DependencyFailure { .. } => "Service unavailable".to_string(),
             InterceptorError::TransientError(_) => "Service briefly unavailable".to_string(),
+            InterceptorError::IoError(_) => "Internal system error".to_string(),
+            InterceptorError::ProcessError(_) => "Internal process error".to_string(),
         }
     }
 }

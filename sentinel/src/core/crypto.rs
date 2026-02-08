@@ -13,6 +13,7 @@ use crate::core::constants::crypto;
 
 type HmacSha256 = Hmac<Sha256>;
 
+#[derive(Clone)]
 pub struct CryptoSigner {
     secret: [u8; crypto::SECRET_KEY_LENGTH],
 }
@@ -29,6 +30,15 @@ impl CryptoSigner {
         rng.fill(&mut secret)
             .map_err(|_| InterceptorError::CryptoError(CryptoError::RandomError))?;
         Ok(Self { secret })
+    }
+
+    /// Sign arbitrary data with HMAC-SHA256
+    pub fn sign(&self, data: &[u8]) -> String {
+        let mut mac = HmacSha256::new_from_slice(&self.secret)
+            .expect("HMAC should accept secret of correct length");
+        mac.update(data);
+        let result = mac.finalize();
+        URL_SAFE_NO_PAD.encode(result.into_bytes())
     }
 
     /// Generate a cryptographically bound Session ID

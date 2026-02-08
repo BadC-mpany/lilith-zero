@@ -30,27 +30,36 @@ impl PeFile {
             return Err(anyhow!("Missing MZ signature"));
         }
 
-        let pe_offset = u32::from_le_bytes(buffer[0x3C..0x40].try_into().unwrap()) as u64;
+        let pe_offset = u32::from_le_bytes(
+            buffer
+                .get(0x3C..0x40)
+                .context("Buffer too small for PE offset")?
+                .try_into()?,
+        ) as u64;
         file.seek(SeekFrom::Start(pe_offset))?;
 
         let mut pe_sig = [0u8; 4];
-        file.read_exact(&mut pe_sig)?;
+        file.read_exact(&mut pe_sig)
+            .context("Failed to read PE signature")?;
         if pe_sig != [b'P', b'E', 0, 0] {
             return Err(anyhow!("Missing PE signature"));
         }
 
         let mut image_header = [0u8; 20];
-        file.read_exact(&mut image_header)?;
-        let num_sections = u16::from_le_bytes(image_header[2..4].try_into().unwrap());
-        let optional_header_size = u16::from_le_bytes(image_header[16..18].try_into().unwrap());
+        file.read_exact(&mut image_header)
+            .context("Failed to read image header")?;
+        
+        let num_sections = u16::from_le_bytes(image_header[2..4].try_into()?);
+        let optional_header_size = u16::from_le_bytes(image_header[16..18].try_into()?);
 
         let mut optional_header = vec![0u8; optional_header_size as usize];
-        file.read_exact(&mut optional_header)?;
+        file.read_exact(&mut optional_header)
+            .context("Failed to read optional header")?;
 
         if optional_header.len() < 2 {
             return Err(anyhow!("Optional header too small"));
         }
-        let magic = u16::from_le_bytes(optional_header[0..2].try_into().unwrap());
+        let magic = u16::from_le_bytes(optional_header[0..2].try_into()?);
         let (is_64bit, image_base) = match magic {
             0x20B => {
                 if optional_header.len() < 32 {
@@ -58,7 +67,7 @@ impl PeFile {
                 }
                 (
                     true,
-                    u64::from_le_bytes(optional_header[24..32].try_into().unwrap()),
+                    u64::from_le_bytes(optional_header[24..32].try_into()?),
                 )
             }
             0x10B => {
@@ -67,7 +76,7 @@ impl PeFile {
                 }
                 (
                     false,
-                    u32::from_le_bytes(optional_header[28..32].try_into().unwrap()) as u64,
+                    u32::from_le_bytes(optional_header[28..32].try_into()?) as u64,
                 )
             }
             _ => return Err(anyhow!("Unknown PE magic: {:#X}", magic)),
@@ -88,10 +97,10 @@ impl PeFile {
 
             sections.push(Section {
                 name,
-                virtual_size: u32::from_le_bytes(s_buf[8..12].try_into().unwrap()),
-                virtual_address: u32::from_le_bytes(s_buf[12..16].try_into().unwrap()),
-                raw_data_size: u32::from_le_bytes(s_buf[16..20].try_into().unwrap()),
-                raw_data_ptr: u32::from_le_bytes(s_buf[20..24].try_into().unwrap()),
+                virtual_size: u32::from_le_bytes(s_buf[8..12].try_into()?),
+                virtual_address: u32::from_le_bytes(s_buf[12..16].try_into()?),
+                raw_data_size: u32::from_le_bytes(s_buf[16..20].try_into()?),
+                raw_data_ptr: u32::from_le_bytes(s_buf[20..24].try_into()?),
             });
         }
 
@@ -144,7 +153,12 @@ fn extract_deps_from_dir(
     let mut buffer = [0u8; 1024];
     file.read_exact(&mut buffer)?;
 
-    let pe_offset = u32::from_le_bytes(buffer[0x3C..0x40].try_into().unwrap()) as u64;
+    let pe_offset = u32::from_le_bytes(
+        buffer
+            .get(0x3C..0x40)
+            .context("Buffer too small")?
+            .try_into()?,
+    ) as u64;
     let opt_header_start = pe_offset + 4 + 20;
     let dd_start = if is_64bit {
         opt_header_start + 112
@@ -157,8 +171,8 @@ fn extract_deps_from_dir(
     let mut dir_entry = [0u8; 8];
     file.read_exact(&mut dir_entry)?;
 
-    let rva = u32::from_le_bytes(dir_entry[0..4].try_into().unwrap());
-    let size = u32::from_le_bytes(dir_entry[4..8].try_into().unwrap());
+    let rva = u32::from_le_bytes(dir_entry[0..4].try_into()?);
+    let size = u32::from_le_bytes(dir_entry[4..8].try_into()?);
 
     if rva == 0 || size == 0 {
         return Ok(vec![]);
@@ -178,7 +192,7 @@ fn extract_deps_from_dir(
                 break;
             }
 
-            let name_rva = u32::from_le_bytes(desc[12..16].try_into().unwrap());
+            let name_rva = u32::from_le_bytes(desc[12..16].try_into()?);
             if name_rva == 0 {
                 break;
             }
@@ -199,7 +213,7 @@ fn extract_deps_from_dir(
                 break;
             }
 
-            let name_rva = u32::from_le_bytes(desc[4..8].try_into().unwrap());
+            let name_rva = u32::from_le_bytes(desc[4..8].try_into()?);
             if name_rva == 0 {
                 break;
             }
