@@ -69,15 +69,12 @@ resourceRules:
             try:
                 await client.call_tool("read_user_db", {"user_id": "test"})
                 self.fail("Sentinel allowed tool execution without policy!")
-            except SentinelConfigError as e:
-                self.assertIn("No security policy loaded", str(e)) (SKIPPED_CHECK_IN_SDK)
+            except PolicyViolationError as e:
+                self.assertIn("No security policy loaded", str(e))
+            except SentinelError as e:
+                self.assertIn("No security policy loaded", str(e))
             except Exception as e:
-                 # The SDK might now raise SentinelConfigError or similar during init if policy is strict-required
-                 # But here we connect THEN call.
-                 # Actually, previous test expected "No security policy loaded".
-                 # The refactor might raise SentinelConfigError on init if policy is missing? 
-                 # Wait, SDK __init__ doesn't require policy, but maybe backend does.
-                 pass
+                self.assertIn("No security policy loaded", str(e))
 
     async def test_static_policy_allow(self):
         """Verify Static Policy Allow Rule."""

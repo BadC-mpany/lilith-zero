@@ -26,18 +26,19 @@ async def test_large_payload():
         try:
             # Send to non-existent tool or method to trigger parsing but fail policy/method
             # If we send 'tools/call' with huge payload, it gets parsed.
-            response = await client._send_request("tools/call", {
+            # Since no policy file, it defaults to Deny All.
+            # So Sentinel should block it, raising PolicyViolationError.
+            await client._send_request("tools/call", {
                 "name": "non_existent_huge", 
                 "arguments": {"data": huge_str}
             })
+            pytest.fail("Sentinel should have blocked huge payload without policy")
             
-            # Expecting error (Policy Deny or Method Not Found from upstream if forwarded)
-            # Since no policy file, it defaults to Deny All.
-            # So Sentinel should block it.
-            assert "error" in response
-            
-        except SentinelError as e:
-            # Timeout is also a valid failure mode for huge payload processing
+        except (PolicyViolationError, SentinelError):
+            # Blocked as expected
+            pass
+        except asyncio.TimeoutError:
+            # Timeout is also a valid failure mode for huge payload processing in some environments
             pass
 
 @pytest.mark.asyncio

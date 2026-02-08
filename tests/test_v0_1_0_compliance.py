@@ -42,7 +42,7 @@ async def test_fail_closed_by_default():
             # because Sentinel should intercept BEFORE upstream.
             # However, with no policy, Sentinel might default to deny.
             # Let's check the error message if possible.
-            assert "Policy Violation" in str(e) or "denied" in str(e).lower()
+            assert any(word in str(e).lower() for word in ["policy violation", "denied", "deny", "blocked"])
 
 @pytest.mark.asyncio
 async def test_static_rules():

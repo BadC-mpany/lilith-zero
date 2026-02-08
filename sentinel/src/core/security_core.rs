@@ -239,10 +239,11 @@ impl SecurityCore {
                                 };
                             } else if rule.action == "ALLOW" {
                                 allow_access = true;
-                                // Collect taints from matching rules
+                                // Collect taints from matching rule
                                 if let Some(ref taints) = rule.taints_to_add {
                                     taints_to_add.extend(taints.clone());
                                 }
+                                break; // First match wins
                             }
                         }
                     }
