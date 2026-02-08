@@ -10,11 +10,6 @@ import os
 import sys
 import platform
 import logging
-
-import os
-import sys
-import platform
-import logging
 import urllib.request
 import shutil
 import stat

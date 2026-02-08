@@ -48,7 +48,7 @@ impl PeFile {
         let mut image_header = [0u8; 20];
         file.read_exact(&mut image_header)
             .context("Failed to read image header")?;
-        
+
         let num_sections = u16::from_le_bytes(image_header[2..4].try_into()?);
         let optional_header_size = u16::from_le_bytes(image_header[16..18].try_into()?);
 

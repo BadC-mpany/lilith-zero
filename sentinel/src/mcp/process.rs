@@ -68,13 +68,25 @@ impl ProcessSupervisor {
         // ------------------------------------------------------------------
         #[cfg(windows)]
         let job = {
-            let job = Job::create().map_err(|e| crate::core::errors::InterceptorError::ProcessError(format!("Failed to create Job Object: {}", e)))?;
-            let mut info = job
-                .query_extended_limit_info()
-                .map_err(|e| crate::core::errors::InterceptorError::ProcessError(format!("Failed to query job info: {}", e)))?;
+            let job = Job::create().map_err(|e| {
+                crate::core::errors::InterceptorError::ProcessError(format!(
+                    "Failed to create Job Object: {}",
+                    e
+                ))
+            })?;
+            let mut info = job.query_extended_limit_info().map_err(|e| {
+                crate::core::errors::InterceptorError::ProcessError(format!(
+                    "Failed to query job info: {}",
+                    e
+                ))
+            })?;
             info.limit_kill_on_job_close();
-            job.set_extended_limit_info(&mut info)
-                .map_err(|e| crate::core::errors::InterceptorError::ProcessError(format!("Failed to set job limits: {}", e)))?;
+            job.set_extended_limit_info(&mut info).map_err(|e| {
+                crate::core::errors::InterceptorError::ProcessError(format!(
+                    "Failed to set job limits: {}",
+                    e
+                ))
+            })?;
             debug!("Initialized Windows Job Object for automatic cleanup");
             Some(job)
         };
@@ -86,9 +98,12 @@ impl ProcessSupervisor {
         // For Sentinel v0.1 simplification, we assign immediately after.
 
         // Spawn
-        let mut child = command
-            .spawn()
-            .map_err(|e| crate::core::errors::InterceptorError::ProcessError(format!("Failed to spawn upstream process: {}", e)))?;
+        let mut child = command.spawn().map_err(|e| {
+            crate::core::errors::InterceptorError::ProcessError(format!(
+                "Failed to spawn upstream process: {}",
+                e
+            ))
+        })?;
 
         // ------------------------------------------------------------------
         // WINDOWS: Job Objects (Part 2 - Assignment)
@@ -97,8 +112,12 @@ impl ProcessSupervisor {
         if let Some(ref job) = job {
             // Safety: We are using the raw handle from the standard library Child
             if let Some(handle) = child.raw_handle() {
-                job.assign_process(handle as isize)
-                    .map_err(|e| crate::core::errors::InterceptorError::ProcessError(format!("Failed to assign process to Job Object: {}", e)))?;
+                job.assign_process(handle as isize).map_err(|e| {
+                    crate::core::errors::InterceptorError::ProcessError(format!(
+                        "Failed to assign process to Job Object: {}",
+                        e
+                    ))
+                })?;
                 debug!("Assigned process {} to Job Object", child.id().unwrap_or(0));
             }
         }

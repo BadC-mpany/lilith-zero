@@ -3,8 +3,8 @@
 //! This module contains the fundamental data structures and logic
 //! that are independent of any specific transport or external service.
 
-pub mod auth;
 pub mod audit;
+pub mod auth;
 pub mod constants;
 pub mod crypto;
 pub mod errors;

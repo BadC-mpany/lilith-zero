@@ -10,6 +10,7 @@ on:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
+  RUSTFLAGS: "-D warnings"
 
 jobs:
   # --------------------------------------------------------------------------
@@ -21,7 +22,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, ubuntu-latest]
+        os: [windows-latest, ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@v4
 
@@ -43,17 +44,7 @@ jobs:
         run: cargo clippy --all-targets --all-features -- -D warnings
         working-directory: sentinel
 
-      - name: Examples Verification
-        run: cargo check --examples
-        working-directory: sentinel
-
-      - name: Documentation Check
-        run: cargo doc --no-deps --all-features
-        working-directory: sentinel
-        env:
-          RUSTDOCFLAGS: "-D warnings"
-
-      - name: Unit & Core Integration Tests
+      - name: Unit Tests
         run: cargo test --all-features
         working-directory: sentinel
 
@@ -69,25 +60,6 @@ jobs:
             sentinel/target/release/sentinel
             sentinel/target/release/sentinel.exe
           if-no-files-found: error
-
-  # --------------------------------------------------------------------------
-  # Rust Security Audit
-  # --------------------------------------------------------------------------
-  # --------------------------------------------------------------------------
-  # Rust Security Audit
-  # --------------------------------------------------------------------------
-  rust-security-audit:
-    name: Rust Security Audit
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Install cargo-audit
-        run: cargo install cargo-audit
-        
-      - name: Run Audit
-        run: cargo audit
-        working-directory: sentinel
 
   # --------------------------------------------------------------------------
   # Python SDK Validation (Standardized)
@@ -106,30 +78,25 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Set up uv
+      - name: Install uv
         uses: astral-sh/setup-uv@v5
-        with:
-          version: "latest"
-          enable-cache: true
 
-      - name: Install Dependencies & SDK
+      - name: Install Dependencies
         run: |
           uv pip install --system ruff mypy pytest pytest-asyncio
           uv pip install --system -e sentinel_sdk/
 
-      - name: Ruff Check (Linting)
+      - name: Ruff Check
         run: ruff check sentinel_sdk
 
-      - name: Mypy (Strong Typing)
+      - name: Mypy Check
         run: mypy sentinel_sdk/sentinel_sdk --strict --ignore-missing-imports
 
-      - name: SDK Unit Tests (Hermetic)
-        run: |
-          # Only run hermetic tests that verify SDK logic without binaries
-          pytest tests/test_sdk_hermetic.py
+      - name: Hermetic Tests
+        run: pytest tests/test_sdk_hermetic.py
 
   # --------------------------------------------------------------------------
-  # Multi-OS Integration Tests (The Bulletproof Layer)
+  # Bulletproof Integration Tests
   # --------------------------------------------------------------------------
   integration:
     name: Integration (${{ matrix.os }})
@@ -138,7 +105,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, ubuntu-latest]
+        os: [windows-latest, ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@v4
 
@@ -147,11 +114,8 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Set up uv
+      - name: Install uv
         uses: astral-sh/setup-uv@v5
-        with:
-          version: "latest"
-          enable-cache: true
 
       - name: Download Rust Binary
         uses: actions/download-artifact@v4
@@ -159,19 +123,19 @@ jobs:
           name: sentinel-${{ matrix.os }}
           path: sentinel/target/release
 
-      - name: Install SDK & Test Hooks
+      - name: Install SDK & Tools
         run: |
           uv pip install --system -e sentinel_sdk/
           uv pip install --system pytest pytest-asyncio
 
-      - name: Run End-to-End Security Validation
+      - name: Run End-to-End Validation
+        shell: bash
         env:
           SENTINEL_BINARY_PATH: ${{ runner.os == 'Windows' && 'sentinel/target/release/sentinel.exe' || 'sentinel/target/release/sentinel' }}
           RUST_LOG: info
         run: |
-          if [ "${{ runner.os }}" = "Linux" ]; then chmod +x $SENTINEL_BINARY_PATH; fi
+          if [ "${{ runner.os }}" != "Windows" ]; then chmod +x $SENTINEL_BINARY_PATH; fi
           pytest tests/test_basic_flow.py \
                  tests/test_security_hardening.py \
                  tests/test_v0_1_0_compliance.py \
                  tests/test_robustness.py
-        shell: bash

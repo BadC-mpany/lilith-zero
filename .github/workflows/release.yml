@@ -21,7 +21,7 @@ jobs:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             name: sentinel
-          - os: macro-latest
+          - os: macos-latest
             target: x86_64-apple-darwin
             name: sentinel-macos-x86
           - os: macos-latest
@@ -40,21 +40,21 @@ jobs:
         run: cargo build --release --target ${{ matrix.target }}
         working-directory: sentinel
 
-      - name: Rename Binary (Linux/Mac)
-        if: matrix.os != 'windows-latest'
-        run: mv sentinel/target/${{ matrix.target }}/release/sentinel sentinel/target/${{ matrix.target }}/release/${{ matrix.name }}
+      - name: Prepare Artifact
         shell: bash
-
-      - name: Rename Binary (Windows)
-        if: matrix.os == 'windows-latest'
-        run: mv sentinel/target/${{ matrix.target }}/release/sentinel.exe sentinel/target/${{ matrix.target }}/release/${{ matrix.name }}
-        shell: bash
+        run: |
+          mkdir -p dist
+          if [ "${{ matrix.os }}" == "windows-latest" ]; then
+            cp sentinel/target/${{ matrix.target }}/release/sentinel.exe dist/${{ matrix.name }}
+          else
+            cp sentinel/target/${{ matrix.target }}/release/sentinel dist/${{ matrix.name }}
+          fi
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.name }}
-          path: sentinel/target/${{ matrix.target }}/release/${{ matrix.name }}
+          path: dist/${{ matrix.name }}
           if-no-files-found: error
 
   create-release:
@@ -67,6 +67,9 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: artifacts
+
+      - name: Display Structure
+        run: ls -R artifacts
 
       - name: Create Release
         uses: softprops/action-gh-release@v1

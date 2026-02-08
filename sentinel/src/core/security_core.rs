@@ -148,7 +148,7 @@ impl SecurityCore {
                             warn!("Missing session token");
                             return SecurityDecision::Deny {
                                 error_code: jsonrpc::ERROR_AUTH,
-                                    reason: "Missing Session ID".to_string(),
+                                reason: "Missing Session ID".to_string(),
                             };
                         }
                     }

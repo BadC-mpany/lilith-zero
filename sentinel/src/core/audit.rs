@@ -19,12 +19,7 @@ impl AuditLogger {
         Self { signer }
     }
 
-    pub fn log(
-        &self,
-        session_id: &str,
-        event_type: &str,
-        details: serde_json::Value,
-    ) {
+    pub fn log(&self, session_id: &str, event_type: &str, details: serde_json::Value) {
         let timestamp = crate::utils::time::now();
         let entry = AuditEntry {
             session_id,
@@ -35,7 +30,7 @@ impl AuditLogger {
 
         // Canonicalize JSON for consistent signing
         let payload_str = serde_json::to_string(&entry).unwrap_or_default();
-        
+
         // Sign the payload
         let signature = self.signer.sign(payload_str.as_bytes());
 
