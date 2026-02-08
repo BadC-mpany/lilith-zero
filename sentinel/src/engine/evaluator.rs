@@ -101,12 +101,12 @@ impl PolicyEvaluator {
                                 }
                             }
                         }
-                        
+
                         // Check required tags (AND logic - block if ALL present)
                         if let Some(ref required_tags) = rule.required_taints {
-                            let all_present = required_tags.iter()
-                                .all(|tag| current_taints.contains(tag));
-                            
+                            let all_present =
+                                required_tags.iter().all(|tag| current_taints.contains(tag));
+
                             if all_present {
                                 // Check exceptions
                                 if let Some(ref exceptions) = rule.exceptions {
@@ -120,10 +120,9 @@ impl PolicyEvaluator {
                                     )
                                     .await?
                                     {
-                                        let error_msg = rule
-                                            .error
-                                            .clone()
-                                            .unwrap_or_else(|| "Required taints detected".to_string());
+                                        let error_msg = rule.error.clone().unwrap_or_else(|| {
+                                            "Required taints detected".to_string()
+                                        });
                                         return Ok(Decision::Denied { reason: error_msg });
                                     }
                                 } else {

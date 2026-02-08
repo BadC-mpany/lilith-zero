@@ -17,9 +17,7 @@ pub struct CryptoSigner {
     secret: [u8; crypto::SECRET_KEY_LENGTH],
 }
 
-
-
-use crate::core::errors::{InterceptorError, CryptoError};
+use crate::core::errors::{CryptoError, InterceptorError};
 
 // ... imports remain ...
 
@@ -41,7 +39,7 @@ impl CryptoSigner {
 
         let mut mac = HmacSha256::new_from_slice(&self.secret)
             .map_err(|e| InterceptorError::CryptoError(CryptoError::HashingError(e.to_string())))?;
-            
+
         mac.update(uuid_bytes);
         let result = mac.finalize();
         let signature = result.into_bytes();
@@ -49,7 +47,12 @@ impl CryptoSigner {
         let uuid_b64 = URL_SAFE_NO_PAD.encode(uuid_bytes);
         let sig_b64 = URL_SAFE_NO_PAD.encode(signature);
 
-        Ok(format!("{}.{}.{}", crypto::SESSION_ID_VERSION, uuid_b64, sig_b64))
+        Ok(format!(
+            "{}.{}.{}",
+            crypto::SESSION_ID_VERSION,
+            uuid_b64,
+            sig_b64
+        ))
     }
 
     /// Validate a Session ID's integrity using constant-time comparison

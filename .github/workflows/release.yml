@@ -1,0 +1,83 @@
+name: Sentinel Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Build & Release (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            name: sentinel.exe
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            name: sentinel
+          - os: macro-latest
+            target: x86_64-apple-darwin
+            name: sentinel-macos-x86
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            name: sentinel-macos-arm
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Build Binary
+        run: cargo build --release --target ${{ matrix.target }}
+        working-directory: sentinel
+
+      - name: Rename Binary (Linux/Mac)
+        if: matrix.os != 'windows-latest'
+        run: mv sentinel/target/${{ matrix.target }}/release/sentinel sentinel/target/${{ matrix.target }}/release/${{ matrix.name }}
+        shell: bash
+
+      - name: Rename Binary (Windows)
+        if: matrix.os == 'windows-latest'
+        run: mv sentinel/target/${{ matrix.target }}/release/sentinel.exe sentinel/target/${{ matrix.target }}/release/${{ matrix.name }}
+        shell: bash
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: sentinel/target/${{ matrix.target }}/release/${{ matrix.name }}
+          if-no-files-found: error
+
+  create-release:
+    needs: build-and-release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download All Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            artifacts/sentinel.exe/sentinel.exe
+            artifacts/sentinel/sentinel
+            artifacts/sentinel-macos-x86/sentinel-macos-x86
+            artifacts/sentinel-macos-arm/sentinel-macos-arm
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

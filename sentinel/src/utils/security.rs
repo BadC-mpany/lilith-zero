@@ -1,5 +1,5 @@
-use rand::{distributions::Alphanumeric, Rng};
 use crate::core::constants::spotlight;
+use rand::{distributions::Alphanumeric, Rng};
 
 pub struct SecurityEngine;
 

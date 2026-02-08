@@ -4,10 +4,10 @@
 //! protocol adapter version negotiated for the current session.
 //! It uses static dispatch (enum match) to forward calls, avoiding vtable overhead.
 
-use crate::core::traits::McpSessionHandler;
+use crate::core::events::{SecurityDecision, SecurityEvent};
 use crate::core::models::{JsonRpcRequest, JsonRpcResponse};
+use crate::core::traits::McpSessionHandler;
 use crate::protocol::{v2024_11_05, v2025_11_25};
-use crate::core::events::{SecurityEvent, SecurityDecision};
 
 #[derive(Debug)]
 pub enum ActiveSession {

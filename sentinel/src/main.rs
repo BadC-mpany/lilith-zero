@@ -22,8 +22,6 @@ struct Cli {
     /// Upstream tool arguments (e.g. "tools.py")
     #[arg(last = true)]
     upstream_args: Vec<String>,
-
-
 }
 
 #[tokio::main]
@@ -43,21 +41,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     // Override policy from CLI
-    if let Some(p) = &cli.policy { 
+    if let Some(p) = &cli.policy {
         config.policies_yaml_path = Some(p.clone());
     }
 
-
-    
     if let Err(e) = init_tracing(&config) {
         eprintln!("Failed to init tracing: {}", e);
     }
 
-
-
-
     info!("Starting Sentinel in Middleware Mode");
-    let upstream_cmd = cli.upstream_cmd.ok_or_else(|| anyhow::anyhow!("Missing --upstream-cmd"))?;
+    let upstream_cmd = cli
+        .upstream_cmd
+        .ok_or_else(|| anyhow::anyhow!("Missing --upstream-cmd"))?;
     info!("Upstream: {} {:?}", upstream_cmd, cli.upstream_args);
 
     let mut middleware = McpMiddleware::new(upstream_cmd, cli.upstream_args, Arc::new(config))?;

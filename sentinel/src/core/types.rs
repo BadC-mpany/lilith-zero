@@ -1,8 +1,6 @@
-
 //! Security Types.
-//! 
+//!
 //! Strongly typed string wrappers to prevent accidental taint leakage.
-
 
 use serde::{Deserialize, Serialize};
 
@@ -24,7 +22,7 @@ impl TaintedString {
     pub fn sanitize_unchecked(self) -> SafeString {
         SafeString(self.0)
     }
-    
+
     pub fn into_inner(self) -> String {
         self.0
     }
@@ -34,7 +32,7 @@ impl SafeString {
     pub fn as_str(&self) -> &str {
         &self.0
     }
-    
+
     pub fn into_inner(self) -> String {
         self.0
     }

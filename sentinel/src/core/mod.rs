@@ -3,14 +3,14 @@
 //! This module contains the fundamental data structures and logic
 //! that are independent of any specific transport or external service.
 
+pub mod auth;
+pub mod constants;
 pub mod crypto;
 pub mod errors;
 pub mod events;
 pub mod models;
-pub mod auth;
 pub mod security_core;
 pub mod session;
 pub mod taint;
 pub mod traits;
-pub mod constants;
 pub mod types;

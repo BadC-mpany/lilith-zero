@@ -1,7 +1,7 @@
 // Comprehensive policy validation - fail-fast at config load time
 
 use crate::core::errors::InterceptorError;
-use crate::core::models::{PolicyDefinition, PolicyRule, RuleException, LogicCondition};
+use crate::core::models::{LogicCondition, PolicyDefinition, PolicyRule, RuleException};
 
 use std::collections::HashSet;
 
@@ -103,9 +103,7 @@ impl PolicyValidator {
             Self::validate_condition(pattern, &rule_context)?;
 
             // Check for tool_args_match in logic patterns
-            if Self::condition_contains_tool_args_match(pattern)
-                && rule.tool_class.is_some()
-            {
+            if Self::condition_contains_tool_args_match(pattern) && rule.tool_class.is_some() {
                 return Err(InterceptorError::ConfigurationError(
                         format!(
                             "{}: tool_args_match in logic patterns is only valid for tool-specific rules (not tool_class rules). \
@@ -155,9 +153,15 @@ impl PolicyValidator {
         match rule.action.as_str() {
             "CHECK_TAINT" => {
                 // CHECK_TAINT requires either forbidden_tags OR required_taints
-                let has_forbidden = rule.forbidden_tags.as_ref().map_or(false, |tags| !tags.is_empty());
-                let has_required = rule.required_taints.as_ref().map_or(false, |tags| !tags.is_empty());
-                
+                let has_forbidden = rule
+                    .forbidden_tags
+                    .as_ref()
+                    .is_some_and(|tags| !tags.is_empty());
+                let has_required = rule
+                    .required_taints
+                    .as_ref()
+                    .is_some_and(|tags| !tags.is_empty());
+
                 if !has_forbidden && !has_required {
                     return Err(InterceptorError::ConfigurationError(format!(
                         "{}: CHECK_TAINT action requires either 'forbidden_tags' or 'required_taints'",
@@ -185,22 +189,27 @@ impl PolicyValidator {
     }
 
     /// Validate condition structure (recursive)
-    fn validate_condition(condition: &LogicCondition, _context: &str) -> Result<(), InterceptorError> {
+    fn validate_condition(
+        condition: &LogicCondition,
+        _context: &str,
+    ) -> Result<(), InterceptorError> {
         match condition {
-             LogicCondition::And(rules) | LogicCondition::Or(rules) => {
-                 for rule in rules {
-                     Self::validate_condition(rule, _context)?;
-                 }
-             },
-             LogicCondition::Not(rule) => {
-                 Self::validate_condition(rule, _context)?;
-             },
-             LogicCondition::Eq(_) | LogicCondition::Neq(_) | 
-             LogicCondition::Gt(_) | LogicCondition::Lt(_) |
-             LogicCondition::ToolArgsMatch(_) => {
+            LogicCondition::And(rules) | LogicCondition::Or(rules) => {
+                for rule in rules {
+                    Self::validate_condition(rule, _context)?;
+                }
+            }
+            LogicCondition::Not(rule) => {
+                Self::validate_condition(rule, _context)?;
+            }
+            LogicCondition::Eq(_)
+            | LogicCondition::Neq(_)
+            | LogicCondition::Gt(_)
+            | LogicCondition::Lt(_)
+            | LogicCondition::ToolArgsMatch(_) => {
                 // Leaf nodes are valid by definition in this schema
-             },
-             LogicCondition::Literal(_) => {},
+            }
+            LogicCondition::Literal(_) => {}
         }
         Ok(())
     }
@@ -247,10 +256,10 @@ impl PolicyValidator {
         match condition {
             LogicCondition::And(rules) | LogicCondition::Or(rules) => {
                 rules.iter().any(Self::condition_contains_tool_args_match)
-            },
+            }
             LogicCondition::Not(rule) => Self::condition_contains_tool_args_match(rule),
             LogicCondition::ToolArgsMatch(_) => true,
-            _ => false 
+            _ => false,
         }
     }
 
@@ -282,7 +291,7 @@ impl PolicyValidator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::{json, from_value};
+    use serde_json::{from_value, json};
     use std::collections::HashMap;
 
     #[test]
@@ -291,7 +300,6 @@ mod tests {
         static_rules.insert("read_file".to_string(), "ALLOW".to_string());
 
         let policy = PolicyDefinition {
-
             id: "test-policy".to_string(),
             customer_id: "test-customer".to_string(),
             name: "test_policy".to_string(),
@@ -342,7 +350,10 @@ mod tests {
 
         let result = PolicyValidator::validate_policy(&policy);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("must specify either 'tool' or 'tool_class'"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("must specify either 'tool' or 'tool_class'"));
     }
 
     #[test]
@@ -398,7 +409,8 @@ mod tests {
                 exceptions: Some(vec![RuleException {
                     condition: from_value(json!({
                         "tool_args_match": {"destination": "internal_*"}
-                    })).unwrap(),
+                    }))
+                    .unwrap(),
                     reason: Some("test".to_string()),
                 }]),
             }],
@@ -436,7 +448,8 @@ mod tests {
                 exceptions: Some(vec![RuleException {
                     condition: from_value(json!({
                         "tool_args_match": {"to": "*@company.com"}
-                    })).unwrap(),
+                    }))
+                    .unwrap(),
                     reason: Some("Internal emails allowed".to_string()),
                 }]),
             }],

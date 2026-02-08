@@ -93,19 +93,19 @@ pub enum Decision {
 /// Recursive Logic Condition (Typed AST)
 /// Replaces raw serde_json::Value with a strict enum for maintaining correctness.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "snake_case")] 
+#[serde(rename_all = "snake_case")]
 // Note: standard JsonLogic often uses standard names. We support: "and", "or", "not", "==", ">", etc.
 pub enum LogicCondition {
     // Logic Ops
     And(Vec<LogicCondition>),
     Or(Vec<LogicCondition>),
     Not(Box<LogicCondition>),
-    
+
     // Comparison Ops
     #[serde(rename = "==")]
     Eq(Vec<LogicValue>), // [LHS, RHS]
     #[serde(rename = "!=")]
-    Neq(Vec<LogicValue>), 
+    Neq(Vec<LogicValue>),
     #[serde(rename = ">")]
     Gt(Vec<LogicValue>),
     #[serde(rename = "<")]
@@ -125,15 +125,17 @@ pub enum LogicCondition {
 #[serde(untagged)]
 pub enum LogicValue {
     /// {"var": "path"}
-    Var { var: String },
+    Var {
+        var: String,
+    },
     /// Literal values
     Str(String),
     Num(f64),
     Bool(bool),
     Null,
     /// Nested complex object (rare but supported in standard)
-    Object(serde_json::Value), 
-    Array(Vec<serde_json::Value>)
+    Object(serde_json::Value),
+    Array(Vec<serde_json::Value>),
 }
 
 /// Exception condition for rules
@@ -192,15 +194,13 @@ pub struct PolicyDefinition {
     /// Enable automatic lethal trifecta protection
     #[serde(alias = "protect_lethal_trifecta", default)]
     pub protect_lethal_trifecta: bool,
-
-
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ResourceRule {
     pub uri_pattern: String, // Glob pattern e.g. "file:///tmp/*"
-    pub action: String, // ALLOW, BLOCK
+    pub action: String,      // ALLOW, BLOCK
     #[serde(skip_serializing_if = "Option::is_none")]
     pub exceptions: Option<Vec<RuleException>>,
     #[serde(skip_serializing_if = "Option::is_none")]

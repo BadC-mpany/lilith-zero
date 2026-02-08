@@ -3,7 +3,7 @@
 //! Defines the interface for converting between specific wire protocols
 //! and the internal SecurityEvent model.
 
-use crate::core::events::{SecurityEvent, SecurityDecision};
+use crate::core::events::{SecurityDecision, SecurityEvent};
 use crate::core::models::{JsonRpcRequest, JsonRpcResponse};
 
 /// Handler to translate between generic SecurityEvents and specific wire protocol versions.
@@ -23,7 +23,7 @@ pub trait McpSessionHandler: Send + Sync {
 
     /// Extract the session token from the request headers or parameters.
     fn extract_session_token(&self, req: &JsonRpcRequest) -> Option<String>;
-    
+
     /// Prepare the request for forwarding to the upstream server.
     fn sanitize_for_upstream(&self, req: &mut JsonRpcRequest);
 }

@@ -4,7 +4,7 @@
 //! Enforces strict cryptographic checks if a JWT secret/key is provided.
 
 use anyhow::{anyhow, Result};
-use jsonwebtoken::{decode, DecodingKey, Validation, Algorithm};
+use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -22,9 +22,9 @@ struct Claims {
 ///
 /// Returns Ok(()) if valid, Err otherwise.
 pub fn validate_audience_claim(
-    token: &str, 
+    token: &str,
     expected_audiences: &[String],
-    jwt_secret: Option<&str>
+    jwt_secret: Option<&str>,
 ) -> Result<()> {
     // 1. If we have a secret, enforce signature validation.
     // "Google-grade": If auth is required (expected_audiences exist), we MUST have a secret.
@@ -32,7 +32,7 @@ pub fn validate_audience_claim(
 
     let decoding_key = DecodingKey::from_secret(secret.as_bytes());
     let mut validation = Validation::new(Algorithm::HS256); // Default to HS256 for now. logic can expand.
-    
+
     validation.validate_aud = false; // We check manually.
 
     let token_data = decode::<Claims>(token, &decoding_key, &validation)
@@ -42,25 +42,40 @@ pub fn validate_audience_claim(
 
     // 2. Check Audience
     if let Some(aud_val) = claims.aud {
-         let token_auds: Vec<String> = match aud_val {
-             serde_json::Value::String(s) => vec![s],
-             serde_json::Value::Array(arr) => arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect(),
-             _ => return Err(anyhow!("Invalid 'aud' claim type (must be string or array of strings)"))
-         };
+        let token_auds: Vec<String> = match aud_val {
+            serde_json::Value::String(s) => vec![s],
+            serde_json::Value::Array(arr) => arr
+                .iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect(),
+            _ => {
+                return Err(anyhow!(
+                    "Invalid 'aud' claim type (must be string or array of strings)"
+                ))
+            }
+        };
 
-         let mut found = false;
-         for expected in expected_audiences {
-             if token_auds.contains(expected) {
-                 found = true;
-                 break;
-             }
-         }
-         if !found {
-             return Err(anyhow!("Token audience {:?} does not match expected {:?}", token_auds, expected_audiences));
-         }
-         if !found {
-             return Err(anyhow!("Token audience {:?} does not match expected {:?}", token_auds, expected_audiences));
-         }
+        let mut found = false;
+        for expected in expected_audiences {
+            if token_auds.contains(expected) {
+                found = true;
+                break;
+            }
+        }
+        if !found {
+            return Err(anyhow!(
+                "Token audience {:?} does not match expected {:?}",
+                token_auds,
+                expected_audiences
+            ));
+        }
+        if !found {
+            return Err(anyhow!(
+                "Token audience {:?} does not match expected {:?}",
+                token_auds,
+                expected_audiences
+            ));
+        }
     } else {
         return Err(anyhow!("Token missing 'aud' claim"));
     }

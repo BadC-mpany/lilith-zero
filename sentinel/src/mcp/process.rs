@@ -1,15 +1,15 @@
 //! Upstream process management with Zombie Process Protection.
-//! 
+//!
 //! Implements strict parent-child binding to ensure upstream tools are eliminated
 //! if the Sentinel middleware crashes or is terminated.
 
-use anyhow::{Result, Context};
-use tracing::debug;
-use std::process::Stdio;
-use tokio::process::Command;
-use tokio::io::{AsyncRead, AsyncWrite};
-use tokio::sync::{mpsc, oneshot};
 use crate::mcp::pipeline::UpstreamEvent;
+use anyhow::{Context, Result};
+use std::process::Stdio;
+use tokio::io::{AsyncRead, AsyncWrite};
+use tokio::process::Command;
+use tokio::sync::{mpsc, oneshot};
+use tracing::debug;
 
 // Windows-specific imports
 #[cfg(windows)]
@@ -31,23 +31,24 @@ pub type ProcessSpawnResult = (
     ProcessSupervisor,
     Option<Box<dyn AsyncWrite + Unpin + Send>>,
     Option<Box<dyn AsyncRead + Unpin + Send>>,
-    Option<Box<dyn AsyncRead + Unpin + Send>>
+    Option<Box<dyn AsyncRead + Unpin + Send>>,
 );
 
 impl ProcessSupervisor {
     pub fn spawn(
-        cmd: &str, 
-        args: &[String], 
+        cmd: &str,
+        args: &[String],
         tx_events: mpsc::Sender<UpstreamEvent>,
     ) -> Result<ProcessSpawnResult> {
         debug!("ProcessSupervisor: spawning '{}' with args {:?}", cmd, args);
-        
+
         let mut command = Command::new(cmd);
-        command.args(args)
+        command
+            .args(args)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
-        
+
         // ------------------------------------------------------------------
         // UNIX: PR_SET_PDEATHSIG
         // ------------------------------------------------------------------
@@ -69,22 +70,27 @@ impl ProcessSupervisor {
         #[cfg(windows)]
         let job = {
             let job = Job::create().context("Failed to create Job Object")?;
-            let mut info = job.query_extended_limit_info().context("Failed to query job info")?;
+            let mut info = job
+                .query_extended_limit_info()
+                .context("Failed to query job info")?;
             info.limit_kill_on_job_close();
-            job.set_extended_limit_info(&mut info).context("Failed to set job limits")?;
+            job.set_extended_limit_info(&mut info)
+                .context("Failed to set job limits")?;
             debug!("Initialized Windows Job Object for automatic cleanup");
             Some(job)
         };
 
-        // Note: On Windows, we need to creation_flags(CREATE_SUSPENDED) if we wanted to 
-        // strictly ensure assignment before execution, but Job Object assignment works 
+        // Note: On Windows, we need to creation_flags(CREATE_SUSPENDED) if we wanted to
+        // strictly ensure assignment before execution, but Job Object assignment works
         // on the handle immediately after spawn, which is usually sufficient for "crash protection".
         // To be strictly atomic (preventing runaway if assignment fails), we'd use suspended.
         // For Sentinel v0.1 simplification, we assign immediately after.
 
         // Spawn
-        let mut child = command.spawn().context("Failed to spawn upstream process")?;
-        
+        let mut child = command
+            .spawn()
+            .context("Failed to spawn upstream process")?;
+
         // ------------------------------------------------------------------
         // WINDOWS: Job Objects (Part 2 - Assignment)
         // ------------------------------------------------------------------
@@ -92,17 +98,27 @@ impl ProcessSupervisor {
         if let Some(ref job) = job {
             // Safety: We are using the raw handle from the standard library Child
             if let Some(handle) = child.raw_handle() {
-                job.assign_process(handle as isize).context("Failed to assign process to Job Object")?;
+                job.assign_process(handle as isize)
+                    .context("Failed to assign process to Job Object")?;
                 debug!("Assigned process {} to Job Object", child.id().unwrap_or(0));
             }
         }
 
-        let stdin = child.stdin.take().map(|s| Box::new(s) as Box<dyn AsyncWrite + Unpin + Send>);
-        let stdout = child.stdout.take().map(|s| Box::new(s) as Box<dyn AsyncRead + Unpin + Send>);
-        let stderr = child.stderr.take().map(|s| Box::new(s) as Box<dyn AsyncRead + Unpin + Send>);
+        let stdin = child
+            .stdin
+            .take()
+            .map(|s| Box::new(s) as Box<dyn AsyncWrite + Unpin + Send>);
+        let stdout = child
+            .stdout
+            .take()
+            .map(|s| Box::new(s) as Box<dyn AsyncRead + Unpin + Send>);
+        let stderr = child
+            .stderr
+            .take()
+            .map(|s| Box::new(s) as Box<dyn AsyncRead + Unpin + Send>);
 
         let (kill_tx, kill_rx) = oneshot::channel();
-        
+
         tokio::spawn(async move {
             tokio::select! {
                 _ = kill_rx => {
@@ -122,14 +138,14 @@ impl ProcessSupervisor {
         });
 
         Ok((
-            Self { 
+            Self {
                 kill_tx: Some(kill_tx),
                 #[cfg(windows)]
                 _job: job,
             },
             stdin,
             stdout,
-            stderr
+            stderr,
         ))
     }
 

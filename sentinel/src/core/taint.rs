@@ -1,9 +1,9 @@
 //! Type-System enforcement for Taint Tracking.
 //!
-//! This module defines wrapper types to strictly separate "Tainted" data 
+//! This module defines wrapper types to strictly separate "Tainted" data
 //! (potentially malicious or sensitive) from "Clean" data (verified by policy).
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 /// Metadata regarding the taint of an object.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

@@ -3,9 +3,9 @@
 //! This module defines the internal event stream that the Security Core operates on.
 //! It is completely decoupled from the specific MCP wire protocol version.
 
-use serde::{Serialize, Deserialize};
-use crate::core::types::{TaintedString};
 use crate::core::taint::Tainted;
+use crate::core::types::TaintedString;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 /// Protocol-agnostic security events derived from wire protocol messages
@@ -71,12 +71,10 @@ pub enum SecurityDecision {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum OutputTransform {
     /// Apply spotlighting (randomized XML tags) to specific JSON paths
-    Spotlight { 
+    Spotlight {
         /// JSONPaths to fields that should be spotlighted (e.g., "content[*].text")
-        json_paths: Vec<String> 
+        json_paths: Vec<String>,
     },
     /// Redact specific fields (Data Loss Prevention)
-    Redact { 
-        json_paths: Vec<String> 
-    },
+    Redact { json_paths: Vec<String> },
 }

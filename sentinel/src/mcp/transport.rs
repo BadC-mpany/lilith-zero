@@ -9,7 +9,7 @@ use serde_json::Value;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, Stdin, Stdout};
 use tracing::debug;
 
-use crate::core::models::{JsonRpcRequest, JsonRpcResponse, JsonRpcError};
+use crate::core::models::{JsonRpcError, JsonRpcRequest, JsonRpcResponse};
 
 pub struct StdioTransport {
     reader: BufReader<Stdin>,
@@ -34,22 +34,22 @@ impl StdioTransport {
     /// Uses a bounded read to prevent DoS attacks via huge lines.
     pub async fn read_message(&mut self) -> Result<Option<JsonRpcRequest>> {
         use crate::core::constants::limits;
-        
+
         let mut buf = Vec::new();
         // read_until reads until the delimiter is found or EOF
         let bytes_read = self.reader.read_until(b'\n', &mut buf).await?;
-        
+
         if bytes_read == 0 {
             return Ok(None); // EOF
         }
-        
+
         if bytes_read as u64 > limits::MAX_MESSAGE_SIZE_BYTES {
             return Err(anyhow::anyhow!(
-                "Message exceeded size limit of {} bytes", 
+                "Message exceeded size limit of {} bytes",
                 limits::MAX_MESSAGE_SIZE_BYTES
             ));
         }
-        
+
         let line = String::from_utf8(buf).context("Invalid UTF-8 in request")?;
         debug!("Received: {}", line.trim());
 
