@@ -14,8 +14,8 @@ use tracing::debug;
 #[cfg(windows)]
 use win32job::Job;
 
-// Unix-specific imports
-#[cfg(unix)]
+// Linux-specific imports (for PR_SET_PDEATHSIG)
+#[cfg(target_os = "linux")]
 use std::os::unix::process::CommandExt;
 
 pub struct ProcessSupervisor {
@@ -49,9 +49,9 @@ impl ProcessSupervisor {
             .stderr(Stdio::piped());
 
         // ------------------------------------------------------------------
-        // UNIX: PR_SET_PDEATHSIG
+        // LINUX: PR_SET_PDEATHSIG
         // ------------------------------------------------------------------
-        #[cfg(unix)]
+        #[cfg(target_os = "linux")]
         unsafe {
             command.pre_exec(|| {
                 // Send SIGKILL to child if parent (Sentinel) dies
@@ -81,7 +81,7 @@ impl ProcessSupervisor {
                 ))
             })?;
             info.limit_kill_on_job_close();
-            job.set_extended_limit_info(&mut info).map_err(|e| {
+            job.set_extended_limit_info(&info).map_err(|e| {
                 crate::core::errors::InterceptorError::ProcessError(format!(
                     "Failed to set job limits: {}",
                     e
