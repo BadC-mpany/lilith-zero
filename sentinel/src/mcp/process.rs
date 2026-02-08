@@ -16,7 +16,6 @@ use win32job::Job;
 
 // Linux-specific: PR_SET_PDEATHSIG is only available on Linux via libc
 
-
 pub struct ProcessSupervisor {
     // Channel to trigger manual kill
     kill_tx: Option<oneshot::Sender<()>>,
