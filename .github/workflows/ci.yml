@@ -83,7 +83,7 @@ jobs:
 
       - name: Install Dependencies
         run: |
-          uv pip install --system ruff mypy pytest pytest-asyncio
+          uv pip install --system ruff mypy pytest pytest-asyncio pyjwt
           uv pip install --system -e sentinel_sdk/
 
       - name: Ruff Check
@@ -126,7 +126,7 @@ jobs:
       - name: Install SDK & Tools
         run: |
           uv pip install --system -e sentinel_sdk/
-          uv pip install --system pytest pytest-asyncio
+          uv pip install --system pytest pytest-asyncio pyjwt
 
       - name: Run End-to-End Validation
         shell: bash
