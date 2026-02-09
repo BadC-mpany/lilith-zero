@@ -85,10 +85,10 @@ jobs:
           uv pip install --system -e sdk/
 
       - name: Ruff Check
-        run: ruff check sdk/lilith_zero
+        run: ruff check sdk/src/lilith_zero
 
       - name: Mypy Check
-        run: mypy sdk/lilith_zero --strict --ignore-missing-imports
+        run: mypy sdk/src/lilith_zero --strict --ignore-missing-imports
 
       - name: Hermetic Tests
         run: pytest tests/test_sdk_hermetic.py
