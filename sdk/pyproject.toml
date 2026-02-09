@@ -24,6 +24,10 @@ name = "lilith-zero"
 version = "0.1.1"
 description = "Lilith MCP Middleware SDK"
 readme = "README.md"
+authors = [
+    { name = "Peter Tallosy" },
+    { name = "BadCompany", email = "oss@badcompany.dev" },
+]
 requires-python = ">=3.10"
 classifiers = ["Programming Language :: Python :: 3"]
 dependencies = []
