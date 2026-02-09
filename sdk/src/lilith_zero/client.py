@@ -33,7 +33,7 @@ import logging
 import os
 import shutil
 import uuid
-from asyncio import Future, Task
+from asyncio import Future
 from typing import Any, TypedDict, cast
 
 from .exceptions import (
@@ -71,7 +71,7 @@ class ToolResult(TypedDict):
 # Module-level constants
 _MCP_PROTOCOL_VERSION = "2024-11-05"
 _SDK_NAME = "lilith-zero"
-_SDK_VERSION = "0.1.0"
+_SDK_VERSION = "0.1.1"
 _SESSION_TIMEOUT_SEC = 5.0
 _SESSION_POLL_INTERVAL_SEC = 0.1
 _SESSION_ID_MARKER = "LILITH_ZERO_SESSION_ID="
