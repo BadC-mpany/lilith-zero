@@ -10,8 +10,6 @@ ignore = [
 ]
 
 [licenses]
-unlicensed = "deny"
-copyleft = "warn"
 allow = [
     "MIT",
     "Apache-2.0",
@@ -22,6 +20,8 @@ allow = [
     "Zlib",
     "MPL-2.0",
     "Unicode-DFS-2016",
+    "Unlicense",
+    "Unicode-3.0",
 ]
 confidence-threshold = 0.8
 
