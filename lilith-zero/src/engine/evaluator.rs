@@ -4,9 +4,9 @@
 //! rules to tool calls based on the active policy and session context.
 
 // Static and dynamic rule evaluation
+use crate::engine::pattern_matcher::PatternMatcher;
 use crate::engine_core::errors::InterceptorError;
 use crate::engine_core::models::{Decision, HistoryEntry, PolicyDefinition};
-use crate::engine::pattern_matcher::PatternMatcher;
 use serde_json::Value;
 use std::collections::HashSet;
 

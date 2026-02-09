@@ -10,12 +10,12 @@ use std::sync::Arc;
 use tracing::{info, warn};
 
 use crate::config::Config;
+use crate::engine::evaluator::PolicyEvaluator;
 use crate::engine_core::auth;
 use crate::engine_core::constants::jsonrpc;
 use crate::engine_core::crypto::CryptoSigner;
 use crate::engine_core::events::{OutputTransform, SecurityDecision, SecurityEvent};
 use crate::engine_core::models::{Decision, HistoryEntry, PolicyDefinition, PolicyRule};
-use crate::engine::evaluator::PolicyEvaluator;
 use anyhow::Result;
 
 use crate::engine_core::audit::AuditLogger;
@@ -179,8 +179,9 @@ impl SecurityCore {
                         crate::config::SecurityLevel::BlockParams => {
                             warn!("No security policy loaded. Denying request due to strict security settings (Fail-Closed).");
                             Ok(Decision::Denied {
-                                reason: "No security policy loaded. lilith-zero defaults to Deny-All."
-                                    .to_string(),
+                                reason:
+                                    "No security policy loaded. lilith-zero defaults to Deny-All."
+                                        .to_string(),
                             })
                         }
                     }

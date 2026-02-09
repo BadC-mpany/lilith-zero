@@ -5,8 +5,8 @@
 //! for Model Context Protocol (MCP) servers.
 
 pub mod config;
-pub mod engine_core;
 pub mod engine;
+pub mod engine_core;
 pub mod mcp;
 pub mod protocol;
 pub mod utils;
