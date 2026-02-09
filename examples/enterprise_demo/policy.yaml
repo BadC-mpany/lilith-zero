@@ -1,4 +1,4 @@
-# Sentinel Security Policy for Mock Enterprise Tools
+# Lilith Security Policy for Mock Enterprise Tools
 # Demonstrates tiered access control and taint tracking
 
 id: "enterprise-security-policy"
@@ -11,7 +11,7 @@ created_at: "2024-01-27T00:00:00Z"
 sandbox:
   strict_mode: false
   allowed_read_paths: 
-    - "C:\\Users\\Public"
+    - "C:\\Users\\Public" # or "/tmp" on Linux
   allowed_write_paths: []
   allow_network: false
 

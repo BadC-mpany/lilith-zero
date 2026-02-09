@@ -8,11 +8,11 @@ from unittest.mock import MagicMock, patch, AsyncMock
 # Add project root to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from sentinel_sdk import Sentinel, SentinelError, SentinelConfigError
+from lilith_zero import Lilith, LilithError, LilithConfigError
 
-class TestSentinelHermetic(unittest.IsolatedAsyncioTestCase):
+class TestLilithHermetic(unittest.IsolatedAsyncioTestCase):
     """
-    Hermetic Unit Tests for Sentinel Client.
+    Hermetic Unit Tests for Lilith Client.
     These tests do NOT require the Rust binary or an upstream process.
     They verify internal logic, state management, and error handling.
     """
@@ -20,48 +20,48 @@ class TestSentinelHermetic(unittest.IsolatedAsyncioTestCase):
     def test_init_config_errors(self):
         """Test configuration validation in __init__."""
         # Missing upstream
-        with self.assertRaisesRegex(SentinelConfigError, "Upstream command is required"):
-            Sentinel(upstream="")
+        with self.assertRaisesRegex(LilithConfigError, "Upstream command is required"):
+            Lilith(upstream="")
             
-        with self.assertRaisesRegex(SentinelConfigError, "Upstream command is required"):
-            Sentinel(upstream=None)
+        with self.assertRaisesRegex(LilithConfigError, "Upstream command is required"):
+            Lilith(upstream=None)
 
-    @patch("sentinel_sdk.sentinel_sdk.client.os.path.exists")
-    @patch("sentinel_sdk.sentinel_sdk.client._find_binary")
+    @patch("lilith_zero.client.os.path.exists")
+    @patch("lilith_zero.client._find_binary")
     def test_binary_path_resolution(self, mock_find, mock_exists):
         """Test binary path resolution logic."""
         # Case 1: Binary provided and exists
         mock_exists.return_value = True
-        s = Sentinel(upstream="python tool.py", binary="/custom/sentinel")
+        s = Lilith(upstream="python tool.py", binary="/custom/lilith-zero")
         
-        expected = os.path.abspath("/custom/sentinel")
+        expected = os.path.abspath("/custom/lilith-zero")
         self.assertEqual(os.path.normcase(s._binary_path), os.path.normcase(expected))
         
         # Case 2: Auto-discovery (mocked)
-        mock_find.return_value = "/found/sentinel"
-        s = Sentinel(upstream="python tool.py")
-        expected_found = os.path.abspath("/found/sentinel")
+        mock_find.return_value = "/found/lilith-zero"
+        s = Lilith(upstream="python tool.py")
+        expected_found = os.path.abspath("/found/lilith-zero")
         self.assertEqual(os.path.normcase(s._binary_path), os.path.normcase(expected_found))
 
-    @patch("sentinel_sdk.sentinel_sdk.client.os.path.exists")
+    @patch("lilith_zero.client.os.path.exists")
     @patch("asyncio.create_subprocess_exec")
     async def test_connect_spawn_error(self, mock_exec, mock_exists):
         """Test failure to spawn subprocess."""
         mock_exists.return_value = True
         mock_exec.side_effect = OSError("Exec format error")
         
-        s = Sentinel(upstream="python tool.py", binary="/bin/sentinel")
+        s = Lilith(upstream="python tool.py", binary="/bin/lilith-zero")
         
-        with self.assertRaisesRegex(Exception, "Failed to spawn Sentinel"):
+        with self.assertRaisesRegex(Exception, "Failed to spawn Lilith"):
            await s._connect()
 
     def test_build_command(self):
         """Test command line construction."""
-        with patch("sentinel_sdk.sentinel_sdk.client.os.path.exists", return_value=True):
-            s = Sentinel(upstream="python tool.py --flag", binary="/bin/sentinel", policy="/etc/policy.yaml")
+        with patch("lilith_zero.client.os.path.exists", return_value=True):
+            s = Lilith(upstream="python tool.py --flag", binary="/bin/lilith-zero", policy="/etc/policy.yaml")
             
             cmd = s._build_command()
-            expected_bin = os.path.abspath("/bin/sentinel")
+            expected_bin = os.path.abspath("/bin/lilith-zero")
             expected_policy = os.path.abspath("/etc/policy.yaml")
             
             self.assertEqual(os.path.normcase(cmd[0]), os.path.normcase(expected_bin))

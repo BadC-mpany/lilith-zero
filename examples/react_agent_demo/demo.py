@@ -1,12 +1,13 @@
 """
-Sentinel Security Demo - Policy Enforcement
+Lilith Security Demo - Policy Enforcement
 
-Demonstrates Sentinel's policy-based enforcement (taint tracking prevents data exfiltration).
+Demonstrates Lilith's policy-based enforcement (taint tracking prevents data exfiltration).
 
 Usage:
     python demo.py
 
-Copyright 2024 Google DeepMind. All Rights Reserved.
+
+Copyright 2026 BadCompany. All Rights Reserved.
 """
 
 import asyncio
@@ -18,14 +19,14 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.markdown import Markdown
 
-# Import Sentinel SDK
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
-from sentinel_sdk import Sentinel, PolicyViolationError
+# Import Lilith SDK
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../sdk")))
+from lilith_zero import Lilith, PolicyViolationError
 
 # Configuration
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-SENTINEL_BIN = os.path.abspath(
-    os.path.join(BASE_DIR, "../../sentinel/target/release/sentinel.exe")
+LILITH_ZERO_BIN = os.path.abspath(
+    os.path.join(BASE_DIR, "../../lilith-zero/target/release/lilith-zero.exe")
 )
 MOCK_SERVER = os.path.join(BASE_DIR, "mock_server.py")
 POLICY_TAINT = os.path.join(BASE_DIR, "policy_taint.yaml")
@@ -39,15 +40,15 @@ async def demo_policy_enforcement():
     """Demonstrate policy-based taint tracking enforcement."""
     console.print(Panel.fit(
         "[bold cyan]DEMO: Policy-Based Enforcement[/bold cyan]\n"
-        "Sentinel's taint tracking prevents data exfiltration.\n\n"
+        "Lilith's taint tracking prevents data exfiltration.\n\n"
         "[white]Scenario:[/white] Agent reads confidential report, then tries to upload it.",
-        title="[bold blue]Sentinel Security Demo[/bold blue]"
+        title="[bold blue]Lilith Security Demo[/bold blue]"
     ))
     
-    async with Sentinel(
+    async with Lilith(
         f"python {MOCK_SERVER}",
         policy=POLICY_TAINT,
-        binary=SENTINEL_BIN,
+        binary=LILITH_ZERO_BIN,
     ) as sentinel:
         console.print(f"\n[dim]Session: {sentinel.session_id}[/dim]\n")
         
@@ -90,8 +91,8 @@ async def demo_policy_enforcement():
 
 async def main():
     """Run all security demos."""
-    console.print(Markdown("# Sentinel Security Demonstration"))
-    console.print("This demo shows Sentinel's security:\n")
+    console.print(Markdown("# Lilith Security Demonstration"))
+    console.print("This demo shows Lilith's security:\n")
     console.print("1. [cyan]Policy Enforcement[/cyan] - Taint tracking prevents data exfiltration")
     
     # Demo: Policy-based enforcement
@@ -99,7 +100,7 @@ async def main():
     
     console.print("\n" + "=" * 60)
     console.print(Markdown("## Summary"))
-    console.print("Sentinel provides:")
+    console.print("Lilith provides:")
     console.print("- [green]Policy layer[/green]: Application-level rules (taint tracking)")  
 
 

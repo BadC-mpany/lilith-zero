@@ -2,7 +2,7 @@ from mcp.server.fastmcp import FastMCP
 import datetime
 import os
 
-mcp = FastMCP("SentinelEnterpriseDemo")
+mcp = FastMCP("LilithEnterpriseDemo")
 
 # --- SCENARIO 1: Safe Tools ---
 

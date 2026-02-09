@@ -5,21 +5,21 @@ from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, ToolMessage
 from langchain_core.tools import StructuredTool
-from sentinel_sdk import Sentinel, PolicyViolationError
+from lilith_zero import Lilith, PolicyViolationError
 
 load_dotenv()
 
-SENTINEL_BINARY = os.path.abspath("../../sentinel/target/debug/sentinel.exe")
+LILITH_ZERO_BINARY = os.path.abspath("../../lilith-zero/target/release/lilith-zero.exe")
 POLICY_PATH = os.path.abspath("policy.yaml")
-UPSTREAM_CMD = f"{sys.executable} upstream.py"
+UPSTREAM_CMD = f"{sys.executable} -u upstream.py"
 
-if not os.path.exists(SENTINEL_BINARY):
-    sys.exit(f"Binary not found: {SENTINEL_BINARY}")
+if not os.path.exists(LILITH_ZERO_BINARY):
+    sys.exit(f"Binary not found: {LILITH_ZERO_BINARY}")
 
 async def main():
-    print(f"Sentinel Agent Active.\nBinary: {SENTINEL_BINARY}\nPolicy: {POLICY_PATH}\n")
+    print(f"Lilith Agent Active.\nBinary: {LILITH_ZERO_BINARY}\nPolicy: {POLICY_PATH}\n")
     
-    async with Sentinel(upstream=UPSTREAM_CMD, binary=SENTINEL_BINARY, policy=POLICY_PATH) as sentinel:
+    async with Lilith(upstream=UPSTREAM_CMD, binary=LILITH_ZERO_BINARY, policy=POLICY_PATH) as sentinel:
         # Tool Wrappers
         async def safe_calc(expression: str) -> str:
             return await sentinel.call_tool("calculator", {"expression": expression})
@@ -68,12 +68,12 @@ async def main():
                     for tc in ai_msg.tool_calls:
                         try:
                             tool = next(t for t in tools if t.name == tc["name"])
-                            print(f"Sentinel Executing: {tc['name']}...")
+                            print(f"Lilith Executing: {tc['name']}...")
                             res = await tool.ainvoke(tc["args"])
-                            print(f"Sentinel Allowed: {res}")
+                            print(f"Lilith Allowed: {res}")
                             msgs.append(ToolMessage(content=str(res), tool_call_id=tc["id"]))
                         except PolicyViolationError as e:
-                            print(f"Sentinel BLOCKED: {e}")
+                            print(f"Lilith BLOCKED: {e}")
                             msgs.append(ToolMessage(content=f"Security Block: {e}", tool_call_id=tc["id"]))
                         except Exception as e:
                             print(f"Error: {e}")

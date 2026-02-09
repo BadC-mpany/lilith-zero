@@ -4,15 +4,23 @@ import os
 import json
 import time
 
-SENTINEL_BIN = r"c:\Users\Peter\Documents\proj\active\bad\sentinel\sentinel\target\release\sentinel.exe"
-MANUAL_SERVER = r"c:\Users\Peter\Documents\proj\active\bad\sentinel\tests\resources\manual_server.py"
+# Resolve paths relative to this script
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# LILITH_ZERO_BIN path is tricky without knowing build context, but we can guess or use env
+LILITH_ZERO_BIN = os.getenv("LILITH_ZERO_BINARY_PATH")
+if not LILITH_ZERO_BIN:
+    # Try default relative path from repo root
+    REPO_ROOT = os.path.abspath(os.path.join(BASE_DIR, "../.."))
+    LILITH_ZERO_BIN = os.path.join(REPO_ROOT, "lilith-zero/target/release/lilith-zero.exe")
+
+MANUAL_SERVER = os.path.join(BASE_DIR, "manual_server.py")
 
 def run_test():
-    print(f"Launching {SENTINEL_BIN}...")
+    print(f"Launching {LILITH_ZERO_BIN}...")
     
-    # Start Sentinel
+    # Start Lilith
     proc = subprocess.Popen(
-        [SENTINEL_BIN, "--upstream-cmd", "python", "--", MANUAL_SERVER],
+        [LILITH_ZERO_BIN, "--upstream-cmd", "python", "--", MANUAL_SERVER],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=sys.stderr, # Pass stderr through to console

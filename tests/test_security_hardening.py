@@ -9,7 +9,7 @@ from typing import Dict, Any
 
 # Add project root to path for imports
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-from sentinel_sdk import Sentinel, PolicyViolationError, SentinelError, SentinelConfigError
+from lilith_zero import Lilith, PolicyViolationError, LilithError, LilithConfigError
 
 # Setup logging
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -17,7 +17,7 @@ logger = logging.getLogger("SecurityHardeningSuite")
 
 class TestSecurityHardening(unittest.IsolatedAsyncioTestCase):
     """
-    Unified Security Hardening Test Suite for Sentinel.
+    Unified Security Hardening Test Suite for Lilith.
     Verifies "Google-grade" security properties and architectural invariants.
     """
 
@@ -27,7 +27,7 @@ class TestSecurityHardening(unittest.IsolatedAsyncioTestCase):
         self.upstream_script = os.path.join(self.resources_dir, "manual_server.py")
         self.noisy_script = os.path.join(self.resources_dir, "noisy_tool.py")
         self.policy_path = os.path.join(self.test_dir, "policy_hardening.yaml")
-        self.binary_path = os.environ.get("SENTINEL_BINARY_PATH")
+        self.binary_path = os.environ.get("LILITH_ZERO_BINARY_PATH")
         
         # Temp policy file for resource tests
         self.temp_policy = os.path.join(self.test_dir, "temp_resource_policy.yaml")
@@ -49,7 +49,7 @@ resourceRules:
 """)
 
         if not os.path.exists(self.binary_path):
-             self.skipTest("Sentinel binary not found. Run 'cargo build --release' first.")
+             self.skipTest("Lilith binary not found. Run 'cargo build --release' first.")
 
     async def asyncTearDown(self):
         if os.path.exists(self.temp_policy):
@@ -58,9 +58,9 @@ resourceRules:
     # --- BLOCK 1: CORE POLICY ENGINE ---
 
     async def test_fail_closed_no_policy(self):
-        """Verify Sentinel blocks everything if NO policy is provided."""
+        """Verify Lilith blocks everything if NO policy is provided."""
         logger.info("TEST: Fail Closed (No Policy)")
-        client = Sentinel(
+        client = Lilith(
             upstream=f"{sys.executable} -u {self.upstream_script}",
             binary=self.binary_path,
             policy=None
@@ -68,10 +68,10 @@ resourceRules:
         async with client:
             try:
                 await client.call_tool("read_user_db", {"user_id": "test"})
-                self.fail("Sentinel allowed tool execution without policy!")
+                self.fail("Lilith allowed tool execution without policy!")
             except PolicyViolationError as e:
                 self.assertIn("No security policy loaded", str(e))
-            except SentinelError as e:
+            except LilithError as e:
                 self.assertIn("No security policy loaded", str(e))
             except Exception as e:
                 self.assertIn("No security policy loaded", str(e))
@@ -79,7 +79,7 @@ resourceRules:
     async def test_static_policy_allow(self):
         """Verify Static Policy Allow Rule."""
         logger.info("TEST: Static Policy Allow")
-        client = Sentinel(
+        client = Lilith(
             upstream=f"{sys.executable} -u {self.upstream_script}",
             binary=self.binary_path,
             policy=self.policy_path
@@ -94,7 +94,7 @@ resourceRules:
     async def test_taint_propagation_and_block(self):
         """Verify Taint tracking prevents unauthorized exfiltration."""
         logger.info("TEST: Taint Propagation & Blocking")
-        client = Sentinel(
+        client = Lilith(
             upstream=f"{sys.executable} -u {self.upstream_script}",
             binary=self.binary_path,
             policy=self.policy_path
@@ -105,7 +105,7 @@ resourceRules:
             # Sink: Exfiltrate (Blocked by Taint)
             try:
                 await client.call_tool("export_to_cloud", {"data": "vault_secrets"})
-                self.fail("Sentinel allowed exfiltration of tainted data!")
+                self.fail("Lilith allowed exfiltration of tainted data!")
             except PolicyViolationError as e:
                 self.assertIn("blocked", str(e).lower())
                 self.assertIn("PII", str(e))
@@ -115,7 +115,7 @@ resourceRules:
     async def test_resource_access_control(self):
         """Verify explicit blocking of unauthorized URIs."""
         logger.info("TEST: Resource Hardening")
-        client = Sentinel(
+        client = Lilith(
             upstream=f"{sys.executable} -u {self.upstream_script}",
             binary=self.binary_path,
             policy=self.temp_policy
@@ -124,23 +124,23 @@ resourceRules:
             # Test Blocked
             try:
                 await client._send_request("resources/read", {"uri": "file:///etc/shadow"})
-                self.fail("Sentinel allowed unauthorized resource access!")
+                self.fail("Lilith allowed unauthorized resource access!")
             except PolicyViolationError as e:
                 self.assertIn("blocked by rule", str(e))
             
             # Test Allowed (passed to upstream which doesn't handle it, but middleware ALLOWS)
             try:
                 await client._send_request("resources/read", {"uri": "file:///allowed/public.txt"})
-            except SentinelError as e:
+            except LilithError as e:
                 # Upstream might return Method not found or Unknown resource
                 self.assertTrue("Method not found" in str(e) or "Unknown resource" in str(e), f"Unexpected error: {e}")
 
     # --- BLOCK 4: TRANSPORT & ARCHITECTURE ---
 
     async def test_transport_noise_resilience(self):
-        """Verify Sentinel ignores non-JSON garbage from tool stdout."""
+        """Verify Lilith ignores non-JSON garbage from tool stdout."""
         logger.info("TEST: Transport Noise Resilience")
-        client = Sentinel(
+        client = Lilith(
             upstream=f"{sys.executable} -u {self.noisy_script}",
             binary=self.binary_path,
             policy=self.temp_policy
@@ -152,7 +152,7 @@ resourceRules:
     async def test_spotlighting_integrity(self):
         """Verify randomized spotlighting delimiters are applied to tool output."""
         logger.info("TEST: Spotlighting Integrity")
-        client = Sentinel(
+        client = Lilith(
             upstream=f"{sys.executable} -u {self.upstream_script}",
             binary=self.binary_path,
             policy=self.policy_path
@@ -160,8 +160,8 @@ resourceRules:
         async with client:
             result = await client.call_tool("read_user_db", {"user_id": "admin"})
             text_content = result["content"][0]["text"]
-            self.assertIn("<<<SENTINEL_DATA_START:", text_content)
-            self.assertIn("<<<SENTINEL_DATA_END:", text_content)
+            self.assertIn("<<<LILITH_ZERO_DATA_START:", text_content)
+            self.assertIn("<<<LILITH_ZERO_DATA_END:", text_content)
 
     # --- BLOCK 5: AUTHENTICATION ---
 

@@ -1,4 +1,4 @@
-name: Sentinel Release
+name: lilith-zero Release
 
 on:
   push:
@@ -17,16 +17,16 @@ jobs:
         include:
           - os: windows-latest
             target: x86_64-pc-windows-msvc
-            name: sentinel.exe
+            name: lilith_zero.exe
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            name: sentinel
+            name: lilith_zero
           - os: macos-latest
             target: x86_64-apple-darwin
-            name: sentinel-macos-x86
+            name: lilith_zero-macos-x86
           - os: macos-latest
             target: aarch64-apple-darwin
-            name: sentinel-macos-arm
+            name: lilith_zero-macos-arm
 
     steps:
       - uses: actions/checkout@v4
@@ -45,9 +45,9 @@ jobs:
         run: |
           mkdir -p dist
           if [ "${{ matrix.os }}" == "windows-latest" ]; then
-            cp sentinel/target/${{ matrix.target }}/release/sentinel.exe dist/${{ matrix.name }}
+            cp sentinel/target/${{ matrix.target }}/release/lilith_zero.exe dist/${{ matrix.name }}
           else
-            cp sentinel/target/${{ matrix.target }}/release/sentinel dist/${{ matrix.name }}
+            cp sentinel/target/${{ matrix.target }}/release/lilith_zero dist/${{ matrix.name }}
           fi
 
       - name: Upload Artifact
@@ -75,10 +75,10 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            artifacts/sentinel.exe/sentinel.exe
-            artifacts/sentinel/sentinel
-            artifacts/sentinel-macos-x86/sentinel-macos-x86
-            artifacts/sentinel-macos-arm/sentinel-macos-arm
+            artifacts/lilith_zero.exe/lilith_zero.exe
+            artifacts/lilith_zero/lilith_zero
+            artifacts/lilith_zero-macos-x86/lilith_zero-macos-x86
+            artifacts/lilith_zero-macos-arm/lilith_zero-macos-arm
           generate_release_notes: true
           draft: false
           prerelease: false

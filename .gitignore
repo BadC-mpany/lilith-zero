@@ -35,7 +35,7 @@ venv/
 ENV/
 env.bak/
 venv.bak/
-sentinel_env/
+lilith-zero_env/
 temp_env/
 docs/
 archive/
@@ -43,7 +43,7 @@ archive/
 # --- Sensitive Information ---
 # NEVER commit secrets or local environment configuration.
 secrets/
-sentinel_core/secrets/
+lilith-zero_core/secrets/
 *.env
 .env.*
 !.env.example

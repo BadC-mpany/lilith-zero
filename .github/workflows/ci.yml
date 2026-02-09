@@ -1,4 +1,4 @@
-name: Sentinel CI
+name: lilith-zero CI
 
 on:
   push:
@@ -55,10 +55,11 @@ jobs:
       - name: Upload Binary Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: sentinel-${{ matrix.os }}
+          name: lilith-zero-${{ matrix.os }}
           path: |
-            sentinel/target/release/sentinel
-            sentinel/target/release/sentinel.exe
+            sentinel/target/release/lilith_zero
+            sentinel/target/release/lilith_zero.exe
+          if-no-files-found: error
           if-no-files-found: error
 
   # --------------------------------------------------------------------------
@@ -84,13 +85,13 @@ jobs:
       - name: Install Dependencies
         run: |
           uv pip install --system ruff mypy pytest pytest-asyncio pyjwt
-          uv pip install --system -e sentinel_sdk/
+          uv pip install --system -e sdk/
 
       - name: Ruff Check
-        run: ruff check sentinel_sdk
+        run: ruff check sdk/lilith_zero
 
       - name: Mypy Check
-        run: mypy sentinel_sdk/sentinel_sdk --strict --ignore-missing-imports
+        run: mypy sdk/lilith_zero --strict --ignore-missing-imports
 
       - name: Hermetic Tests
         run: pytest tests/test_sdk_hermetic.py
@@ -120,21 +121,21 @@ jobs:
       - name: Download Rust Binary
         uses: actions/download-artifact@v4
         with:
-          name: sentinel-${{ matrix.os }}
+          name: lilith-zero-${{ matrix.os }}
           path: sentinel/target/release
 
       - name: Install SDK & Tools
         run: |
-          uv pip install --system -e sentinel_sdk/
+          uv pip install --system -e sdk/
           uv pip install --system pytest pytest-asyncio pyjwt
 
       - name: Run End-to-End Validation
         shell: bash
         env:
-          SENTINEL_BINARY_PATH: ${{ runner.os == 'Windows' && 'sentinel/target/release/sentinel.exe' || 'sentinel/target/release/sentinel' }}
+          LILITH_ZERO_BINARY_PATH: ${{ runner.os == 'Windows' && 'sentinel/target/release/lilith_zero.exe' || 'sentinel/target/release/lilith_zero' }}
           RUST_LOG: info
         run: |
-          if [ "${{ runner.os }}" != "Windows" ]; then chmod +x $SENTINEL_BINARY_PATH; fi
+          if [ "${{ runner.os }}" != "Windows" ]; then chmod +x $LILITH_ZERO_BINARY_PATH; fi
           pytest tests/test_basic_flow.py \
                  tests/test_security_hardening.py \
                  tests/test_v0_1_0_compliance.py \

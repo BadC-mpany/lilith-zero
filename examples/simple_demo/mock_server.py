@@ -34,11 +34,30 @@ class MCPServer:
     def run(self):
         while True:
             try:
+                # Read Header
                 line = sys.stdin.readline()
                 if not line: break
-                req = json.loads(line)
-                self._handle_request(req)
-            except Exception:
+                
+                content_length = None
+                if line.lower().startswith("content-length:"):
+                    content_length = int(line.split(":", 1)[1].strip())
+                    # Read until empty line
+                    while True:
+                        l = sys.stdin.readline()
+                        if not l or l.strip() == "": break
+                
+                msg = None
+                if content_length:
+                    msg = sys.stdin.read(content_length)
+                elif line.strip().startswith("{"):
+                     # Fallback for plain JSON lines
+                    msg = line
+
+                if msg:
+                    req = json.loads(msg)
+                    self._handle_request(req)
+            except Exception as e:
+                # logger.error(f"Error: {e}")
                 continue
 
     def _handle_request(self, req: Dict[str, Any]):
@@ -66,8 +85,13 @@ class MCPServer:
             response["error"] = {"code": -32603, "message": str(e)}
 
         if msg_id is not None:
-            sys.stdout.write(json.dumps(response) + "\n")
-            sys.stdout.flush()
+            self._send_response(response)
+
+    def _send_response(self, response: Dict[str, Any]):
+        body = json.dumps(response).encode("utf-8")
+        header = f"Content-Length: {len(body)}\r\n\r\n".encode("utf-8")
+        sys.stdout.buffer.write(header + body)
+        sys.stdout.buffer.flush()
 
 server = MCPServer()
 

@@ -10,18 +10,18 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
-from sentinel_sdk import Sentinel, SentinelError, PolicyViolationError
+from lilith_zero import Lilith, LilithError, PolicyViolationError
 
 
 
-BINARY_PATH = os.environ.get("SENTINEL_BINARY_PATH")
+BINARY_PATH = os.environ.get("LILITH_ZERO_BINARY_PATH")
 UPSTREAM_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "resources", "manual_server.py")
 UPSTREAM_CMD = f"python {UPSTREAM_PATH}"
 
 @pytest.mark.asyncio
 async def test_large_payload():
     """Test sending a payload just under the limit."""
-    async with Sentinel(upstream=UPSTREAM_CMD, binary=BINARY_PATH) as client:
+    async with Lilith(upstream=UPSTREAM_CMD, binary=BINARY_PATH) as client:
         # 5MB Argument
         huge_str = "A" * (5 * 1024 * 1024)
         
@@ -29,14 +29,14 @@ async def test_large_payload():
             # Send to non-existent tool or method to trigger parsing but fail policy/method
             # If we send 'tools/call' with huge payload, it gets parsed.
             # Since no policy file, it defaults to Deny All.
-            # So Sentinel should block it, raising PolicyViolationError.
+            # So Lilith should block it, raising PolicyViolationError.
             await client._send_request("tools/call", {
                 "name": "non_existent_huge", 
                 "arguments": {"data": huge_str}
             })
-            pytest.fail("Sentinel should have blocked huge payload without policy")
+            pytest.fail("Lilith should have blocked huge payload without policy")
             
-        except (PolicyViolationError, SentinelError):
+        except (PolicyViolationError, LilithError):
             # Blocked as expected
             pass
         except asyncio.TimeoutError:
@@ -46,7 +46,7 @@ async def test_large_payload():
 @pytest.mark.asyncio
 async def test_concurrent_requests():
     """Test handling multiple concurrent requests."""
-    async with Sentinel(upstream=UPSTREAM_CMD, binary=BINARY_PATH) as client:
+    async with Lilith(upstream=UPSTREAM_CMD, binary=BINARY_PATH) as client:
         
         async def send_req(i):
             # tools/list is safe and fast
@@ -66,9 +66,9 @@ async def test_concurrent_requests():
 async def test_invalid_utf8():
     """Test sending invalid UTF-8 sequences."""
     # This one might crash the upstream if forwarded? 
-    # But Sentinel should catch it at codec level.
-    # Sentinel parses before forwarding? Yes.
-    async with Sentinel(upstream=UPSTREAM_CMD, binary=BINARY_PATH) as client:
+    # But Lilith should catch it at codec level.
+    # Lilith parses before forwarding? Yes.
+    async with Lilith(upstream=UPSTREAM_CMD, binary=BINARY_PATH) as client:
         
         # Prepare a raw message with bad UTF-8
         bad_bytes = b'{"jsonrpc": "2.0", "method": "test", "params": "\xFF"}'
@@ -83,5 +83,5 @@ async def test_invalid_utf8():
         try:
             alive_check = await client.list_tools()
             assert isinstance(alive_check, list)
-        except (SentinelError, asyncio.TimeoutError):
+        except (LilithError, asyncio.TimeoutError):
             pass

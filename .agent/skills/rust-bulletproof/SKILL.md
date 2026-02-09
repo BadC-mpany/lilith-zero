@@ -1,12 +1,12 @@
 ---
 name: rust_bulletproof
-description: enforces advanced correctness standards for Sentinel's Rust core using fuzzing, property testing, and Miri.
+description: enforces advanced correctness standards for Lilith's Rust core using fuzzing, property testing, and Miri.
 version: 1.0.0
 ---
 
 # Rust Bulletproof: Advanced Verification Strategy
 
-This skill goes beyond standard unit testing to ensure the mathematical correctness and memory safety of Sentinel's critical Rust path (`sentinel\src`). It employs fuzzing, property-based testing, and interpreter-based verification.
+This skill goes beyond standard unit testing to ensure the mathematical correctness and memory safety of Lilith's critical Rust path (`sentinel\src`). It employs fuzzing, property-based testing, and interpreter-based verification.
 
 ## When to use this skill
 - **Critical Logic Changes:** Modifications to `policy_validator.rs`, `pattern_matcher.rs`, or `security.rs`.

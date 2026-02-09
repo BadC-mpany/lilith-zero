@@ -65,7 +65,7 @@ class ManualMCPServer:
                         req = json.loads(text)
                         # If we successfully parsed JSON from a line without headers, 
                         # we might want to handle it, but for this strict test we ignore or log.
-                        # Sentinel sends headers, so we expect headers.
+                        # Lilith sends headers, so we expect headers.
                         pass
                      except:
                         pass

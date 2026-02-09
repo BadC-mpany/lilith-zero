@@ -1,16 +1,16 @@
 ---
 name: google_oss_management
-description: enforces Google-grade open source standards for the Sentinel project, handling Rust/Python testing, changelogs, and version control with strict human confirmation.
+description: enforces Google-grade open source standards for the Lilith project, handling Rust/Python testing, changelogs, and version control with strict human confirmation.
 version: 1.1.0
 ---
 
-# Google-Grade Open Source Project Management (Sentinel Edition)
+# Google-Grade Open Source Project Management (Lilith Edition)
 
-This skill enforces strict engineering rigor for the **Sentinel** project (`C:\Users\Peter\Documents\proj\active\bad\sentinel\`). It mandates that no code is committed without passing the specific CI workflows defined in `.github/workflows/ci.yml`.
+This skill enforces strict engineering rigor for the **Lilith** project (`C:\Users\Peter\Documents\proj\active\bad\sentinel\`). It mandates that no code is committed without passing the specific CI workflows defined in `.github/workflows/ci.yml`.
 
 ## When to use this skill
 - **Ready to Commit:** When the user wants to commit changes, push code, or release a new version.
-- **Workflow Updates:** When the user modifies `.github/workflows/ci.yml` or build configurations (`sentinel/Cargo.toml`, `sentinel_sdk/pyproject.toml`).
+- **Workflow Updates:** When the user modifies `.github/workflows/ci.yml` or build configurations (`sentinel/Cargo.toml`, `lilith_zero/pyproject.toml`).
 - **Documentation:** When generating `CHANGELOG.md` updates based on recent diffs.
 - **Quality Gate:** When requested to "finalize" or "polish" a feature for merging.
 
@@ -29,12 +29,12 @@ If changes touch `sentinel\src`, `sentinel\Cargo.toml`, or `sentinel\tests`:
 3.  **Audit (Optional):**
     *   `cd sentinel; cargo audit`
 
-#### B. Python SDK Changes (`sentinel_sdk\`)
-If changes touch `sentinel_sdk\`, `sentinel_sdk\src`, or `pyproject.toml`:
+#### B. Python SDK Changes (`lilith_zero\`)
+If changes touch `lilith_zero\`, `lilith_zero\src`, or `pyproject.toml`:
 1.  **Lint:**
-    *   `ruff check sentinel_sdk --ignore E501`
+    *   `ruff check lilith_zero --ignore E501`
 2.  **Type Check:**
-    *   `mypy sentinel_sdk\src --ignore-missing-imports`
+    *   `mypy lilith_zero\src --ignore-missing-imports`
 3.  **Test:**
     *   `python -m pytest tests -v --ignore=tests\test_integration.py`
 
@@ -42,7 +42,7 @@ If changes touch `sentinel_sdk\`, `sentinel_sdk\src`, or `pyproject.toml`:
 If changes affect the interaction between Rust and Python:
 1.  **Build Rust Binary:**
     *   `cd sentinel; cargo build --release`
-    *   *Note: Set env var:* `$env:SENTINEL_BINARY_PATH = "sentinel\target\release\sentinel.exe"`
+    *   *Note: Set env var:* `$env:LILITH_ZERO_BINARY_PATH = "sentinel\target\release\sentinel.exe"`
 2.  **Run Integration Test:**
 4.  **Sandbox Verification (Windows/Linux):**
     *   `cd sentinel; cargo run --example sandbox_check`

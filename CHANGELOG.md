@@ -19,7 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Spotlighting for prompt injection defense
 - Process isolation via Windows Job Objects
 - Process isolation via Linux PR_SET_PDEATHSIG
-- Python SDK with `Sentinel.start()` API
+- Python SDK with `lilith-zero.start()` API
 - LangChain tool integration
 - Comprehensive demo with verification
 - GitHub Actions CI workflow
@@ -37,5 +37,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Python SDK
 - Example tools and policies
 
-[Unreleased]: https://github.com/peti12352/sentinel/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/peti12352/sentinel/releases/tag/v0.1.0
+[Unreleased]: https://github.com/peti12352/lilith-zero/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/peti12352/lilith-zero/releases/tag/v0.1.0

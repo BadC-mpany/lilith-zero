@@ -4,6 +4,8 @@ import logging
 import inspect
 from typing import Callable, Any, Dict, List
 
+# Copyright 2026 BadCompany. All Rights Reserved.
+
 # Configure minimal logging to stderr
 logging.basicConfig(level=logging.INFO, stream=sys.stderr, format='[MCP] %(message)s')
 logger = logging.getLogger(__name__)

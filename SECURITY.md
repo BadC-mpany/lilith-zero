@@ -8,7 +8,7 @@
 
 ## Reporting a Vulnerability
 
-We take security vulnerabilities seriously. If you discover a security issue in Sentinel, please report it responsibly.
+We take security vulnerabilities seriously. If you discover a security issue in lilith-zero, please report it responsibly.
 
 ### How to Report
 
@@ -16,7 +16,7 @@ We take security vulnerabilities seriously. If you discover a security issue in 
 
 Instead, please report vulnerabilities via one of these methods:
 
-1. **Email**: Send details to [security@example.com] (replace with actual email)
+1. **Email**: Send details to [security@badcompany.xyz] (replace with actual email)
 2. **GitHub Security Advisories**: Use the "Security" tab → "Report a vulnerability"
 
 ### What to Include
@@ -39,8 +39,8 @@ Please include the following in your report:
 
 The following are in scope for security reports:
 
-- **Sentinel Interceptor (Rust)**: Authentication bypass, policy bypass, session forgery
-- **Sentinel SDK (Python)**: Command injection, insecure defaults
+- **lilith-zero Interceptor (Rust)**: Authentication bypass, policy bypass, session forgery
+- **lilith-zero SDK (Python)**: Command injection, insecure defaults
 - **Cryptographic Issues**: Weak randomness, timing attacks, signature bypass
 - **Process Isolation**: Escape from Job Object/PR_SET_PDEATHSIG
 
@@ -53,7 +53,7 @@ The following are in scope for security reports:
 
 ### Recognition
 
-We appreciate security researchers who help improve Sentinel. With your permission, we will:
+We appreciate security researchers who help improve lilith-zero. With your permission, we will:
 
 - Credit you in the security advisory
 - Add you to our CONTRIBUTORS file
@@ -63,7 +63,7 @@ We appreciate security researchers who help improve Sentinel. With your permissi
 
 ### Trust Model
 
-Sentinel operates on a Zero Trust model:
+lilith-zero operates on a Zero Trust model:
 
 1. **The LLM/Agent is untrusted** - May be manipulated via prompt injection
 2. **The SDK is minimally trusted** - Handles session handshake only
@@ -87,7 +87,7 @@ Sentinel operates on a Zero Trust model:
 
 ## Security Hardening Checklist
 
-When deploying Sentinel in production:
+When deploying lilith-zero in production:
 
 - [ ] Run the interceptor in a restricted user account
 - [ ] Use `security_level="high"` for maximum protection

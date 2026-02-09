@@ -1,22 +1,22 @@
-# Sentinel
+# Lilith Zero
 
 **Deterministic Security Middleware for MCP tool calls written in Rust.**
 
-[![CI](https://github.com/peti12352/sentinel/actions/workflows/ci.yml/badge.svg)](https://github.com/peti12352/sentinel/actions)
+[![CI](https://github.com/peti12352/lilith-zero/actions/workflows/ci.yml/badge.svg)](https://github.com/peti12352/lilith-zero/actions)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-0.1.0-green.svg)](https://github.com/peti12352/sentinel/releases)
+[![Version](https://img.shields.io/badge/Version-0.1.0-green.svg)](https://github.com/peti12352/lilith-zero/releases)
 
-Sentinel is a high-performance security runtime designed to mitigate data exfiltration and unauthorized tool invocation in LLM-based agent systems. By interposing at the transport layer, Sentinel enforces security invariants through deterministic policy evaluation and strictly framed execution.
+Lilith Zero is a high-performance security runtime designed to mitigate data exfiltration and unauthorized tool invocation in LLM-based agent systems. By interposing at the transport layer, Lilith Zero enforces security invariants through deterministic policy evaluation and strictly framed execution.
 
-Sentinel is OS, framework, and language agnostic, providing uniform security primitives across diverse implementation environments.
+Lilith Zero is OS, framework, and language agnostic, providing uniform security primitives across diverse implementation environments.
 
 ---
 
 ## Technical Fundamentals
 
-- **Security Priority**: Sentinel adheres to a hierarchy of constraints where security correctness precedes performance and feature parity.
+- **Security Priority**: Lilith Zero adheres to a hierarchy of constraints where security correctness precedes performance and feature parity.
 - **Fail-Closed Architecture**: The system defaults to a `DENY` state. If a policy is missing, corrupted, or if an internal evaluation error occurs, all traffic is blocked.
-- **Zero-Trust Transport**: Stdio and network payloads are treated as potentially malicious. Sentinel enforces strictly framed `Content-Length` headers to prevent JSON smuggling and synchronization attacks.
+- **Zero-Trust Transport**: Stdio and network payloads are treated as potentially malicious. Lilith Zero enforces strictly framed `Content-Length` headers to prevent JSON smuggling and synchronization attacks.
 - **Type-Safe Invariants**: Core security logic leverages the Rust type system to make invalid security states (e.g., unverified taint propagation) unrepresentable at compile time.
 
 ---
@@ -38,15 +38,15 @@ Sentinel is OS, framework, and language agnostic, providing uniform security pri
 
 ## System Architecture
 
-Sentinel functions as a standalone security boundary between the Agent (client) and the Tool Server (upstream).
+Lilith Zero functions as a standalone security boundary between the Agent (client) and the Tool Server (upstream).
 
 ```mermaid
 graph TD
     subgraph "Client Environment"
-        A[AI Agent / LLM] <-->|SDK| B[Sentinel Runtime]
+        A[AI Agent / LLM] <-->|SDK| B[Lilith Zero Runtime]
     end
 
-    subgraph "Sentinel Core (Rust)"
+    subgraph "Lilith Zero Core (Rust)"
         B <--> Codec[Framed Codec]
         Codec <--> Coordinator[Session Coordinator]
         Coordinator <--> Policy[Policy Engine]
@@ -71,12 +71,12 @@ graph TD
 ## Implementation
 
 ### 1. Installation & Auto-Discovery
-The Python SDK handles the entire lifecycle. It automatically downloads the correct `sentinel` binary for your OS/Arch (Windows, Linux, macOS) from GitHub Releases if not found locally.
+The Python SDK handles the entire lifecycle. It automatically downloads the correct `Lilith Zero` binary for your OS/Arch (Windows, Linux, macOS) from GitHub Releases if not found locally.
 
 ```bash
-uv add sentinel-sdk
+uv add lilith-zero-sdk
 # or
-pip install sentinel-sdk
+pip install lilith-zero-sdk
 ```
 
 No manual binary compilation is required. The SDK ensures strict hermetic execution.
@@ -85,10 +85,10 @@ No manual binary compilation is required. The SDK ensures strict hermetic execut
 Security boundaries are defined in a structured YAML schema.
 
 #### Lethal Trifecta Protection
-The "Lethal Trifecta" (Access Private Data + Access Untrusted Source + Exfiltration) is the most critical agentic risk. Sentinel can block this pattern **automatically**, without complex rule definitions.
+The "Lethal Trifecta" (Access Private Data + Access Untrusted Source + Exfiltration) is the most critical agentic risk. Lilith Zero can block this pattern **automatically**, without complex rule definitions.
 
 **Option A: Global Enforcement (Ops / CI)**
-Set `SENTINEL_FORCE_LETHAL_TRIFECTA=true` in your environment. This overrides local policies and enforces protection globally.
+Set `LILITH_ZERO_FORCE_LETHAL_TRIFECTA=true` in your environment. This overrides local policies and enforces protection globally.
 
 **Option B: Policy-Level (Dev)**
 ```yaml
@@ -113,21 +113,21 @@ taintRules:
 When enabled, if a session acquires both `ACCESS_PRIVATE` and `UNTRUSTED_SOURCE` taints, any tool classified as `EXFILTRATION` (or performing network writes) is **automatically blocked**.
 
 ### 3. Agent Integration
-Sentinel integrates with standard agent architectures by wrapping the tool server invocation.
+Lilith Zero integrates with standard agent architectures by wrapping the tool server invocation.
 
 ```python
-from sentinel_sdk import Sentinel, PolicyViolationError
+from lilith_zero import Lilith Zero, PolicyViolationError
 
 async def main():
     # Automatic binary discovery and process management
-    async with Sentinel("python tools.py", policy="policy.yaml") as sentinel:
+    async with Lilith Zero("python tools.py", policy="policy.yaml") as Lilith Zero:
         try:
             # Authorized call
-            await sentinel.call_tool("calculator", {"expression": "2+2"})
+            await Lilith Zero.call_tool("calculator", {"expression": "2+2"})
             
             # Blocked by Taint Tracking
-            data = await sentinel.call_tool("read_customer_data", {"id": "123"})
-            await sentinel.call_tool("export_analytics", {"data": data})
+            data = await Lilith Zero.call_tool("read_customer_data", {"id": "123"})
+            await Lilith Zero.call_tool("export_analytics", {"data": data})
             
         except PolicyViolationError as e:
             # Handle security interception
@@ -139,7 +139,7 @@ if __name__ == "__main__":
 ```
 
 ### 4. Observability & Auditing
-Sentinel emits **cryptographically signed** audit logs to `stderr` (visible in agent logs).
+Lilith Zero emits **cryptographically signed** audit logs to `stderr` (visible in agent logs).
 
 **Format**: `[AUDIT] <HMAC-SHA256 Signature> <JSON Payload>`
 
@@ -164,7 +164,7 @@ Full integration examples are available in the `examples/` directory:
 - **Build System**: Cargo (Rust) and uv (Python)
 
 ### Performance Benchmarks
-Sentinel is optimized for minimal latency impact:
+Lilith Zero is optimized for minimal latency impact:
 - **Handshake Latency**: <5ms
 - **Request Processing**: <0.8ms
 - **Memory Overhead**: <15MB (RSS)
@@ -173,4 +173,4 @@ Sentinel is optimized for minimal latency impact:
 
 ## License
 
-Sentinel is released under the **Apache License, Version 2.0**. Refer to the [LICENSE](LICENSE) file for the full text.
+Lilith Zero is released under the **Apache License, Version 2.0**. Refer to the [LICENSE](LICENSE) file for the full text.

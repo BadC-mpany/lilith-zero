@@ -6,7 +6,7 @@ import logging
 
 # Add project root to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from sentinel_sdk import Sentinel, PolicyViolationError
+from lilith_zero import Lilith, PolicyViolationError
 
 # Setup logging
 logging.basicConfig(level=logging.DEBUG)
@@ -14,8 +14,8 @@ logger = logging.getLogger("BasicFlowTest")
 
 class TestBasicFlow(unittest.IsolatedAsyncioTestCase):
     """
-    Sentinel Basic Flow Tests.
-    Verifies end-to-end functionality using the Sentinel.start() API.
+    Lilith Basic Flow Tests.
+    Verifies end-to-end functionality using the Lilith.start() API.
     """
 
     async def asyncSetUp(self):
@@ -30,9 +30,9 @@ class TestBasicFlow(unittest.IsolatedAsyncioTestCase):
             self.fail(f"Upstream script not found at {self.upstream_script}")
 
     async def test_full_integration_flow(self):
-        logger.info("Initializing Sentinel Client...")
+        logger.info("Initializing Lilith Client...")
         
-        client = Sentinel(
+        client = Lilith(
             upstream=self.upstream_cmd,
             policy=self.policy_path,
         )
@@ -58,7 +58,7 @@ class TestBasicFlow(unittest.IsolatedAsyncioTestCase):
             text_content = result["content"][0]["text"]
             
             # Verify Spotlighting Delimiters
-            self.assertIn("<<<SENTINEL_DATA_START:", text_content)
+            self.assertIn("<<<LILITH_ZERO_DATA_START:", text_content)
             self.assertIn(mock_query, text_content)
             
             # 3. Test Denied Tool (send_slack) - Explicit Deny in policy.yaml

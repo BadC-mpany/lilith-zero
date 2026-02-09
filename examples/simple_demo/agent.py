@@ -12,9 +12,9 @@ from rich.table import Table
 from rich.status import Status
 from rich.markdown import Markdown
 
-# Ensure sentinel_sdk is discoverable
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../sentinel_sdk/src")))
-from sentinel_sdk import Sentinel
+# Ensure lilith_zero is discoverable
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../sdk")))
+from lilith_zero import Lilith
 
 try:
     from openai import AsyncOpenAI
@@ -24,8 +24,8 @@ except ImportError:
 
 # Config
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DEFAULT_BIN = os.path.abspath(os.path.join(BASE_DIR, "../../sentinel/target/release/sentinel.exe"))
-SENTINEL_BIN = os.getenv("SENTINEL_BINARY_PATH", DEFAULT_BIN)
+DEFAULT_BIN = os.path.abspath(os.path.join(BASE_DIR, "../../lilith-zero/target/release/lilith-zero.exe"))
+LILITH_ZERO_BIN = os.getenv("LILITH_ZERO_BINARY_PATH", DEFAULT_BIN)
 
 # Load .env from parent directory
 ENV_PATH = os.path.join(BASE_DIR, "../.env")
@@ -44,16 +44,16 @@ MODEL = os.getenv("OPENROUTER_MODEL", "google/gemini-2.0-flash-001")
 console = Console()
 
 class ElegantAgent:
-    def __init__(self, sentinel: Sentinel):
+    def __init__(self, sentinel: Lilith):
         self.sentinel = sentinel
         self.client = AsyncOpenAI(base_url=BASE_URL, api_key=API_KEY)
         self.history = []
         self.tools_info = []
 
     async def initialize(self):
-        with console.status("[bold blue]Sentinel Handshake...") as status:
-            self.tools_info = await self.sentinel.get_tools_config()
-            console.print(Panel(f"Discovered [bold green]{len(self.tools_info)}[/bold green] tools through Sentinel.", title="[bold blue]Registry[/bold blue]"))
+        with console.status("[bold blue]Lilith Handshake...") as status:
+            self.tools_info = await self.sentinel.list_tools()
+            console.print(Panel(f"Discovered [bold green]{len(self.tools_info)}[/bold green] tools through Lilith.", title="[bold blue]Registry[/bold blue]"))
             
             tool_table = Table(title="Available Tools")
             tool_table.add_column("Tool Name", style="cyan")
@@ -67,7 +67,7 @@ class ElegantAgent:
             f"- {t['name']}: {t.get('description', '')} Args: {json.dumps(t.get('inputSchema', {}))}"
             for t in self.tools_info
         )
-        return f"""You are a high-tier AI assistant guarded by the Sentinel Security Middleware.
+        return f"""You are a high-tier AI assistant guarded by the Lilith Security Middleware.
 
 TOOLS AVAILABLE:
 {tool_desc}
@@ -75,12 +75,12 @@ TOOLS AVAILABLE:
 PROTOCOL:
 1. To invoke a tool, use: Action: <name> Input: <json_args>
 2. For your final response, use: Final Answer: <your text>
-3. If Sentinel blocks a tool, acknowledge identifying the policy restriction.
+3. If Lilith blocks a tool, acknowledge identifying the policy restriction.
 """
 
     async def chat(self):
         self.history = [{"role": "system", "content": self._get_system_prompt()}]
-        console.print(Markdown("# Simple Sentinel Demo"))
+        console.print(Markdown("# Simple Lilith Demo"))
         while True:
             user_input = console.input("[bold yellow]User:[/bold yellow] ")
             if user_input.lower() in ["quit", "exit"]: break
@@ -106,13 +106,13 @@ PROTOCOL:
                 tool_name = action_match.group(1).strip()
                 try:
                     tool_args = json.loads(input_match.group(1).strip())
-                    console.print(f"  [bold blue]Sentinel[/bold blue] Intercepting: [cyan]{tool_name}[/cyan]")
-                    result = await self.sentinel.execute_tool(tool_name, tool_args)
+                    console.print(f"  [bold blue]Lilith[/bold blue] Intercepting: [cyan]{tool_name}[/cyan]")
+                    result = await self.sentinel.call_tool(tool_name, tool_args)
                     output = self._handle_result(result)
                     self.history.append({"role": "user", "content": f"Observation: {output}"})
                 except Exception as e:
                     console.print(f"  [bold red]Blocked:[/bold red] {str(e)}")
-                    self.history.append({"role": "user", "content": f"Observation: REJECTED by Sentinel: {str(e)}"})
+                    self.history.append({"role": "user", "content": f"Observation: REJECTED by Lilith: {str(e)}"})
             else:
                 return
             steps += 1
@@ -125,11 +125,10 @@ PROTOCOL:
         return text
 
 async def main():
-    async with Sentinel(
-        upstream_cmd="python",
-        upstream_args=[os.path.join(BASE_DIR, "mock_server.py")],
-        policy_path=os.path.join(BASE_DIR, "policy.yaml"),
-        binary_path=SENTINEL_BIN
+    async with Lilith(
+        upstream=f"python -u {os.path.join(BASE_DIR, 'mock_server.py')}",
+        policy=os.path.join(BASE_DIR, "policy.yaml"),
+        binary=LILITH_ZERO_BIN
     ) as sentinel:
         agent = ElegantAgent(sentinel)
         await agent.initialize()

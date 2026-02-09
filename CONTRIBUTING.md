@@ -1,6 +1,6 @@
-# Contributing to Sentinel
+# Contributing to lilith-zero
 
-Thank you for your interest in contributing to Sentinel! This document provides guidelines and information for contributors.
+Thank you for your interest in contributing to lilith-zero! This document provides guidelines and information for contributors.
 
 ## Code of Conduct
 
@@ -18,11 +18,11 @@ Please be respectful and constructive in all interactions. We are committed to p
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/sentinel.git
-cd sentinel
+git clone https://github.com/yourusername/lilith-zero.git
+cd lilith-zero
 
 # Build the Rust interceptor
-cd sentinel_middleware
+cd lilith-zero_middleware
 cargo build --release
 cd ..
 
@@ -31,7 +31,7 @@ python -m venv .venv
 source .venv/bin/activate  # or .venv\Scripts\activate on Windows
 
 # Install SDK in development mode
-pip install -e sentinel_sdk
+pip install -e lilith_zero
 
 # Run tests
 python tests/test_integration.py
@@ -81,8 +81,8 @@ python tests/test_integration.py
 
 - Follow PEP 8
 - Use type annotations
-- Format with ruff: `ruff format sentinel_sdk`
-- Lint with ruff: `ruff check sentinel_sdk`
+- Format with ruff: `ruff format lilith_zero`
+- Lint with ruff: `ruff check lilith_zero`
 - Avoid mutable default arguments
 
 ### Commit Messages
@@ -110,11 +110,11 @@ Examples:
 
 ```bash
 # Rust tests
-cd sentinel_middleware
+cd lilith-zero_middleware
 cargo test
 
 # Python integration tests
-export SENTINEL_BINARY_PATH="./sentinel_middleware/target/release/sentinel-interceptor"
+export lilith-zero_BINARY_PATH="./lilith-zero_middleware/target/release/lilith-zero-interceptor"
 python tests/test_integration.py
 
 # Full demo

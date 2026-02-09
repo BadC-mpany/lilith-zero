@@ -1,6 +1,6 @@
-# Sentinel Test Suite
+# Lilith Test Suite
 
-Validated security hardening for the Sentinel MCP middleware.
+Validated security hardening for the Lilith MCP middleware.
 
 ## Quickstart
 
@@ -9,14 +9,14 @@ Run all integration tests:
 python -m pytest tests/
 ```
 
-*Note: The test suite automatically finds the `sentinel` binary using the rules defined in the SDK (or `SENTINEL_BINARY_PATH`).*
+*Note: The test suite automatically finds the `sentinel` binary using the rules defined in the SDK (or `LILITH_ZERO_BINARY_PATH`).*
 
 ## Test Modules
 
 ### 1. `test_basic_flow.py`
 **End-to-End Connectivity Sanity Check.**
-- Verifies that the Agent can talk to the Sentinel.
-- Verifies that Sentinel can talk to the Tool Server.
+- Verifies that the Agent can talk to the Lilith.
+- Verifies that Lilith can talk to the Tool Server.
 - Verifies basic `tools/list` and `tools/call`.
 
 ### 2. `test_security_hardening.py`

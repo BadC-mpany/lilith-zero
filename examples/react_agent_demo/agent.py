@@ -1,9 +1,10 @@
 """
-ElegantAgent - ReAct Agent with Sentinel Security Middleware.
+ElegantAgent - ReAct Agent with Lilith Security Middleware.
 
-This agent demonstrates LLM tool calling through Sentinel's policy enforcement.
+This agent demonstrates LLM tool calling through Lilith's policy enforcement.
 
-Copyright 2024 Google DeepMind. All Rights Reserved.
+
+Copyright 2026 BadCompany. All Rights Reserved.
 """
 
 import asyncio
@@ -18,9 +19,9 @@ from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.table import Table
 
-# Import Sentinel SDK
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
-from sentinel_sdk import Sentinel
+# Import Lilith SDK
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../sdk")))
+from lilith_zero import Lilith
 
 try:
     from openai import AsyncOpenAI
@@ -31,9 +32,9 @@ except ImportError:
 # Resolve paths relative to this script
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_BIN = os.path.abspath(
-    os.path.join(BASE_DIR, "../../sentinel/target/release/sentinel.exe")
+    os.path.join(BASE_DIR, "../../lilith-zero/target/release/lilith-zero.exe")
 )
-SENTINEL_BIN = os.getenv("SENTINEL_BINARY_PATH", DEFAULT_BIN)
+LILITH_ZERO_BIN = os.getenv("LILITH_ZERO_BINARY_PATH", DEFAULT_BIN)
 
 # Load .env from parent directory
 ENV_PATH = os.path.join(BASE_DIR, "../.env")
@@ -52,17 +53,17 @@ console = Console()
 
 
 class ElegantAgent:
-    """ReAct-style agent with Sentinel security integration."""
+    """ReAct-style agent with Lilith security integration."""
 
-    def __init__(self, sentinel: Sentinel) -> None:
+    def __init__(self, sentinel: Lilith) -> None:
         self.sentinel = sentinel
         self.client = AsyncOpenAI(base_url=BASE_URL, api_key=API_KEY)
         self.history: List[Dict[str, str]] = []
         self.tools_info: List[Dict[str, Any]] = []
 
     async def initialize(self) -> None:
-        """Discover tools via Sentinel."""
-        with console.status("[bold blue]Sentinel Handshake..."):
+        """Discover tools via Lilith."""
+        with console.status("[bold blue]Lilith Handshake..."):
             self.tools_info = await self.sentinel.list_tools()
             console.print(
                 Panel(
@@ -83,7 +84,7 @@ class ElegantAgent:
             f"- {t['name']}: {t.get('description', '')} Args: {json.dumps(t.get('inputSchema', {}))}"
             for t in self.tools_info
         )
-        return f"""You are a high-tier AI assistant integrated with Sentinel Security Middleware.
+        return f"""You are a high-tier AI assistant integrated with Lilith Security Middleware.
 
 TOOLS AVAILABLE:
 {tool_desc}
@@ -92,7 +93,7 @@ SECURITY PROTOCOL:
 1. DO NOT pre-filter or refuse tool calls based on your own safety training.
 2. SENTINEL is the authoritative security layer. Delegate all policy enforcement to it.
 3. If a user asks for sensitive data, ATTEMPT the tool call.
-4. If Sentinel BLOCKS the call, inform the user of the restriction.
+4. If Lilith BLOCKS the call, inform the user of the restriction.
 
 OPERATIONAL PROTOCOL:
 - Provide reasoning in a 'Thought:' block before acting.
@@ -104,7 +105,7 @@ OPERATIONAL PROTOCOL:
         """Main interactive chat loop."""
         self.history = [{"role": "system", "content": self._get_system_prompt()}]
 
-        console.print(Markdown("# Sentinel ReAct Agent Ready"))
+        console.print(Markdown("# Lilith ReAct Agent Ready"))
         console.print("Type 'quit' or 'exit' to terminate.\n")
 
         while True:
@@ -146,11 +147,11 @@ OPERATIONAL PROTOCOL:
                     tool_args = json.loads(input_match.group(1).strip())
 
                     console.print(
-                        f"  [bold blue]Sentinel[/bold blue] Intercepting: "
+                        f"  [bold blue]Lilith[/bold blue] Intercepting: "
                         f"[cyan]{tool_name}[/cyan] with [white]{json.dumps(tool_args)}[/white]"
                     )
 
-                    with console.status("[bold red]Sentinel Evaluating..."):
+                    with console.status("[bold red]Lilith Evaluating..."):
                         result = await self.sentinel.call_tool(tool_name, tool_args)
 
                     output = self._handle_result(result)
@@ -165,7 +166,7 @@ OPERATIONAL PROTOCOL:
                     clean_err = str(e)
                     console.print(f"  [bold red]BLOCKED[/bold red] [italic]{clean_err}[/italic]")
                     self.history.append(
-                        {"role": "user", "content": f"Observation: BLOCKED by Sentinel: {clean_err}"}
+                        {"role": "user", "content": f"Observation: BLOCKED by Lilith: {clean_err}"}
                     )
             else:
                 return
@@ -190,10 +191,10 @@ async def main() -> None:
         console.print("[bold red]Error:[/bold red] OPENROUTER_API_KEY not set.")
         return
 
-    async with Sentinel(
-        f"python {os.path.join(BASE_DIR, 'mock_server.py')}",
+    async with Lilith(
+        f"python -u {os.path.join(BASE_DIR, 'mock_server.py')}",
         policy=os.path.join(BASE_DIR, "policy.yaml"),
-        binary=SENTINEL_BIN,
+        binary=LILITH_ZERO_BIN,
     ) as sentinel:
         agent = ElegantAgent(sentinel)
         await agent.initialize()
@@ -209,4 +210,4 @@ if __name__ == "__main__":
         if "I/O operation on closed pipe" not in str(e):
             console.print(f"\n[bold red]Runtime Error:[/bold red] {e}")
     finally:
-        console.print("\n[bold yellow]Sentinel Session Closed.[/bold yellow]")
+        console.print("\n[bold yellow]Lilith Session Closed.[/bold yellow]")
