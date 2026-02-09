@@ -116,7 +116,8 @@ def download_Lilith(interactive: bool = True) -> str:
 
     try:
         logger.info(f"Downloading {download_url}...")
-        with urllib.request.urlopen(download_url) as response, open(target_path, 'wb') as out_file:
+        # Rigour: add timeout to prevent indefinite hanging
+        with urllib.request.urlopen(download_url, timeout=30.0) as response, open(target_path, 'wb') as out_file:
             shutil.copyfileobj(response, out_file)
         
         # Make executable on Unix
@@ -127,7 +128,8 @@ def download_Lilith(interactive: bool = True) -> str:
         logger.info(f"Successfully installed Lilith to {target_path}")
         return target_path
     except Exception as e:
-        raise LilithConfigError(f"Failed to download Lilith binary: {e}")
+        # Provide config_key for consistent structured error reporting
+        raise LilithConfigError(f"Failed to download Lilith binary: {e}", config_key="binary")
 
 # Backwards compatibility alias
 install_Lilith = download_Lilith

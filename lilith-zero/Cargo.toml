@@ -36,7 +36,7 @@ rand = "0.9"
 base64 = "0.22"
 jsonwebtoken = "10.3"
 tokio-util = { version = "0.7", features = ["codec"] }
-bytes = "1.11"
+bytes = "1.11.1"
 futures = { version = "0.3", features = ["std"] }
 futures-util = "0.3"
 async-trait = "0.1"

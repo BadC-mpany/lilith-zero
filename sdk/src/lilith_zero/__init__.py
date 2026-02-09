@@ -28,6 +28,7 @@ from .exceptions import (
     LilithConnectionError,
     LilithProcessError,
     PolicyViolationError,
+    ToolExecutionError,
 )
 
 __version__ = "0.1.0"
@@ -38,6 +39,7 @@ __all__ = [
     "LilithConnectionError",
     "LilithProcessError",
     "PolicyViolationError",
+    "ToolExecutionError",
     "__version__",
     "_MCP_PROTOCOL_VERSION"
 ]
