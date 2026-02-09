@@ -16,7 +16,7 @@ We take security vulnerabilities seriously. If you discover a security issue in 
 
 Instead, please report vulnerabilities via one of these methods:
 
-1. **Email**: Send details to [security@badcompany.xyz] (replace with actual email)
+1. **Email**: Send details to [OSS-Security@badcompany.dev](mailto:OSS-Security@badcompany.dev)
 2. **GitHub Security Advisories**: Use the "Security" tab → "Report a vulnerability"
 
 ### What to Include
@@ -39,10 +39,10 @@ Please include the following in your report:
 
 The following are in scope for security reports:
 
-- **lilith-zero Interceptor (Rust)**: Authentication bypass, policy bypass, session forgery
-- **lilith-zero SDK (Python)**: Command injection, insecure defaults
+- **Lilith Zero Interceptor (Rust)**: Authentication bypass, policy bypass, session forgery
+- **Lilith Zero SDK (Python)**: Command injection, insecure defaults
 - **Cryptographic Issues**: Weak randomness, timing attacks, signature bypass
-- **Process Isolation**: Escape from Job Object/PR_SET_PDEATHSIG
+- **Process Isolation**: Escape from Job Object (Windows) / Landlock (Linux) / Apple Sandbox (macOS)
 
 ### Out of Scope
 
@@ -65,10 +65,10 @@ We appreciate security researchers who help improve lilith-zero. With your permi
 
 lilith-zero operates on a Zero Trust model:
 
-1. **The LLM/Agent is untrusted** - May be manipulated via prompt injection
-2. **The SDK is minimally trusted** - Handles session handshake only
-3. **The Interceptor is trusted** - Enforces all security policies
-4. **Tool outputs are untrusted** - Wrapped with Spotlighting delimiters
+1. **The LLM/Agent is untrusted** - May be manipulated via prompt injection or jailbreaks.
+2. **The SDK is minimally trusted** - Handles session handshake and protocol serialization only.
+3. **The Interceptor (Rust Core) is trusted** - Enforces all security policies and holds the Taint state.
+4. **Tool outputs are untrusted** - Wrapped with Spotlighting delimiters and subject to Taint Analysis.
 
 ### Cryptographic Primitives
 
