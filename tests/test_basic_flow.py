@@ -7,7 +7,8 @@ import logging
 # Add project root and sdk/src to path for imports
 repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(repo_root, "sdk", "src"))
-from lilith_zero import Lilith, PolicyViolationError
+from lilith_zero import Lilith
+from lilith_zero.exceptions import PolicyViolationError
 
 # Setup logging
 logging.basicConfig(level=logging.DEBUG)

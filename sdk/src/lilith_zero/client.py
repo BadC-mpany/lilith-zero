@@ -27,20 +27,21 @@ Copyright 2026 BadCompany. All Rights Reserved.
 """
 
 import asyncio
+import contextlib
 import json
 import logging
 import os
 import shutil
 import uuid
-from typing import Any, Dict, List, Optional, Type, cast, TypedDict
 from asyncio import Future, Task
+from typing import Any, TypedDict, cast
 
 from .exceptions import (
-    LilithError,
     LilithConfigError,
     LilithConnectionError,
-    PolicyViolationError,
+    LilithError,
     LilithProcessError,
+    PolicyViolationError,
 )
 from .installer import get_default_install_dir, install_lilith
 
@@ -50,18 +51,21 @@ __all__ = ["Lilith", "LilithError", "PolicyViolationError"]
 # Type Definitions
 # -------------------------------------------------------------------------
 
+
 class ToolRef(TypedDict):
     name: str
-    description: Optional[str]
-    inputSchema: Dict[str, Any]
+    description: str | None
+    inputSchema: dict[str, Any]
+
 
 class ToolCall(TypedDict):
     name: str
-    arguments: Dict[str, Any]
+    arguments: dict[str, Any]
+
 
 class ToolResult(TypedDict):
-    content: List[Dict[str, Any]]
-    isError: Optional[bool]
+    content: list[dict[str, Any]]
+    isError: bool | None
 
 
 # Module-level constants
@@ -70,11 +74,12 @@ _SDK_NAME = "lilith-zero"
 _SDK_VERSION = "0.1.0"
 _SESSION_TIMEOUT_SEC = 5.0
 _SESSION_POLL_INTERVAL_SEC = 0.1
+_SESSION_ID_MARKER = "LILITH_ZERO_SESSION_ID="
 _ENV_BINARY_PATH = "LILITH_ZERO_BINARY_PATH"
 
 # Safety limits for transport
-_MAX_HEADER_LINE_LENGTH = 1024       # 1KB per header line max
-_MAX_PAYLOAD_SIZE = 128 * 1024 * 1024 # 128MB payload limit (rigorous protection)
+_MAX_HEADER_LINE_LENGTH = 1024  # 1KB per header line max
+_MAX_PAYLOAD_SIZE = 128 * 1024 * 1024  # 128MB payload limit (rigorous protection)
 
 # Auto-detect binary name based on OS
 _BINARY_NAME = "lilith-zero.exe" if os.name == "nt" else "lilith-zero"
@@ -85,10 +90,10 @@ _logger = logging.getLogger("lilith_zero")
 def _find_binary() -> str:
     """
     Discover Lilith binary via environment, PATH, or standard locations.
-    
+
     Returns:
         Absolute path to the binary.
-        
+
     Raises:
         LilithConfigError: If binary cannot be found.
     """
@@ -98,7 +103,9 @@ def _find_binary() -> str:
         if os.path.exists(env_path):
             return os.path.abspath(env_path)
         else:
-             _logger.warning(f"{_ENV_BINARY_PATH} set to '{env_path}' but file not found.")
+            _logger.warning(
+                f"{_ENV_BINARY_PATH} set to '{env_path}' but file not found."
+            )
 
     # 2. System PATH
     path_binary = shutil.which(_BINARY_NAME)
@@ -111,17 +118,20 @@ def _find_binary() -> str:
         return os.path.abspath(user_bin)
 
     # 4. Standard Dev/Cargo Location (Fallback for ease of dev)
-    # Assumes we are in sdk_root/src/lilith_zero, binary in repo_root/lilith-zero/target/release
+    # Assumes we are in sdk_root/src/lilith_zero,
+    # binary in repo_root/lilith-zero/target/release
     # This is a heuristic for local development convenience.
     try:
         current_dir = os.path.dirname(os.path.abspath(__file__))
-        # Go up to repo root: 
+        # Go up to repo root:
         # sdk/src/lilith_zero/client.py -> sdk/src/lilith_zero -> sdk/src -> sdk -> repo
-        repo_root = os.path.dirname(os.path.dirname(os.path.dirname(current_dir))) 
-        dev_binary = os.path.join(repo_root, "lilith-zero", "target", "release", _BINARY_NAME)
+        repo_root = os.path.dirname(os.path.dirname(os.path.dirname(current_dir)))
+        dev_binary = os.path.join(
+            repo_root, "lilith-zero", "target", "release", _BINARY_NAME
+        )
         if os.path.exists(dev_binary):
-             _logger.debug(f"Found dev binary at {dev_binary}")
-             return dev_binary
+            _logger.debug(f"Found dev binary at {dev_binary}")
+            return dev_binary
     except Exception:
         pass
 
@@ -141,10 +151,10 @@ class Lilith:
 
     def __init__(
         self,
-        upstream: Optional[str] = None,
+        upstream: str | None = None,
         *,
-        policy: Optional[str] = None,
-        binary: Optional[str] = None,
+        policy: str | None = None,
+        binary: str | None = None,
     ) -> None:
         """Initialize Lilith middleware configuration.
 
@@ -159,21 +169,28 @@ class Lilith:
             LilithConfigError: If upstream is empty or binary not found.
         """
         if not upstream or not upstream.strip():
-            raise LilithConfigError("Upstream command is required in this version.", config_key="upstream")
+            raise LilithConfigError(
+                "Upstream command is required in this version.", config_key="upstream"
+            )
 
-        import shlex
         import platform
+        import shlex
+
         # Parse upstream command robustly
         try:
             # On Windows, posix=False is required to preserve backslashes
             is_posix = platform.system() != "Windows"
             parts = shlex.split(upstream.strip(), posix=is_posix)
         except ValueError as e:
-            raise LilithConfigError(f"Malformed upstream command: {e}", config_key="upstream")
-            
+            raise LilithConfigError(
+                f"Malformed upstream command: {e}", config_key="upstream"
+            ) from e
+
         if not parts:
-            raise LilithConfigError("Upstream command is empty after parsing.", config_key="upstream")
-            
+            raise LilithConfigError(
+                "Upstream command is empty after parsing.", config_key="upstream"
+            )
+
         self._upstream_cmd = parts[0]
         self._upstream_args = parts[1:] if len(parts) > 1 else []
 
@@ -181,11 +198,13 @@ class Lilith:
         try:
             self._binary_path = binary or _find_binary()
         except LilithConfigError:
-             # Re-raise with clean message
-             raise
+            # Re-raise with clean message
+            raise
 
         if not os.path.exists(self._binary_path):
-             raise LilithConfigError(f"Lilith binary not found at {self._binary_path}", config_key="binary")
+            raise LilithConfigError(
+                f"Lilith binary not found at {self._binary_path}", config_key="binary"
+            )
 
         self._binary_path = os.path.abspath(self._binary_path)
 
@@ -193,18 +212,19 @@ class Lilith:
         self._policy_path = os.path.abspath(policy) if policy else None
 
         # Runtime state
-        self._process: Optional[asyncio.subprocess.Process] = None
-        self._session_id: Optional[str] = None
+        self._process: asyncio.subprocess.Process | None = None
+        self._reader_task: asyncio.Task[None] | None = None
+        self._stderr_task: asyncio.Task[None] | None = None
+        self._session_id: str | None = None
+        self._session_event = asyncio.Event()
+        self._pending_requests: dict[str, asyncio.Future[Any]] = {}
         self._lock = asyncio.Lock()
-        self._pending_requests: Dict[str, Future[Any]] = {}
-        self._reader_task: Optional[Task[None]] = None
-        self._stderr_task: Optional[Task[None]] = None
 
     @property
-    def session_id(self) -> Optional[str]:
+    def session_id(self) -> str | None:
         """The HMAC-signed session identifier."""
         return self._session_id
-        
+
     @staticmethod
     def install_binary() -> None:
         """Helper to invoke the installer interactively."""
@@ -220,9 +240,9 @@ class Lilith:
 
     async def __aexit__(
         self,
-        exc_type: Optional[Type[BaseException]],
-        exc_val: Optional[BaseException],
-        exc_tb: Any,
+        _exc_type: type[BaseException] | None,
+        _exc_val: BaseException | None,
+        _exc_tb: Any,
     ) -> None:
         await self._disconnect()
 
@@ -230,13 +250,13 @@ class Lilith:
     # Public API
     # -------------------------------------------------------------------------
 
-    async def list_tools(self) -> List[ToolRef]:
+    async def list_tools(self) -> list[ToolRef]:
         """Fetch available tools from the upstream MCP server."""
         response = await self._send_request("tools/list", {})
         tools = response.get("tools", [])
-        return cast(List[ToolRef], tools)
+        return cast(list[ToolRef], tools)
 
-    async def call_tool(self, name: str, arguments: Dict[str, Any]) -> ToolResult:
+    async def call_tool(self, name: str, arguments: dict[str, Any]) -> ToolResult:
         """Execute a tool call through Lilith policy enforcement.
 
         Raises:
@@ -247,16 +267,16 @@ class Lilith:
         result = await self._send_request("tools/call", payload)
         return cast(ToolResult, result)
 
-    async def list_resources(self) -> List[Dict[str, Any]]:
+    async def list_resources(self) -> list[dict[str, Any]]:
         """Fetch available resources from the upstream MCP server."""
         response = await self._send_request("resources/list", {})
-        result: List[Dict[str, Any]] = response.get("resources", [])
+        result: list[dict[str, Any]] = response.get("resources", [])
         return result
 
-    async def read_resource(self, uri: str) -> Dict[str, Any]:
+    async def read_resource(self, uri: str) -> dict[str, Any]:
         """Read a resource through Lilith policy enforcement."""
         payload = {"uri": uri}
-        result: Dict[str, Any] = await self._send_request("resources/read", payload)
+        result: dict[str, Any] = await self._send_request("resources/read", payload)
         return result
 
     # -------------------------------------------------------------------------
@@ -275,7 +295,11 @@ class Lilith:
                 stderr=asyncio.subprocess.PIPE,
             )
         except OSError as e:
-            raise LilithConnectionError(f"Failed to spawn Lilith: {e}", phase="spawn", underlying_error=e)
+            raise LilithConnectionError(
+                f"Failed to spawn Lilith: {e}",
+                phase="spawn",
+                underlying_error=e,
+            ) from e
 
         # Start background readers
         self._reader_task = asyncio.create_task(self._read_stdout_loop())
@@ -313,18 +337,17 @@ class Lilith:
                 self._process.terminate()
                 await asyncio.wait_for(self._process.wait(), timeout=5.0)
             except (ProcessLookupError, asyncio.TimeoutError):
-                try:
+                with contextlib.suppress(ProcessLookupError):
                     self._process.kill()
-                except ProcessLookupError:
-                    pass
 
         self._session_id = None
+        self._session_event.clear()  # Clear the event for future connections
 
-    def _build_command(self) -> List[str]:
+    def _build_command(self) -> list[str]:
         if not self._binary_path or not self._upstream_cmd:
             raise LilithConfigError("Invalid configuration for build_command")
-            
-        cmd: List[str] = [self._binary_path]
+
+        cmd: list[str] = [self._binary_path]
 
         if self._policy_path:
             cmd.extend(["--policy", self._policy_path])
@@ -337,41 +360,32 @@ class Lilith:
         return cmd
 
     async def _wait_for_session(self) -> None:
-        """Poll for session ID from stderr or stdout."""
-        iterations = int(_SESSION_TIMEOUT_SEC / _SESSION_POLL_INTERVAL_SEC)
-        for _ in range(iterations):
-            if self._session_id:
-                return
-            
-            # Rigour: if reader loop died, we can stop waiting
-            if self._reader_task and self._reader_task.done():
-                try:
-                    # Capture if it died with an exception
-                    self._reader_task.result()
-                except (asyncio.CancelledError, Exception) as e:
-                    # If it was cancelled by _disconnect_with_error, it probably failed requests
-                    # But here we are still in _connect, so pending_requests might be empty 
-                    # except for 'initialize' which hasn't been sent yet.
-                    underlying: Exception = e if isinstance(e, Exception) else Exception(str(e))
-                    raise LilithConnectionError(f"Connection failed during handshake: {e}", phase="handshake", underlying_error=underlying)
-                
-                raise LilithConnectionError("Lilith process terminated during handshake", phase="handshake")
-
-            await asyncio.sleep(_SESSION_POLL_INTERVAL_SEC)
-
-        if self._process and self._process.returncode is not None:
-            # Read remaining stderr to give a clue
-            err_msg = ""
-            if self._process.stderr:
-                err_bytes = await self._process.stderr.read()
-                err_msg = err_bytes.decode(errors="ignore")
-            
-            raise LilithProcessError(
-                f"Lilith process exited early with code {self._process.returncode}",
-                exit_code=self._process.returncode,
-                stderr=err_msg
+        """Wait for session ID to be captured from stderr."""
+        try:
+            # Wait for the reader task to find the session ID
+            # Use a slightly longer timeout than the handshake itself to be safe
+            await asyncio.wait_for(
+                self._session_event.wait(), timeout=_SESSION_TIMEOUT_SEC
             )
-        raise LilithConnectionError("Timed out waiting for Lilith session ID", phase="handshake")
+        except asyncio.TimeoutError as e:
+            # Rigour: check if the process died while we were waiting
+            if self._process and self._process.returncode is not None:
+                # Read remaining stderr to give a clue
+                err_msg = ""
+                if self._process.stderr:
+                    err_bytes = await self._process.stderr.read()
+                    err_msg = err_bytes.decode(errors="ignore")
+
+                raise LilithProcessError(
+                    f"Lilith process exited early with code {self._process.returncode}",
+                    exit_code=self._process.returncode,
+                    stderr=err_msg,
+                ) from e
+
+            raise LilithConnectionError(
+                f"Handshake timeout after {_SESSION_TIMEOUT_SEC}s",
+                phase="handshake",
+            ) from e
 
     # -------------------------------------------------------------------------
     # I/O Handling (Private)
@@ -383,14 +397,17 @@ class Lilith:
 
         try:
             while True:
-                line = await self._process.stderr.readline()
-                if not line:
+                line_bytes = await self._process.stderr.readline()
+                if not line_bytes:
                     break
 
-                text = line.decode().strip()
-                if text.startswith("LILITH_ZERO_SESSION_ID="):
-                    self._session_id = text.split("=", 1)[1]
-                    _logger.info("Session ID: %s", self._session_id)
+                text = line_bytes.decode().strip()
+                if _SESSION_ID_MARKER in text:
+                    parts = text.split(_SESSION_ID_MARKER)
+                    if len(parts) > 1:
+                        self._session_id = parts[1].strip()
+                        self._session_event.set()
+                        _logger.debug("Captured session ID: %s", self._session_id)
                 else:
                     _logger.debug("[stderr] %s", text)
         except asyncio.CancelledError:
@@ -405,21 +422,26 @@ class Lilith:
                 # 1. Read Headers
                 headers = {}
                 while True:
-                    # Rigour: readline with a limit to avoid memory bloat on malformed input
+                    # Rigour: readline with a limit to avoid memory bloat
+                    # on malformed input
                     line_bytes = await self._process.stdout.readline()
                     if not line_bytes:
-                        return # EOF
+                        return  # EOF
 
                     if len(line_bytes) > _MAX_HEADER_LINE_LENGTH:
-                        _logger.error("Header line too long (%d bytes)", len(line_bytes))
-                        await self._disconnect_with_error("Protocol violation: header too long")
+                        _logger.error(
+                            "Header line too long (%d bytes)", len(line_bytes)
+                        )
+                        await self._disconnect_with_error(
+                            "Protocol violation: header too long"
+                        )
                         return
 
                     line = line_bytes.decode().strip()
                     if not line:
                         # End of headers (empty line)
                         break
-                    
+
                     if ":" in line:
                         key, value = line.split(":", 1)
                         headers[key.lower().strip()] = value.strip()
@@ -433,26 +455,35 @@ class Lilith:
                 if "content-length" in headers:
                     try:
                         length = int(headers["content-length"])
-                        
+
                         # Rigour: sanity check length
                         if length > _MAX_PAYLOAD_SIZE:
                             _logger.error("Payload too large (%d bytes)", length)
-                            await self._disconnect_with_error(f"Payload exceeds limit ({_MAX_PAYLOAD_SIZE})")
+                            await self._disconnect_with_error(
+                                f"Payload exceeds limit ({_MAX_PAYLOAD_SIZE})"
+                            )
                             return
 
                         if length > 0:
                             body = await self._process.stdout.readexactly(length)
                             msg = json.loads(body)
-                            _logger.debug("Received: %s", body.decode(errors="replace")[:1000])
+                            _logger.debug(
+                                "Received: %s", body.decode(errors="replace")[:1000]
+                            )
                             if "id" in msg:
                                 self._dispatch_response(msg)
-                    except (ValueError, asyncio.IncompleteReadError, json.JSONDecodeError) as e:
+                    except (
+                        ValueError,
+                        asyncio.IncompleteReadError,
+                        json.JSONDecodeError,
+                    ) as e:
                         _logger.error("Failed to parse message: %s", e)
                         await self._disconnect_with_error(f"Message corruption: {e}")
                         return
                 else:
-                    # Rigour: If we got noise but no content-length, we might be out of sync.
-                    # We continue for now, but in a production env, we might want to be stricter.
+                    # Rigour: If we got noise but no content-length, we might be
+                    # out of sync. We continue for now, but in a production env,
+                    # we might want to be stricter.
                     pass
 
         except asyncio.CancelledError:
@@ -464,21 +495,21 @@ class Lilith:
             self._cleanup_pending_requests("Lilith process terminated unexpectedly")
 
     async def _disconnect_with_error(self, message: str) -> None:
-        """Helper to terminate connection on protocol error and notify pending callers."""
+        """Helper to terminate connection on protocol error and notify callers."""
         _logger.error("Disconnecting due to error: %s", message)
-        
+
         # If we are in the reader task, don't let _disconnect cancel us yet
         current_task = asyncio.current_task()
         reader_task = self._reader_task
         if reader_task == current_task:
             self._reader_task = None
-            
+
         await self._disconnect()
         self._cleanup_pending_requests(message)
-        
+
         # If we were the reader task, we are done
         if reader_task == current_task:
-             raise asyncio.CancelledError()
+            raise asyncio.CancelledError()
 
     def _cleanup_pending_requests(self, message: str) -> None:
         """Fail all pending requests with a descriptive error."""
@@ -488,24 +519,28 @@ class Lilith:
             if not future.done():
                 future.set_exception(LilithProcessError(message))
 
-    def _dispatch_response(self, msg: Dict[str, Any]) -> None:
+    def _dispatch_response(self, msg: dict[str, Any]) -> None:
         req_id = str(msg["id"])
         future = self._pending_requests.pop(req_id, None)
         if future and not future.done():
-            if "error" in msg and msg["error"]:
+            if msg.get("error"):
                 # Map standard JSON-RPC errors or specific Lilith codes
                 error_data = msg["error"]
                 code = error_data.get("code")
                 message = error_data.get("message", "Unknown error")
-                
-                # Check for Policy Violation (Lilith specific code -32000 for now, or match string)
+
+                # Check for Policy Violation (-32000 code or match string)
                 if "Policy Violation" in message or code == -32000:
-                    future.set_exception(PolicyViolationError(message, error_data.get("data")))
+                    future.set_exception(
+                        PolicyViolationError(message, error_data.get("data"))
+                    )
                 else:
-                    future.set_exception(LilithError(
-                        f"Lilith RPC Error: {message}", 
-                        context={"code": code, "data": error_data.get("data")}
-                    ))
+                    future.set_exception(
+                        LilithError(
+                            f"Lilith RPC Error: {message}",
+                            context={"code": code, "data": error_data.get("data")},
+                        )
+                    )
             else:
                 future.set_result(msg.get("result", {}))
 
@@ -513,7 +548,7 @@ class Lilith:
     # JSON-RPC Transport (Private)
     # -------------------------------------------------------------------------
 
-    async def _send_notification(self, method: str, params: Dict[str, Any]) -> None:
+    async def _send_notification(self, method: str, params: dict[str, Any]) -> None:
         if not self._process or not self._process.stdin:
             raise LilithConnectionError("Lilith process not running", phase="runtime")
 
@@ -526,15 +561,21 @@ class Lilith:
                 self._process.stdin.write(header + body)
                 await self._process.stdin.drain()
             except (BrokenPipeError, ConnectionResetError) as e:
-                 raise LilithConnectionError("Broken pipe to Lilith process", phase="runtime", underlying_error=e)
+                raise LilithConnectionError(
+                    "Broken pipe to Lilith process",
+                    phase="runtime",
+                    underlying_error=e,
+                ) from e
 
     async def _send_request(
-        self, method: str, params: Optional[Dict[str, Any]] = None
+        self, method: str, params: dict[str, Any] | None = None
     ) -> Any:
         # Check process status before even trying
         if not self._process or self._process.returncode is not None:
-             raise LilithConnectionError("Lilith process is not running", phase="runtime")
-        
+            raise LilithConnectionError(
+                "Lilith process is not running", phase="runtime"
+            )
+
         if not self._process.stdin:
             raise LilithConnectionError("Lilith stdin is closed", phase="runtime")
 
@@ -556,18 +597,21 @@ class Lilith:
 
         body = json.dumps(request).encode("utf-8")
         header = f"Content-Length: {len(body)}\r\n\r\n".encode("ascii")
-        
+
         async with self._lock:
             try:
                 self._process.stdin.write(header + body)
                 await self._process.stdin.drain()
             except (BrokenPipeError, ConnectionResetError) as e:
-                 self._pending_requests.pop(req_id, None)
-                 raise LilithConnectionError("Broken pipe to Lilith process", phase="runtime", underlying_error=e)
+                self._pending_requests.pop(req_id, None)
+                raise LilithConnectionError(
+                    "Broken pipe to Lilith process",
+                    phase="runtime",
+                    underlying_error=e,
+                ) from e
 
         try:
             return await asyncio.wait_for(future, timeout=30.0)
-        except asyncio.TimeoutError:
+        except asyncio.TimeoutError as e:
             self._pending_requests.pop(req_id, None)
-            raise LilithError(f"Request '{method}' timed out after 30s")
-
+            raise LilithError(f"Request '{method}' timed out after 30s") from e

@@ -10,7 +10,8 @@ from typing import Dict, Any
 # Add project root and sdk/src to path for imports
 repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(repo_root, "sdk", "src"))
-from lilith_zero import Lilith, PolicyViolationError, LilithError, LilithConfigError
+from lilith_zero import Lilith
+from lilith_zero.exceptions import PolicyViolationError, LilithError, LilithConfigError
 
 # Setup logging
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -28,7 +29,11 @@ class TestSecurityHardening(unittest.IsolatedAsyncioTestCase):
         self.upstream_script = os.path.join(self.resources_dir, "manual_server.py")
         self.noisy_script = os.path.join(self.resources_dir, "noisy_tool.py")
         self.policy_path = os.path.join(self.test_dir, "policy_hardening.yaml")
-        self.binary_path = os.environ.get("LILITH_ZERO_BINARY_PATH")
+        from lilith_zero.client import _find_binary
+        try:
+            self.binary_path = os.environ.get("LILITH_ZERO_BINARY_PATH") or _find_binary()
+        except Exception:
+            self.binary_path = None
         
         # Temp policy file for resource tests
         self.temp_policy = os.path.join(self.test_dir, "temp_resource_policy.yaml")

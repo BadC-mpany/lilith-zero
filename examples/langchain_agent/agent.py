@@ -24,7 +24,8 @@ from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, ToolMessage
 from langchain_core.tools import StructuredTool
-from lilith_zero import Lilith, PolicyViolationError
+from lilith_zero import Lilith
+from lilith_zero.exceptions import PolicyViolationError
 from rich.console import Console
 from rich.panel import Panel
 

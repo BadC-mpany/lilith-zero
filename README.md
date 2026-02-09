@@ -116,7 +116,8 @@ When enabled, if a session acquires both `ACCESS_PRIVATE` and `UNTRUSTED_SOURCE`
 Lilith Zero integrates with standard agent architectures by wrapping the tool server invocation.
 
 ```python
-from lilith_zero import Lilith, PolicyViolationError
+from lilith_zero import Lilith
+from lilith_zero.exceptions import PolicyViolationError
 
 async def main():
     # Automatic binary discovery and process management

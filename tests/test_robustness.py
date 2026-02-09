@@ -10,11 +10,16 @@ import sys
 repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(repo_root, "sdk", "src"))
 
-from lilith_zero import Lilith, LilithError, PolicyViolationError
+from lilith_zero import Lilith
+from lilith_zero.exceptions import LilithError, PolicyViolationError
 
 
 
-BINARY_PATH = os.environ.get("LILITH_ZERO_BINARY_PATH")
+from lilith_zero.client import _find_binary
+try:
+    BINARY_PATH = os.environ.get("LILITH_ZERO_BINARY_PATH") or _find_binary()
+except Exception:
+    BINARY_PATH = None
 UPSTREAM_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "resources", "manual_server.py")
 UPSTREAM_CMD = f"python {UPSTREAM_PATH}"
 

@@ -27,8 +27,8 @@ import json
 repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.join(repo_root, "sdk", "src"))
 
-from lilith_zero import Lilith, PolicyViolationError
-from lilith_zero.exceptions import LilithError, LilithConnectionError
+from lilith_zero import Lilith
+from lilith_zero.exceptions import LilithError, LilithConnectionError, PolicyViolationError
 
 # Test configuration
 POLICY_PATH = os.path.join(repo_root, "tests", "resources", "v0_1_0_policy.yaml")

@@ -18,16 +18,18 @@ Lilith SDK Exceptions.
 Defines the hierarchy of errors raised by the Lilith middleware.
 """
 
-from typing import Any, Optional, Dict
+from typing import Any
+
 
 class LilithError(Exception):
     """Base class for all Lilith SDK errors.
-    
+
     Attributes:
         message: A human-readable error message.
         context: Optional dictionary containing debugging metadata.
     """
-    def __init__(self, message: str, context: Optional[Dict[str, Any]] = None) -> None:
+
+    def __init__(self, message: str, context: dict[str, Any] | None = None) -> None:
         super().__init__(message)
         self.message = message
         self.context = context or {}
@@ -37,17 +39,19 @@ class LilithError(Exception):
             return f"{self.message} (context: {self.context})"
         return self.message
 
+
 class LilithConfigError(LilithError):
     """Raised when configuration is invalid or missing.
-    
+
     Attributes:
         config_key: The name of the configuration setting that caused the error.
     """
+
     def __init__(
-        self, 
-        message: str, 
-        config_key: Optional[str] = None, 
-        context: Optional[Dict[str, Any]] = None
+        self,
+        message: str,
+        config_key: str | None = None,
+        context: dict[str, Any] | None = None,
     ) -> None:
         ctx = context or {}
         if config_key:
@@ -55,40 +59,45 @@ class LilithConfigError(LilithError):
         super().__init__(message, context=ctx)
         self.config_key = config_key
 
+
 class LilithConnectionError(LilithError):
     """Raised when the SDK fails to connect to or loses connection with Lilith.
-    
+
     Attributes:
-        phase: The lifecycle phase where the failure occurred (e.g., 'spawn', 'handshake').
+        phase: The lifecycle phase where the failure occurred
+            (e.g., 'spawn', 'handshake').
     """
+
     def __init__(
-        self, 
-        message: str, 
-        phase: Optional[str] = None, 
-        underlying_error: Optional[Exception] = None,
-        context: Optional[Dict[str, Any]] = None
+        self,
+        message: str,
+        phase: str | None = None,
+        underlying_error: Exception | None = None,
+        context: dict[str, Any] | None = None,
     ) -> None:
         ctx = context or {}
         if phase:
             ctx["connection_phase"] = phase
         if underlying_error:
             ctx["underlying_error"] = str(underlying_error)
-            
+
         super().__init__(message, context=ctx)
         self.phase = phase
         self.underlying_error = underlying_error
 
+
 class LilithProcessError(LilithError):
     """Raised when the Lilith process behaves unexpectedly (crashes, strict IO).
-    
+
     Includes exit code and stderr if the process crashed.
     """
+
     def __init__(
-        self, 
-        message: str, 
-        exit_code: Optional[int] = None, 
-        stderr: Optional[str] = None,
-        context: Optional[Dict[str, Any]] = None
+        self,
+        message: str,
+        exit_code: int | None = None,
+        stderr: str | None = None,
+        context: dict[str, Any] | None = None,
     ) -> None:
         ctx = context or {}
         if exit_code is not None:
@@ -96,14 +105,17 @@ class LilithProcessError(LilithError):
         if stderr:
             # Clean up stderr: last 500 chars, stripped
             ctx["stderr"] = stderr.strip()[-500:]
-            
+
         super().__init__(message, context=ctx)
         self.exit_code = exit_code
         self.stderr = stderr
 
+
 class PolicyViolationError(LilithError):
     """Raised when a tool execution is blocked by the security policy."""
-    def __init__(self, message: str, policy_details: Optional[Dict[str, Any]] = None) -> None:
-        super().__init__(message, context={"policy_details": policy_details or {}})
-        self.policy_details: Dict[str, Any] = policy_details or {}
 
+    def __init__(
+        self, message: str, policy_details: dict[str, Any] | None = None
+    ) -> None:
+        super().__init__(message, context={"policy_details": policy_details or {}})
+        self.policy_details: dict[str, Any] = policy_details or {}

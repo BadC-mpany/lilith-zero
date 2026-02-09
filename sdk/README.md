@@ -16,7 +16,8 @@ pip install lilith-zero
 Lilith automatically discovers the binary on your PATH or in standard locations.
 
 ```python
-from lilith_zero import Lilith, PolicyViolationError
+from lilith_zero import Lilith
+from lilith_zero.exceptions import PolicyViolationError
 
 client = Lilith(
     upstream="python my_tool_server.py", # The command to run your tools

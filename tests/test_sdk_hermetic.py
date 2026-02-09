@@ -9,7 +9,8 @@ from unittest.mock import MagicMock, patch, AsyncMock
 repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(repo_root, "sdk", "src"))
 
-from lilith_zero import Lilith, LilithError, LilithConfigError
+from lilith_zero import Lilith
+from lilith_zero.exceptions import LilithError, LilithConfigError, LilithConnectionError
 
 class TestLilithHermetic(unittest.IsolatedAsyncioTestCase):
     """

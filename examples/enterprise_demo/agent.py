@@ -28,7 +28,8 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 # Standard Lilith path resolution
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../"))
 sys.path.insert(0, os.path.join(PROJECT_ROOT, "sdk", "src"))
-from lilith_zero import Lilith, PolicyViolationError
+from lilith_zero import Lilith
+from lilith_zero.exceptions import PolicyViolationError
 
 console = Console()
 

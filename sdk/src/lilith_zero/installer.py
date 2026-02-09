@@ -20,14 +20,13 @@ Currently provides detailed instructions, but structured to support
 auto-download in future versions.
 """
 
-import os
-import sys
-import platform
 import logging
-import urllib.request
+import os
+import platform
 import shutil
 import stat
-from typing import Optional
+import sys
+import urllib.request
 
 from .exceptions import LilithConfigError
 
@@ -39,6 +38,7 @@ GITHUB_REPO = "peti12352/lilith-zero"
 # For now, let's look for "latest" to reduce friction
 TAG_NAME = "latest"
 
+
 def get_default_install_dir() -> str:
     """Return the platform-specific default installation directory."""
     home = os.path.expanduser("~")
@@ -47,7 +47,8 @@ def get_default_install_dir() -> str:
     else:
         return os.path.join(home, ".local", "bin")
 
-def _get_platform_asset_name() -> Optional[str]:
+
+def _get_platform_asset_name() -> str | None:
     """Determine the release asset name for the current platform."""
     system = platform.system().lower()
     machine = platform.machine().lower()
@@ -61,28 +62,31 @@ def _get_platform_asset_name() -> Optional[str]:
             return "lilith-zero-macos-arm"
         else:
             return "lilith-zero-macos-x86"
-    
+
     return None
+
 
 def download_lilith(interactive: bool = True) -> str:
     """
     Download and install the Lilith binary from GitHub Releases.
-    
+
     Args:
         interactive: If True, prompt the user before downloading.
-        
+
     Returns:
         Path to the installed binary.
-        
+
     Raises:
         LilithConfigError: If installation fails or is declined.
     """
     install_dir = get_default_install_dir()
     os.makedirs(install_dir, exist_ok=True)
-    
+
     asset_name = _get_platform_asset_name()
     if not asset_name:
-        raise LilithConfigError(f"Unsupported platform: {platform.system()} {platform.machine()}")
+        raise LilithConfigError(
+            f"Unsupported platform: {platform.system()} {platform.machine()}"
+        )
 
     # Target binary name (normalized)
     binary_name = "lilith-zero.exe" if platform.system() == "Windows" else "lilith-zero"
@@ -96,7 +100,9 @@ def download_lilith(interactive: bool = True) -> str:
     # Construct URL (using 'latest' release for now to avoid hardcoding versions)
     # Note: GitHub 'latest' endpoint redirects to the tag.
     # Direct asset download: https://github.com/<owner>/<repo>/releases/latest/download/<asset>
-    download_url = f"https://github.com/{GITHUB_REPO}/releases/latest/download/{asset_name}"
+    download_url = (
+        f"https://github.com/{GITHUB_REPO}/releases/latest/download/{asset_name}"
+    )
 
     msg = (
         f"Lilith binary not found at {target_path}.\n"
@@ -105,11 +111,11 @@ def download_lilith(interactive: bool = True) -> str:
     )
 
     if interactive:
-        print("="*60, file=sys.stderr)
+        print("=" * 60, file=sys.stderr)
         print(msg, file=sys.stderr)
-        print("="*60, file=sys.stderr)
+        print("=" * 60, file=sys.stderr)
         response = input("Download now? [Y/n] ").strip().lower()
-        if response and response != 'y':
+        if response and response != "y":
             raise LilithConfigError("Installation declined by user.")
     else:
         _logger.info("Auto-downloading Lilith binary...")
@@ -117,19 +123,25 @@ def download_lilith(interactive: bool = True) -> str:
     try:
         _logger.info(f"Downloading {download_url}...")
         # Rigour: add timeout to prevent indefinite hanging
-        with urllib.request.urlopen(download_url, timeout=30.0) as response, open(target_path, 'wb') as out_file:
+        with (
+            urllib.request.urlopen(download_url, timeout=30.0) as response,
+            open(target_path, "wb") as out_file,
+        ):
             shutil.copyfileobj(response, out_file)
-        
+
         # Make executable on Unix
         if platform.system() != "Windows":
             st = os.stat(target_path)
             os.chmod(target_path, st.st_mode | stat.S_IEXEC)
-            
+
         _logger.info(f"Successfully installed Lilith to {target_path}")
         return target_path
     except Exception as e:
         # Provide config_key for consistent structured error reporting
-        raise LilithConfigError(f"Failed to download Lilith binary: {e}", config_key="binary")
+        raise LilithConfigError(
+            f"Failed to download Lilith binary: {e}", config_key="binary"
+        ) from e
+
 
 # Aliases
 download_Lilith = download_lilith

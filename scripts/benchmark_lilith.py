@@ -27,7 +27,11 @@ sys.path.insert(0, os.path.join(repo_root, "sdk", "src"))
 from lilith_zero import Lilith
 
 # Configuration
-BINARY_PATH = os.environ.get("LILITH_ZERO_BINARY_PATH")
+from lilith_zero.client import _find_binary
+try:
+    BINARY_PATH = os.environ.get("LILITH_ZERO_BINARY_PATH") or _find_binary()
+except Exception:
+    BINARY_PATH = None
 UPSTREAM_SCRIPT = os.path.join(repo_root, "tests", "resources", "manual_server.py")
 UPSTREAM_CMD = f"{sys.executable} -u {UPSTREAM_SCRIPT}"
 ITERATIONS = 100
