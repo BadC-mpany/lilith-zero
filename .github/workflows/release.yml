@@ -1,6 +1,11 @@
 name: lilith-zero Release
 
 on:
+  workflow_run:
+    workflows: ["lilith-zero CI"]
+    branches: [main]
+    types:
+      - completed
   push:
     tags:
       - "v*"
@@ -10,6 +15,7 @@ permissions:
 
 jobs:
   build-and-release:
+    if: ${{ github.event_name == 'push' || github.event.workflow_run.conclusion == 'success' }}
     name: Build & Release (${{ matrix.target }})
     runs-on: ${{ matrix.os }}
     strategy:
@@ -38,16 +44,16 @@ jobs:
 
       - name: Build Binary
         run: cargo build --release --target ${{ matrix.target }}
-        working-directory: sentinel
+        working-directory: lilith-zero
 
       - name: Prepare Artifact
         shell: bash
         run: |
           mkdir -p dist
           if [ "${{ matrix.os }}" == "windows-latest" ]; then
-            cp sentinel/target/${{ matrix.target }}/release/lilith_zero.exe dist/${{ matrix.name }}
+            cp lilith-zero/target/${{ matrix.target }}/release/lilith_zero.exe dist/${{ matrix.name }}
           else
-            cp sentinel/target/${{ matrix.target }}/release/lilith_zero dist/${{ matrix.name }}
+            cp lilith-zero/target/${{ matrix.target }}/release/lilith_zero dist/${{ matrix.name }}
           fi
 
       - name: Upload Artifact

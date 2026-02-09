@@ -34,31 +34,31 @@ jobs:
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: sentinel -> target
+          workspaces: lilith-zero -> target
 
       - name: Format Check
         run: cargo fmt --all --check
-        working-directory: sentinel
+        working-directory: lilith-zero
 
       - name: Clippy (Strict)
         run: cargo clippy --all-targets --all-features -- -D warnings
-        working-directory: sentinel
+        working-directory: lilith-zero
 
       - name: Unit Tests
         run: cargo test --all-features
-        working-directory: sentinel
+        working-directory: lilith-zero
 
       - name: Build Release Artifacts
         run: cargo build --release
-        working-directory: sentinel
+        working-directory: lilith-zero
 
       - name: Upload Binary Artifact
         uses: actions/upload-artifact@v4
         with:
           name: lilith-zero-${{ matrix.os }}
           path: |
-            sentinel/target/release/lilith_zero
-            sentinel/target/release/lilith_zero.exe
+            lilith-zero/target/release/lilith_zero
+            lilith-zero/target/release/lilith_zero.exe
           if-no-files-found: error
           if-no-files-found: error
 
@@ -122,7 +122,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: lilith-zero-${{ matrix.os }}
-          path: sentinel/target/release
+          path: lilith-zero/target/release
 
       - name: Install SDK & Tools
         run: |
@@ -132,7 +132,7 @@ jobs:
       - name: Run End-to-End Validation
         shell: bash
         env:
-          LILITH_ZERO_BINARY_PATH: ${{ runner.os == 'Windows' && 'sentinel/target/release/lilith_zero.exe' || 'sentinel/target/release/lilith_zero' }}
+          LILITH_ZERO_BINARY_PATH: ${{ runner.os == 'Windows' && 'lilith-zero/target/release/lilith_zero.exe' || 'lilith-zero/target/release/lilith_zero' }}
           RUST_LOG: info
         run: |
           if [ "${{ runner.os }}" != "Windows" ]; then chmod +x $LILITH_ZERO_BINARY_PATH; fi
