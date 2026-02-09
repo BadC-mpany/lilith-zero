@@ -251,12 +251,14 @@ class Lilith:
     async def list_resources(self) -> List[Dict[str, Any]]:
         """Fetch available resources from the upstream MCP server."""
         response = await self._send_request("resources/list", {})
-        return response.get("resources", [])
+        result: List[Dict[str, Any]] = response.get("resources", [])
+        return result
 
     async def read_resource(self, uri: str) -> Dict[str, Any]:
         """Read a resource through Lilith policy enforcement."""
         payload = {"uri": uri}
-        return await self._send_request("resources/read", payload)
+        result: Dict[str, Any] = await self._send_request("resources/read", payload)
+        return result
 
     # -------------------------------------------------------------------------
     # Connection Management (Private)
@@ -351,7 +353,8 @@ class Lilith:
                     # If it was cancelled by _disconnect_with_error, it probably failed requests
                     # But here we are still in _connect, so pending_requests might be empty 
                     # except for 'initialize' which hasn't been sent yet.
-                    raise LilithConnectionError(f"Connection failed during handshake: {e}", phase="handshake", underlying_error=e)
+                    underlying: Exception = e if isinstance(e, Exception) else Exception(str(e))
+                    raise LilithConnectionError(f"Connection failed during handshake: {e}", phase="handshake", underlying_error=underlying)
                 
                 raise LilithConnectionError("Lilith process terminated during handshake", phase="handshake")
 
