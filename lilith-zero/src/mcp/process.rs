@@ -94,7 +94,7 @@ impl ProcessSupervisor {
                 }
 
                 // Register for NOTE_EXIT on parent process
-                let mut event = libc::kevent {
+                let event = libc::kevent {
                     ident: parent_pid as usize,
                     filter: libc::EVFILT_PROC,
                     flags: libc::EV_ADD | libc::EV_ENABLE | libc::EV_ONESHOT,

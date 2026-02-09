@@ -126,7 +126,7 @@ def _find_binary() -> str:
         pass
 
     # If we get here, we can't find it. Ask installer to guide user.
-    return install_Lilith(interactive=False)
+    return install_lilith(interactive=False)
 
 
 class Lilith:
