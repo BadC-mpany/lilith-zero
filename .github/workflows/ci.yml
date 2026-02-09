@@ -60,7 +60,6 @@ jobs:
             lilith-zero/target/release/lilith_zero
             lilith-zero/target/release/lilith_zero.exe
           if-no-files-found: error
-          if-no-files-found: error
 
   # --------------------------------------------------------------------------
   # Python SDK Validation (Standardized)
