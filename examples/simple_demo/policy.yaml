@@ -1,31 +1,12 @@
-id: "hardening-demo-policy"
+id: "minimal-policy"
 customerId: "demo-user"
-name: "Hardened Policy"
+name: "Minimal Policy"
 version: 1
+
 staticRules:
-  read_user_db: "ALLOW"
-  export_to_cloud: "ALLOW"
   ping: "ALLOW"
+  read_db: "DENY"
 
-taintRules:
-  # Rule 1: Reading DB adds PII taint
-  - tool: "read_user_db"
-    action: "ADD_TAINT"
-    tag: "PII"
-
-  # Rule 2: Exporting PII is FORBIDDEN
-  - tool: "export_to_cloud"
-    action: "CHECK_TAINT"
-    forbiddenTags: ["PII"]
-    error: "BLOCKED: Attempted to exfiltrate PII to external cloud storage."
-
-resourceRules:
-  - uriPattern: "file:///private/*"
-    action: "ALLOW"
-    taintsToAdd: ["ACCESS_PRIVATE"]
-  - uriPattern: "http*"
-    action: "ALLOW"
-    taintsToAdd: ["UNTRUSTED_SOURCE"]
-
-# Lethal trifecta protection (disabled in this demo)
-protect_lethal_trifecta: false
+taintRules: []
+resourceRules: []
+protectLethalTrifecta: false

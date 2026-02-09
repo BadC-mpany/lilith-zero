@@ -1,43 +1,22 @@
-name: "react_agent_demo_policy"
-version: 1
-id: "policy-demo-001"
+id: "react-policy"
 customerId: "demo-user"
+name: "ReAct Security Policy"
+version: 1
 
-# OS level sandboxing
-sandbox:
-  strict_mode: false
-  allowed_read_paths: []
-  allowed_write_paths: []
-  allow_network: false
-
-# Static Allowlist (Safe Tools)
 staticRules:
-  analyze_data: "ALLOW"
+  query_weather: "ALLOW"
   get_financial_report: "ALLOW"
-  upload_to_cloud: "ALLOW" 
-  unauthorized_read: "ALLOW"
+  upload_to_cloud: "ALLOW"
 
-# Taint Tracking Rules
 taintRules:
-  # 1. Reading reports adds CONFIDENTIAL taint
   - tool: "get_financial_report"
     action: "ADD_TAINT"
     tag: "CONFIDENTIAL"
-
-  # 2. Uploading requires checking for confidential data leak
+    
   - tool: "upload_to_cloud"
     action: "CHECK_TAINT"
     forbiddenTags: ["CONFIDENTIAL"]
-    error: "Policy Violation: Exfiltration of confidential data blocked."
+    error: "SECURITY BLOCK: This session contains confidential financial data and cannot export to external clouds."
 
-# Resource Rules
-resourceRules:
-  - uriPattern: "file:///sensitive/*"
-    action: "ALLOW"
-    taintsToAdd: ["ACCESS_PRIVATE"]
-  - uriPattern: "http*"
-    action: "ALLOW"
-    taintsToAdd: ["UNTRUSTED_SOURCE"]
-
-# Enable lethal trifecta protection
-protect_lethal_trifecta: false
+resourceRules: []
+protectLethalTrifecta: true

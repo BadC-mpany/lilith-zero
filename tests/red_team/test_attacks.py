@@ -1,9 +1,13 @@
-# Copyright 2026 BadCompany
-# Licensed under the Apache License, Version 2.0
-
+import os
+import sys
 import pytest
 import asyncio
 import time
+
+# Add project root and sdk/src to path for imports
+repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.join(repo_root, "sdk", "src"))
+
 from lilith_zero import Lilith
 from lilith_zero.exceptions import LilithError, LilithConnectionError
 

@@ -9,7 +9,7 @@ Run all integration tests:
 python -m pytest tests/
 ```
 
-*Note: The test suite automatically finds the `sentinel` binary using the rules defined in the SDK (or `LILITH_ZERO_BINARY_PATH`).*
+*Note: The test suite automatically finds the `lilith-zero` binary using the rules defined in the SDK (or `LILITH_ZERO_BINARY_PATH`).*
 
 ## Test Modules
 

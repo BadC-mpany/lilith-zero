@@ -1,88 +1,50 @@
-# Lilith Security Policy for Mock Enterprise Tools
-# Demonstrates tiered access control and taint tracking
-
-id: "enterprise-security-policy"
-customer_id: "acme-corp"
+id: "enterprise-policy"
+customerId: "acme-corp"
 name: "Enterprise Security Policy"
 version: 1
-created_at: "2024-01-27T00:00:00Z"
 
-# Sandbox Configuration (Optional)
-sandbox:
-  strict_mode: false
-  allowed_read_paths: 
-    - "C:\\Users\\Public" # or "/tmp" on Linux
-  allowed_write_paths: []
-  allow_network: false
-
-# Static Rules: Explicit ALLOW/DENY per tool
-static_rules:
-  # Safe operations - Always allowed
+staticRules:
   get_current_time: "ALLOW"
-  calculate: "ALLOW"
-  format_text: "ALLOW"
-  summarize_text: "ALLOW"
-  
-  # Data sources - Allowed but will be taint-tracked
   get_user_profile: "ALLOW"
-  query_database: "ALLOW"
-  read_file: "ALLOW"
-  
-  # External sinks - Conditionally allowed (taint rules apply)
-  send_email: "ALLOW"
-  post_to_slack: "ALLOW"
-  upload_to_s3: "ALLOW"
-  call_external_api: "ALLOW"
-  
-  # Administrative tools - BLOCKED
-  execute_shell: "DENY"
-  modify_user_permissions: "DENY"
-  delete_records: "DENY"
+  upload_to_archive: "ALLOW"
+  export_to_untrusted_cloud: "ALLOW"
+  sanitize_data: "ALLOW"
+  execute_system_command: "ALLOW"
 
-# Dynamic Taint Rules
-taint_rules:
-  # Rule 1: Reading PII sources adds taint
+taintRules:
+  # 1. Source: Accessing profile adds SENSITIVE taint
   - tool: "get_user_profile"
     action: "ADD_TAINT"
-    tag: "PII"
+    tag: "SENSITIVE"
     
-  - tool: "query_database"
-    action: "ADD_TAINT"
-    tag: "INTERNAL_DATA"
-    
-  - tool: "read_file"
-    action: "ADD_TAINT"
-    tag: "INTERNAL_DATA"
+  # 2. Cleaner: Sanitize tool removes SENSITIVE taint
+  - tool: "sanitize_data"
+    action: "REMOVE_TAINT"
+    tag: "SENSITIVE"
 
-  # Rule 2: Block external sinks if tainted with PII
-  - tool: "send_email"
+  # 3. Sink: Untrusted cloud blocks SENSITIVE data
+  - tool: "export_to_untrusted_cloud"
     action: "CHECK_TAINT"
-    forbidden_tags: ["PII"]
-    error: "Cannot send email after accessing PII data"
+    forbiddenTags: ["SENSITIVE"]
+    error: "SECURITY VIOLATION: Export of sensitive profiles to untrusted clouds is forbidden."
 
-  - tool: "post_to_slack"
-    action: "CHECK_TAINT"
-    forbidden_tags: ["PII", "INTERNAL_DATA"]
-    error: "Cannot post to Slack after accessing sensitive data"
+  # 4. Logic: Block execute_system_command unless 'force' is 'true'
+  - tool: "execute_system_command"
+    action: "BLOCK"
+    exceptions:
+      - when:
+          tool_args_match:
+             force: "true"
+        reason: "Force operations are authorized."
 
-  - tool: "upload_to_s3"
-    action: "CHECK_TAINT"
-    forbidden_tags: ["PII", "INTERNAL_DATA"]
-    error: "Cannot upload to S3 after accessing sensitive data"
-
-  - tool: "call_external_api"
-    action: "CHECK_TAINT"
-    forbidden_tags: ["PII", "INTERNAL_DATA"]
-    error: "Cannot call external API after accessing sensitive data"
-
-# Resource Rules for lethal trifecta
-resource_rules:
-  - uri_pattern: "file:///private/*"
+resourceRules:
+  # 5. Resource Control: Allow only specific URI patterns
+  - uriPattern: "s3://public/*"
     action: "ALLOW"
-    taints_to_add: ["ACCESS_PRIVATE"]
-  - uri_pattern: "http*"
-    action: "ALLOW"
-    taints_to_add: ["UNTRUSTED_SOURCE"]
+  - uriPattern: "s3://internal/*"
+    action: "BLOCK"
+    exceptions:
+      - when: false
+        reason: "Strictly internal"
 
-# Lethal trifecta protection
-protect_lethal_trifecta: false
+protectLethalTrifecta: true

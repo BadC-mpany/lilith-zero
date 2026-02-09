@@ -1,158 +1,26 @@
-# Copyright 2026 BadCompany
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 import sys
-import json
-import logging
-import inspect
-from typing import Callable, Any, Dict, List
+import os
 
-# Copyright 2026 BadCompany. All Rights Reserved.
+# Add examples dir to path for mcp_helper
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+from mcp_helper import MCPServer
 
-# Configure minimal logging to stderr
-logging.basicConfig(level=logging.INFO, stream=sys.stderr, format='[MCP] %(message)s')
-logger = logging.getLogger(__name__)
-
-class MCPServer:
-    """Minimalistic MCP Server implementation."""
-    
-    def __init__(self):
-        self._tools: Dict[str, Callable] = {}
-
-    def tool(self, func: Callable):
-        """Decorator to register a function as an MCP tool."""
-        self._tools[func.__name__] = func
-        return func
-
-    def _get_tool_list(self) -> List[Dict[str, Any]]:
-        """Auto-generate tool definitions from registered functions."""
-        return [
-            {
-                "name": name,
-                "description": func.__doc__ or "",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        k: {"type": "string"} # Simplified schema inference
-                        for k in inspect.signature(func).parameters
-                    }
-                }
-            }
-            for name, func in self._tools.items()
-        ]
-
-    def run(self):
-        """Main JSON-RPC loop."""
-        logger.info("Server started (Stio Transport)")
-        while True:
-            try:
-                line = sys.stdin.readline()
-                if not line: break
-                
-                text = line.strip()
-                if text.lower().startswith("content-length:"):
-                    length = int(text.split(":")[1].strip())
-                    # Consume lines until we hit the empty line
-                    while True:
-                        l = sys.stdin.readline()
-                        if not l.strip(): break
-                    
-                    body = sys.stdin.read(length)
-                    req = json.loads(body)
-                    self._handle_request(req)
-                elif text:
-                    # Fallback for old style (test compatibility)
-                    req = json.loads(text)
-                    self._handle_request(req)
-            except (json.JSONDecodeError, ValueError):
-                continue
-
-    def _handle_request(self, req: Dict[str, Any]):
-        method = req.get("method")
-        msg_id = req.get("id")
-        params = req.get("params", {})
-        
-        response = {"jsonrpc": "2.0", "id": msg_id}
-
-        try:
-            if method == "initialize":
-                response["result"] = {
-                    "protocolVersion": "2024-11-05",
-                    "capabilities": {},
-                    "serverInfo": {"name": "DemoServer", "version": "1.0"}
-                }
-            
-            elif method == "tools/list":
-                response["result"] = {"tools": self._get_tool_list()}
-            
-            elif method == "tools/call":
-                name = params.get("name")
-                args = params.get("arguments", {})
-                if name in self._tools:
-                    result = self._tools[name](**args)
-                    # Wrap result in MCP content format
-                    response["result"] = {
-                        "content": [{"type": "text", "text": str(result)}],
-                        "isError": False
-                    }
-                else:
-                    raise ValueError(f"Tool not found: {name}")
-                    
-            elif method == "notifications/initialized":
-                return # No response needed
-
-            else:
-                return # Ignore unsupported methods
-
-        except Exception as e:
-            logger.error(f"Error: {e}")
-            response["error"] = {"code": -32603, "message": str(e)}
-
-        if msg_id is not None:
-            body = json.dumps(response).encode("utf-8")
-            header = f"Content-Length: {len(body)}\r\n\r\n".encode("ascii")
-            sys.stdout.buffer.write(header + body)
-            sys.stdout.buffer.flush()
-
-# --- Tool Implementation ---
-
-server = MCPServer()
+server = MCPServer("ReActDemoServer")
 
 @server.tool
 def get_financial_report() -> str:
-    """Retrieves the confidential financial report."""
-    return "CONFIDENTIAL REPORT: Revenue $50M. Project Code: PHOENIX."
-
-@server.tool
-def analyze_data(data: str) -> str:
-    """Analyzes provided text data."""
-    return f"Analysis: {len(data)} chars. Sentiment: Positive."
+    """Retrieves the confidential quarterly financial report."""
+    return "CONFIDENTIAL REPORT: Revenue $52M. Q4 Growth: 12%. Project: LILITH-ZERO."
 
 @server.tool
 def upload_to_cloud(url: str, content: str) -> str:
-    """Uploads data to external cloud storage."""
-    logger.info(f"Uploading to {url}...")
-    return f"Uploaded successfully to {url}"
+    """Uploads data to an external cloud provider."""
+    return f"Successfully uploaded {len(content)} bytes to {url}."
 
 @server.tool
-def unauthorized_read(path: str) -> str:
-    """Read a file from the host system. (ATTACK TEST)"""
-    try:
-        with open(path, 'r') as f:
-            return f.read(100)
-    except Exception as e:  
-        return f"ACCESS_DENIED: {str(e)}"
+def query_weather(city: str) -> str:
+    """Returns the current weather for a city."""
+    return f"Weather in {city}: 22°C, Sunny."
 
 if __name__ == "__main__":
     server.run()

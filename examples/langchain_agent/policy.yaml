@@ -1,34 +1,34 @@
-name: langchain_demo_policy
+id: "langchain-policy"
+customerId: "demo-user"
+name: "LangChain Security Policy"
 version: 1
-id: demo-policy-v1
-customerId: internal-demo
 
 staticRules:
-  "calculator": "ALLOW"
-  "read_customer_data": "ALLOW"
-  "export_analytics": "ALLOW"      # Guarded by Taint
-  "system_maintenance": "ALLOW"    # Guarded by Logic (Actually, let's use BLOCK in taint/logic rules overrides static? No, static is ACL. Let's Set ALLOW here and BLOCK in taint rules)
-                                   # Wait, Logic Rules are Taint Rules with Pattern. 
-                                   # So 'system_maintenance' must be allowed in static rules to reach the dynamic engine.
-  "nuke_database": "DENY"
+  calculator: "ALLOW"
+  read_customer_data: "ALLOW"
+  export_analytics: "ALLOW"
+  system_maintenance: "ALLOW"
 
 taintRules:
-  # 1. Source: Add taint when reading sensitive data
+  # 1. Source: Reading PII adds SENSITIVE taint
   - tool: "read_customer_data"
     action: "ADD_TAINT"
-    tag: "confidential"
-
-  # 2. Sink: Block export if tainted
+    tag: "SENSITIVE"
+    
+  # 2. Sink: Export blocked if SENSITIVE
   - tool: "export_analytics"
     action: "CHECK_TAINT"
-    forbiddenTags: ["confidential"]
+    forbiddenTags: ["SENSITIVE"]
+    error: "SECURITY BLOCK: Cannot export data containing customer PII."
 
-  # 3. Logic: Logic-based Access Control
+  # 3. Logic: Maintenance only allowed in specific region
   - tool: "system_maintenance"
     action: "BLOCK"
-    error: "Maintenance only allowed in 'eu-west-1'"
     exceptions:
       - when:
           tool_args_match:
              region: "eu-west-1"
-        reason: "Region Allowed"
+        reason: "Only eu-west-1 is authorized for maintenance."
+
+resourceRules: []
+protectLethalTrifecta: true

@@ -42,7 +42,7 @@ from .exceptions import (
     PolicyViolationError,
     LilithProcessError,
 )
-from .installer import get_default_install_dir, install_Lilith
+from .installer import get_default_install_dir, install_lilith
 
 __all__ = ["Lilith", "LilithError", "PolicyViolationError"]
 
@@ -162,9 +162,12 @@ class Lilith:
             raise LilithConfigError("Upstream command is required in this version.", config_key="upstream")
 
         import shlex
-        # Parse upstream command robustly (handles quotes/spaces correctly)
+        import platform
+        # Parse upstream command robustly
         try:
-            parts = shlex.split(upstream.strip())
+            # On Windows, posix=False is required to preserve backslashes
+            is_posix = platform.system() != "Windows"
+            parts = shlex.split(upstream.strip(), posix=is_posix)
         except ValueError as e:
             raise LilithConfigError(f"Malformed upstream command: {e}", config_key="upstream")
             
@@ -205,7 +208,7 @@ class Lilith:
     @staticmethod
     def install_binary() -> None:
         """Helper to invoke the installer interactively."""
-        install_Lilith(interactive=True)
+        install_lilith(interactive=True)
 
     # -------------------------------------------------------------------------
     # Async Context Manager Protocol
@@ -244,6 +247,16 @@ class Lilith:
         payload = {"name": name, "arguments": arguments}
         result = await self._send_request("tools/call", payload)
         return cast(ToolResult, result)
+
+    async def list_resources(self) -> List[Dict[str, Any]]:
+        """Fetch available resources from the upstream MCP server."""
+        response = await self._send_request("resources/list", {})
+        return response.get("resources", [])
+
+    async def read_resource(self, uri: str) -> Dict[str, Any]:
+        """Read a resource through Lilith policy enforcement."""
+        payload = {"uri": uri}
+        return await self._send_request("resources/read", payload)
 
     # -------------------------------------------------------------------------
     # Connection Management (Private)

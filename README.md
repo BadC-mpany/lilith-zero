@@ -164,10 +164,11 @@ Full integration examples are available in the `examples/` directory:
 - **Build System**: Cargo (Rust) and uv (Python)
 
 ### Performance Benchmarks
-Lilith Zero is optimized for minimal latency impact:
-- **Handshake Latency**: <5ms
-- **Request Processing**: <0.8ms
-- **Memory Overhead**: <15MB (RSS)
+Lilith Zero is optimized for minimal security overhead. Latest measurements (Windows 11, Debug Build):
+- **RPC Latency (p50)**: 0.68ms (Overhead: +0.48ms)
+- **Startup Latency**: ~210ms (Full process spawn + handshake)
+- **Memory Footprint**: ~11.5MB (RSS)
+- **Throughput**: ~3,800 requests/sec
 
 ---
 

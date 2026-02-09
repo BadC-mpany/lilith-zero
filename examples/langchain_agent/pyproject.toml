@@ -13,10 +13,10 @@
 # limitations under the License.
 
 [project]
-name = "langchain-sentinel-demo"
+name = "langchain-lilith-demo"
 version = "0.1.0"
 description = "A textbook example of securing LangChain agents with Lilith"
 requires-python = ">=3.10"
 dependencies = ["langchain", "langchain-openai", "python-dotenv", "lilith-zero"]
 [tool.uv.sources]
-lilith-zero = { path = "../../lilith_zero", editable = true }
+lilith-zero = { path = "../../sdk", editable = true }

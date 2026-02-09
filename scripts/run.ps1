@@ -4,12 +4,12 @@ param(
     [string]$PolicyPath = "policy.yaml"
 )
 
-$env:POLICIES_YAML_PATH = $PolicyPath
+$env:LILITH_ZERO_POLICY_PATH = $PolicyPath
 
-if (-not (Test-Path "$PSScriptRoot/../sentinel_middleware/target/release/sentinel-interceptor.exe")) {
+if (-not (Test-Path "$PSScriptRoot/../lilith-zero/target/release/lilith-zero.exe")) {
     Write-Warning "Binary not found. Building..."
     & "$PSScriptRoot/build.ps1"
 }
 
-& "$PSScriptRoot/../sentinel_middleware/target/release/sentinel-interceptor.exe" `
+& "$PSScriptRoot/../lilith-zero/target/release/lilith-zero.exe" `
     --upstream-cmd $UpstreamCmd -- $UpstreamArgs.Split(" ")

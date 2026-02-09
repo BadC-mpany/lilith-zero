@@ -1,48 +1,38 @@
-# Lilith Examples
+# Lilith Zero Examples
 
-This directory contains reference implementations and demos for the Lilith middleware.
+Curated examples of the Lilith Security Middleware in action.
 
-## 1. React Agent Demo (`react_agent_demo/`)
+##  Directory Structure
 
-A comprehensive showcase of Lilith protecting a ReAct-style agent.
+- **`simple_demo/`**: The minimalist "Hello World". Demonstrates basic connectivity and static policy (Allow/Deny).
+- **`enterprise_demo/`**: Comprehensive feature showcase. Demonstrates **Taint Tracking (Induction/Enforcement/Removal)**, **Logic Rules with Exceptions**, **Resource Access Control**, and **Resource Discovery**.
+- **`react_agent_demo/`**: Autonomous Agent loop. Shows Lilith guarding a ReAct reasoning loop using LLMs.
+- **`langchain_agent/`**: Framework integration. Demonstrates wrapping LangChain tools with Lilith security.
 
-- **`demo.py`**: Properties of Lilith (Taint Tracking, Fail-Closed, Spotlighting).
-- **`agent.py`**: A minimal ReAct agent implementation.
-- **`mock_server.py`**: A compliant MCP server for testing without external dependencies.
-- **`policy.yaml`**: The security rules enforcing the demo logic.
+##  Requirements
 
-**Run:**
+1. **Python 3.10+**
+2. **Lilith Binary**: Built via `cargo build -p lilith-zero` in the project root.
+3. **API Keys**: For LLM-based examples, set `OPENROUTER_API_KEY` in `examples/.env`.
+
+##  Running Examples
+
+From the project root:
+
 ```bash
-python examples/react_agent_demo/demo.py
-```
-
-## 2. Simple Demo (`simple_demo/`)
-
-A minimal "Hello World" for Lilith.
-
-- Shows basic connection and tool listing.
-- Good starting point for understanding the SDK `Lilith` class.
-
-**Run:**
-```bash
+# 1. Simple Demo
 python examples/simple_demo/agent.py
+
+# 2. Enterprise Demo
+python examples/enterprise_demo/agent.py
+
+# 3. ReAct Agent (Requires LLM)
+python examples/react_agent_demo/agent.py
 ```
 
-## 3. LangChain Agent (`langchain_agent/`)
+##  Key Concepts Demonstrated
 
-A sophisticated ReAct agent demonstration using LangChain.
-
-- **`agent.py`**: Minimalist LangChain agent integrated with `lilith_zero`.
-- **`policy.yaml`**: Full suite of v0.1.0 security policies (ACL, Taint, Logic).
-- **`upstream.py`**: Binary-safe MCP server implementation.
-
-**Run:**
-```bash
-uv run python examples/langchain_agent/agent.py
-```
-
-## Prerequisites
-Ensure the `lilith_zero` is installed:
-```bash
-pip install -e sdk/
-```
+- **Policy Enforcement**: Declarative security rules in `policy.yaml`.
+- **Taint Tracking**: Preventing data exfiltration by marking sensitive sources.
+- **Spotlighting**: Randomized delimiters to prevent LLM prompt injection and data leakage.
+- **Fail-Closed Design**: Defaults to Deny-All if policy is missing or malformed.

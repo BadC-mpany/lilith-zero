@@ -7,8 +7,9 @@ import time
 import jwt
 from typing import Dict, Any
 
-# Add project root to path for imports
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+# Add project root and sdk/src to path for imports
+repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(repo_root, "sdk", "src"))
 from lilith_zero import Lilith, PolicyViolationError, LilithError, LilithConfigError
 
 # Setup logging

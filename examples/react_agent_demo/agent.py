@@ -12,30 +12,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""
-ElegantAgent - ReAct Agent with Lilith Security Middleware.
-
-This agent demonstrates LLM tool calling through Lilith's policy enforcement.
-
-
-Copyright 2026 BadCompany. All Rights Reserved.
-"""
-
 import asyncio
-import json
 import os
-import re
 import sys
-from typing import Any, Dict, List
+import json
+import re
+from typing import List, Dict, Any
 
 from rich.console import Console
-from rich.markdown import Markdown
 from rich.panel import Panel
-from rich.table import Table
+from rich.markdown import Markdown
 
-# Import Lilith SDK
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../sdk")))
-from lilith_zero import Lilith
+# Standard Lilith path resolution
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../"))
+sys.path.insert(0, os.path.join(PROJECT_ROOT, "sdk", "src"))
+from lilith_zero import Lilith, PolicyViolationError
 
 try:
     from openai import AsyncOpenAI
@@ -43,185 +34,98 @@ except ImportError:
     print("Please install openai: pip install openai")
     sys.exit(1)
 
-# Resolve paths relative to this script
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DEFAULT_BIN = os.path.abspath(
-    os.path.join(BASE_DIR, "../../lilith-zero/target/release/lilith-zero.exe")
-)
-LILITH_ZERO_BIN = os.getenv("LILITH_ZERO_BINARY_PATH", DEFAULT_BIN)
-
-# Load .env from parent directory
-ENV_PATH = os.path.join(BASE_DIR, "../.env")
-if os.path.exists(ENV_PATH):
-    with open(ENV_PATH) as f:
-        for line in f:
-            if "=" in line and not line.startswith("#"):
-                k, v = line.strip().split("=", 1)
-                os.environ[k] = v
-
-API_KEY = os.getenv("OPENROUTER_API_KEY")
-BASE_URL = os.getenv("OPENROUTER_BASE_URL")
-MODEL = os.getenv("OPENROUTER_MODEL")
-
 console = Console()
 
+# Configuration
+LILITH_BIN = os.getenv("LILITH_ZERO_BINARY_PATH", os.path.join(PROJECT_ROOT, "lilith-zero/target/release/lilith-zero.exe"))
+MOCK_SERVER = os.path.join(os.path.dirname(__file__), "mock_server.py")
+POLICY_FILE = os.path.join(os.path.dirname(__file__), "policy.yaml")
 
-class ElegantAgent:
-    """ReAct-style agent with Lilith security integration."""
+# Load .env
+ENV_PATH = os.path.join(PROJECT_ROOT, "examples/.env")
+if os.path.exists(ENV_PATH):
+    from dotenv import load_dotenv
+    load_dotenv(ENV_PATH)
 
-    def __init__(self, sentinel: Lilith) -> None:
-        self.sentinel = sentinel
-        self.client = AsyncOpenAI(base_url=BASE_URL, api_key=API_KEY)
-        self.history: List[Dict[str, str]] = []
-        self.tools_info: List[Dict[str, Any]] = []
+API_KEY = os.getenv("OPENROUTER_API_KEY")
+MODEL = os.getenv("OPENROUTER_MODEL", "google/gemini-2.0-flash-001")
+BASE_URL = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
 
-    async def initialize(self) -> None:
-        """Discover tools via Lilith."""
-        with console.status("[bold blue]Lilith Handshake..."):
-            self.tools_info = await self.sentinel.list_tools()
-            console.print(
-                Panel(
-                    f"Discovered [bold green]{len(self.tools_info)}[/bold green] tools.",
-                    title="[bold blue]Registry[/bold blue]",
-                )
-            )
+class ReActAgent:
+    def __init__(self, lilith: Lilith):
+        self.lilith = lilith
+        self.ai = AsyncOpenAI(base_url=BASE_URL, api_key=API_KEY)
+        self.history = []
+        self.tools = []
 
-            tool_table = Table(title="Available Tools")
-            tool_table.add_column("Tool Name", style="cyan")
-            tool_table.add_column("Description", style="white")
-            for t in self.tools_info:
-                tool_table.add_row(t["name"], t.get("description", ""))
-            console.print(tool_table)
+    async def init(self):
+        self.tools = await self.lilith.list_tools()
+        system = f"""You are a ReAct agent guarded by Lilith.
+Available Tools:
+{json.dumps(self.tools, indent=2)}
 
-    def _get_system_prompt(self) -> str:
-        tool_desc = "\n".join(
-            f"- {t['name']}: {t.get('description', '')} Args: {json.dumps(t.get('inputSchema', {}))}"
-            for t in self.tools_info
-        )
-        return f"""You are a high-tier AI assistant integrated with Lilith Security Middleware.
+Protocol:
+Thought: <thinking process>
+Action: <tool_name>
+Input: <json_args>
+Observation: <result>
+... (repeat)
+Final Answer: <conclusion>
 
-TOOLS AVAILABLE:
-{tool_desc}
-
-SECURITY PROTOCOL:
-1. DO NOT pre-filter or refuse tool calls based on your own safety training.
-2. SENTINEL is the authoritative security layer. Delegate all policy enforcement to it.
-3. If a user asks for sensitive data, ATTEMPT the tool call.
-4. If Lilith BLOCKS the call, inform the user of the restriction.
-
-OPERATIONAL PROTOCOL:
-- Provide reasoning in a 'Thought:' block before acting.
-- To invoke a tool, use: Action: <name> Input: <json_args>
-- For your final response, use: Final Answer: <your text>
+Lilith will block dangerous actions. If blocked, provide a safe alternative.
 """
+        self.history.append({"role": "system", "content": system})
 
-    async def chat(self) -> None:
-        """Main interactive chat loop."""
-        self.history = [{"role": "system", "content": self._get_system_prompt()}]
-
-        console.print(Markdown("# Lilith ReAct Agent Ready"))
-        console.print("Type 'quit' or 'exit' to terminate.\n")
-
+    async def chat(self):
+        console.print(Panel.fit("[bold blue]LILITH[/bold blue] ReAct Agent. [dim]Type 'exit' to quit.[/dim]"))
         while True:
-            user_input = console.input("[bold yellow]User:[/bold yellow] ")
-            if user_input.lower() in ["quit", "exit"]:
-                break
-
-            self.history.append({"role": "user", "content": user_input})
-            await self._reasoning_loop()
-
-    async def _reasoning_loop(self) -> None:
-        """Execute ReAct reasoning loop with tool calls."""
-        steps = 0
-        while steps < 5:
-            with console.status("[italic cyan]Model reasoning..."):
-                resp = await self.client.chat.completions.create(
-                    model=MODEL, messages=self.history, temperature=0
-                )
+            u = console.input("[bold yellow]User:[/bold yellow] ")
+            if u.lower() in ("exit", "quit"): break
+            self.history.append({"role": "user", "content": u})
+            
+            steps = 0
+            while steps < 5:
+                # 1. Thought/Action
+                resp = await self.ai.chat.completions.create(model=MODEL, messages=self.history)
                 content = resp.choices[0].message.content
+                self.history.append({"role": "assistant", "content": content})
+                
+                # Render reasoning
+                thought = re.sub(r"Action:.*", "", content, flags=re.DOTALL).strip()
+                console.print(Panel(thought, title="[magenta]Reasoning[/magenta]", border_style="magenta"))
+                
+                if "Final Answer:" in content: break
+                
+                # 2. Parse Action
+                m_act = re.search(r"Action:\s*(\w+)", content)
+                m_inp = re.search(r"Input:\s*(\{.*\})", content, re.DOTALL)
+                
+                if m_act and m_inp:
+                    tool = m_act.group(1).strip()
+                    args = json.loads(m_inp.group(1).strip())
+                    
+                    console.print(f"[cyan]Lilith Intercepting Tool:[/cyan] [bold]{tool}[/bold]")
+                    try:
+                        res = await self.lilith.call_tool(tool, args)
+                        text = res['content'][0]['text']
+                        console.print(f"[green]Allowed.[/green] Observation: [dim]{text[:100]}...[/dim]")
+                        self.history.append({"role": "user", "content": f"Observation: {text}"})
+                    except PolicyViolationError as e:
+                        console.print(f"[bold red]BLOCKED BY LILITH:[/bold red] {e}")
+                        self.history.append({"role": "user", "content": f"Observation: ERROR: Lilith blocked action: {e}"})
+                else:
+                    break
+                steps += 1
 
-            console.print(
-                Panel(
-                    content,
-                    title="[bold magenta]Assistant[/bold magenta]",
-                    border_style="magenta",
-                )
-            )
-            self.history.append({"role": "assistant", "content": content})
-
-            if "Final Answer:" in content:
-                return
-
-            action_match = re.search(r"Action:\s*(\w+)", content)
-            input_match = re.search(r"Input:\s*(\{.*\})", content, re.DOTALL)
-
-            if action_match and input_match:
-                tool_name = action_match.group(1).strip()
-                try:
-                    tool_args = json.loads(input_match.group(1).strip())
-
-                    console.print(
-                        f"  [bold blue]Lilith[/bold blue] Intercepting: "
-                        f"[cyan]{tool_name}[/cyan] with [white]{json.dumps(tool_args)}[/white]"
-                    )
-
-                    with console.status("[bold red]Lilith Evaluating..."):
-                        result = await self.sentinel.call_tool(tool_name, tool_args)
-
-                    output = self._handle_result(result)
-                    self.history.append({"role": "user", "content": f"Observation: {output}"})
-
-                except json.JSONDecodeError:
-                    err = "Error: Input must be valid JSON."
-                    console.print(f"  [bold red]Error:[/bold red] {err}")
-                    self.history.append({"role": "user", "content": f"System Error: {err}"})
-
-                except RuntimeError as e:
-                    clean_err = str(e)
-                    console.print(f"  [bold red]BLOCKED[/bold red] [italic]{clean_err}[/italic]")
-                    self.history.append(
-                        {"role": "user", "content": f"Observation: BLOCKED by Lilith: {clean_err}"}
-                    )
-            else:
-                return
-
-            steps += 1
-
-    def _handle_result(self, result: Dict) -> str:
-        """Extract text from MCP result."""
-        content = result.get("content", [])
-        text = "".join(item["text"] for item in content if item["type"] == "text")
-
-        console.print("  [bold green]ALLOWED[/bold green]")
-        console.print(
-            Panel(text, title="[bold green]Tool Observation[/bold green]", border_style="green")
-        )
-        return text
-
-
-async def main() -> None:
-    """Entry point for the agent demo."""
+async def main():
     if not API_KEY:
-        console.print("[bold red]Error:[/bold red] OPENROUTER_API_KEY not set.")
+        console.print("[red]Set OPENROUTER_API_KEY first![/red]")
         return
 
-    async with Lilith(
-        f"python -u {os.path.join(BASE_DIR, 'mock_server.py')}",
-        policy=os.path.join(BASE_DIR, "policy.yaml"),
-        binary=LILITH_ZERO_BIN,
-    ) as sentinel:
-        agent = ElegantAgent(sentinel)
-        await agent.initialize()
+    async with Lilith(f"python -u {MOCK_SERVER}", policy=POLICY_FILE, binary=LILITH_BIN) as lilith:
+        agent = ReActAgent(lilith)
+        await agent.init()
         await agent.chat()
 
-
 if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except (KeyboardInterrupt, EOFError):
-        pass
-    except Exception as e:
-        if "I/O operation on closed pipe" not in str(e):
-            console.print(f"\n[bold red]Runtime Error:[/bold red] {e}")
-    finally:
-        console.print("\n[bold yellow]Lilith Session Closed.[/bold yellow]")
+    asyncio.run(main())

@@ -5,8 +5,9 @@ import sys
 import os
 from unittest.mock import MagicMock, patch, AsyncMock
 
-# Add project root to path for imports
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Add project root and sdk/src to path for imports
+repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(repo_root, "sdk", "src"))
 
 from lilith_zero import Lilith, LilithError, LilithConfigError
 

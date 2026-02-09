@@ -12,142 +12,103 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import asyncio
 import os
 import sys
-import json
-import asyncio
-import re
-from typing import List, Dict, Any, Optional
 
 from rich.console import Console
 from rich.panel import Panel
-from rich.text import Text
 from rich.table import Table
-from rich.status import Status
-from rich.markdown import Markdown
+from rich.live import Live
+from rich.progress import Progress, SpinnerColumn, TextColumn
 
-# Ensure lilith_zero is discoverable
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../sdk")))
-from lilith_zero import Lilith
+# import logging
+# logging.basicConfig(level=logging.INFO)
 
-try:
-    from openai import AsyncOpenAI
-except ImportError:
-    print("Please install openai: pip install openai")
-    sys.exit(1)
-
-# Config
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DEFAULT_BIN = os.path.abspath(os.path.join(BASE_DIR, "../../lilith-zero/target/release/lilith-zero.exe"))
-LILITH_ZERO_BIN = os.getenv("LILITH_ZERO_BINARY_PATH", DEFAULT_BIN)
-
-# Load .env from parent directory
-ENV_PATH = os.path.join(BASE_DIR, "../.env")
-if os.path.exists(ENV_PATH):
-    with open(ENV_PATH) as f:
-        for line in f:
-            if "=" in line and not line.startswith("#"):
-                parts = line.strip().split("=", 1)
-                if len(parts) == 2:
-                    os.environ[parts[0]] = parts[1]
-
-API_KEY = os.getenv("OPENROUTER_API_KEY")
-BASE_URL = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
-MODEL = os.getenv("OPENROUTER_MODEL", "google/gemini-2.0-flash-001")
+# Standard Lilith path resolution
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../"))
+sys.path.insert(0, os.path.join(PROJECT_ROOT, "sdk", "src"))
+from lilith_zero import Lilith, PolicyViolationError
 
 console = Console()
 
-class ElegantAgent:
-    def __init__(self, sentinel: Lilith):
-        self.sentinel = sentinel
-        self.client = AsyncOpenAI(base_url=BASE_URL, api_key=API_KEY)
-        self.history = []
-        self.tools_info = []
+# Configuration
+LILITH_BIN = os.getenv("LILITH_ZERO_BINARY_PATH", os.path.join(PROJECT_ROOT, "lilith-zero/target/release/lilith-zero.exe"))
+MOCK_SERVER = os.path.join(os.path.dirname(__file__), "mock_server.py")
+POLICY_FILE = os.path.join(os.path.dirname(__file__), "policy.yaml")
 
-    async def initialize(self):
-        with console.status("[bold blue]Lilith Handshake...") as status:
-            self.tools_info = await self.sentinel.get_tools_config()
-            console.print(Panel(f"Discovered [bold green]{len(self.tools_info)}[/bold green] tools through Lilith.", title="[bold blue]Registry[/bold blue]"))
-            
-            tool_table = Table(title="Available Tools")
-            tool_table.add_column("Tool Name", style="cyan")
-            tool_table.add_column("Description", style="white")
-            for t in self.tools_info:
-                tool_table.add_row(t['name'], t.get('description', ''))
-            console.print(tool_table)
-
-    def _get_system_prompt(self) -> str:
-        tool_desc = "\n".join(
-            f"- {t['name']}: {t.get('description', '')} Args: {json.dumps(t.get('inputSchema', {}))}"
-            for t in self.tools_info
-        )
-        return f"""You are an enterprise AI assistant guarded by the Lilith Security Middleware.
-
-TOOLS AVAILABLE:
-{tool_desc}
-
-PROTOCOL:
-1. To invoke a tool, use: Action: <name> Input: <json_args>
-2. For your final response, use: Final Answer: <your text>
-3. If Lilith blocks a tool, acknowledge identifying the policy restriction.
-"""
-
-    async def chat(self):
-        self.history = [{"role": "system", "content": self._get_system_prompt()}]
-        console.print(Markdown("# Enterprise Lilith Demo"))
-        while True:
-            user_input = console.input("[bold yellow]User:[/bold yellow] ")
-            if user_input.lower() in ["quit", "exit"]: break
-            self.history.append({"role": "user", "content": user_input})
-            await self._reasoning_loop()
-
-    async def _reasoning_loop(self):
-        steps = 0
-        while steps < 5:
-            with console.status("[italic cyan]Model reasoning...") as status:
-                resp = await self.client.chat.completions.create(model=MODEL, messages=self.history, temperature=0)
-                content = resp.choices[0].message.content
-            
-            console.print(Panel(content, title="[bold magenta]Assistant[/bold magenta]", border_style="magenta"))
-            self.history.append({"role": "assistant", "content": content})
-
-            if "Final Answer:" in content: return
-
-            action_match = re.search(r"Action:\s*(\w+)", content)
-            input_match = re.search(r"Input:\s*(\{.*\})", content, re.DOTALL)
-
-            if action_match and input_match:
-                tool_name = action_match.group(1).strip()
-                try:
-                    tool_args = json.loads(input_match.group(1).strip())
-                    console.print(f"  [bold blue]Lilith[/bold blue] Intercepting: [cyan]{tool_name}[/cyan]")
-                    result = await self.sentinel.execute_tool(tool_name, tool_args)
-                    output = self._handle_result(result)
-                    self.history.append({"role": "user", "content": f"Observation: {output}"})
-                except Exception as e:
-                    console.print(f"  [bold red]Blocked:[/bold red] {str(e)}")
-                    self.history.append({"role": "user", "content": f"Observation: REJECTED by Lilith: {str(e)}"})
-            else:
-                return
-            steps += 1
-
-    def _handle_result(self, result: Dict) -> str:
-        content = result.get("content", [])
-        text = "".join(item["text"] for item in content if item["type"] == "text")
-        console.print(f"  [bold green]Allowed[/bold green]")
-        console.print(Panel(text, title="[bold green]Tool Observation[/bold green]", border_style="green"))
-        return text
-
-async def main():
+async def run_comprehensive_demo():
+    console.print(Panel.fit("[bold blue]LILITH ZERO[/bold blue] - Comprehensive Feature Showcase", border_style="blue"))
+    
     async with Lilith(
-        upstream_cmd="python",
-        upstream_args=[os.path.join(BASE_DIR, "mock_server.py")],
-        policy_path=os.path.join(BASE_DIR, "policy.yaml"),
-        binary_path=LILITH_ZERO_BIN
-    ) as sentinel:
-        agent = ElegantAgent(sentinel)
-        await agent.initialize()
-        await agent.chat()
+        upstream=f"python -u {MOCK_SERVER}",
+        policy=POLICY_FILE,
+        binary=LILITH_BIN
+    ) as lilith:
+        
+        console.print(f"[dim]Session ID: {lilith.session_id}[/dim]")
+        
+        # 1. DISCOVERY (Tools & Resources)
+        tools = await lilith.list_tools()
+        resources = await lilith.list_resources()
+        
+        table = Table(title="Lilith Inventory", border_style="cyan")
+        table.add_column("Type", style="bold cyan")
+        table.add_column("Name", style="white")
+        for t in tools: table.add_row("Tool", t['name'])
+        for r in resources: table.add_row("Resource", r['uri'])
+        console.print(table)
+
+        # 2. STATIC RULES & TAINT INDUCTION
+        console.print("\n[bold green]Case 1: Taint Induction[/bold green]")
+        profile = await lilith.call_tool("get_user_profile", {"user_id": "123"})
+        console.print(Panel(profile['content'][0]['text'], title="[red]TAINTED SOURCE[/red]", border_style="red"))
+        
+        # 3. TAINT TRACKING (Blocking Export)
+        console.print("\n[bold green]Case 2: Taint Enforcement (Blocked Sink)[/bold green]")
+        try:
+            await lilith.call_tool("export_to_untrusted_cloud", {"data": "Leaking secrets..."})
+        except PolicyViolationError as e:
+            console.print(f"  [bold red]BLOCKED:[/bold red] {e}")
+
+        # 4. TAINT REMOVAL (Scrubbing)
+        console.print("\n[bold green]Case 3: Taint Scrubbing (Removes SENSITIVE tag)[/bold green]")
+        cleaned = await lilith.call_tool("sanitize_data", {"data": "Secret: Kryptos-42"})
+        console.print(f"  [cyan]>[/cyan] Sanitized: {cleaned['content'][0]['text']}")
+        
+        # Now try to export again after scrubbing
+        # NOTE: Lilith taint tracking is session-wide. If the session is tainted, it stays tainted 
+        # unless a tool explicitly removes it. In this demo, 'sanitize_data' has action: REMOVE_TAINT.
+        console.print("  [white]Attempting export after scrubbing...[/white]")
+        res = await lilith.call_tool("export_to_untrusted_cloud", {"data": "Safe record"})
+        console.print(f"  [green]SUCCESS:[/green] Export Allowed because taint was removed.")
+
+        # 5. LOGIC RULES WITH EXCEPTIONS
+        console.print("\n[bold green]Case 4: Logic Rules with Contextual Exceptions[/bold green]")
+        console.print("  [white]Attempting dry run command...[/white]")
+        try:
+            await lilith.call_tool("execute_system_command", {"command": "reboot", "force": "false"})
+        except PolicyViolationError:
+            console.print("  [bold red]BLOCKED:[/bold red] Logic rule prevents non-force commands.")
+            
+        console.print("  [white]Attempting authorized force command...[/white]")
+        res = await lilith.call_tool("execute_system_command", {"command": "reboot", "force": "true"})
+        console.print(f"  [green]ALLOWED:[/green] {res['content'][0]['text']}")
+
+        # 6. RESOURCE ACCESS CONTROL
+        console.print("\n[bold green]Case 5: Resource Access (Pattern Matching)[/bold green]")
+        public_uri = "s3://public/release_notes.txt"
+        private_uri = "s3://internal/audit_logs.txt"
+        
+        console.print(f"  [white]Reading {public_uri}...[/white]")
+        pub = await lilith.read_resource(public_uri)
+        console.print(f"    [green]Result:[/green] {pub['contents'][0]['text']}")
+        
+        console.print(f"  [white]Reading {private_uri}...[/white]")
+        try:
+            await lilith.read_resource(private_uri)
+        except PolicyViolationError as e:
+            console.print(f"    [bold red]BLOCKED:[/bold red] {e}")
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    asyncio.run(run_comprehensive_demo())

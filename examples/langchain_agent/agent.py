@@ -15,91 +15,72 @@
 import asyncio
 import os
 import sys
+
+# Ensure lilith_zero is discoverable
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../"))
+sys.path.insert(0, os.path.join(PROJECT_ROOT, "sdk", "src"))
+
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, ToolMessage
 from langchain_core.tools import StructuredTool
 from lilith_zero import Lilith, PolicyViolationError
+from rich.console import Console
+from rich.panel import Panel
 
-load_dotenv()
+console = Console()
+load_dotenv(os.path.join(PROJECT_ROOT, "examples/.env"))
 
-LILITH_ZERO_BINARY = os.path.abspath("../../lilith-zero/target/release/lilith-zero.exe")
-POLICY_PATH = os.path.abspath("policy.yaml")
-UPSTREAM_CMD = f"{sys.executable} -u upstream.py"
-
-if not os.path.exists(LILITH_ZERO_BINARY):
-    sys.exit(f"Binary not found: {LILITH_ZERO_BINARY}")
+LILITH_BIN = os.getenv("LILITH_ZERO_BINARY_PATH", os.path.join(PROJECT_ROOT, "lilith-zero/target/release/lilith-zero.exe"))
+POLICY_PATH = os.path.join(os.path.dirname(__file__), "policy.yaml")
+MOCK_SERVER = os.path.join(os.path.dirname(__file__), "mock_server.py")
 
 async def main():
-    print(f"Lilith Agent Active.\nBinary: {LILITH_ZERO_BINARY}\nPolicy: {POLICY_PATH}\n")
+    console.print(Panel.fit("[bold green]LILITH[/bold green] + LangChain Integration", border_style="green"))
     
-    async with Lilith(upstream=UPSTREAM_CMD, binary=LILITH_ZERO_BINARY, policy=POLICY_PATH) as sentinel:
-        # Tool Wrappers
-        async def safe_calc(expression: str) -> str:
-            return await sentinel.call_tool("calculator", {"expression": expression})
-
-        async def safe_read(customer_id: str) -> str:
-            return await sentinel.call_tool("read_customer_data", {"customer_id": customer_id})
-
-        async def safe_export(data: str) -> str:
-            return await sentinel.call_tool("export_analytics", {"data": data})
-
-        async def safe_maint(region: str) -> str:
-            return await sentinel.call_tool("system_maintenance", {"region": region})
-
-        async def safe_nuke() -> str:
-            return await sentinel.call_tool("nuke_database", {})
+    async with Lilith(upstream=f"python -u {MOCK_SERVER}", binary=LILITH_BIN, policy=POLICY_PATH) as lilith:
+        # Define LangChain tools that proxy through Lilith
+        async def call_lilith(name, **kwargs):
+            return await lilith.call_tool(name, kwargs)
 
         tools = [
-            StructuredTool.from_function(func=None, coroutine=safe_calc, name="calculator", description="Math calculation"),
-            StructuredTool.from_function(func=None, coroutine=safe_read, name="read_customer_data", description="Read customer data"),
-            StructuredTool.from_function(func=None, coroutine=safe_export, name="export_analytics", description="Export data"),
-            StructuredTool.from_function(func=None, coroutine=safe_maint, name="system_maintenance", description="System maintenance"),
-            StructuredTool.from_function(func=None, coroutine=safe_nuke, name="nuke_database", description="Nuke DB"),
+            StructuredTool.from_function(func=None, coroutine=lambda expr: call_lilith("calculator", expression=expr), name="calculator", description="Perform math"),
+            StructuredTool.from_function(func=None, coroutine=lambda cid: call_lilith("read_customer_data", customer_id=cid), name="read_customer_data", description="Read PII"),
+            StructuredTool.from_function(func=None, coroutine=lambda data: call_lilith("export_analytics", data=data), name="export_analytics", description="Export data"),
+            StructuredTool.from_function(func=None, coroutine=lambda reg: call_lilith("system_maintenance", region=reg), name="system_maintenance", description="Maint"),
         ]
 
         llm = ChatOpenAI(
-            model="qwen/qwen3-next-80b-a3b-instruct",
-            temperature=0,
-            base_url="https://openrouter.ai/api/v1",
+            model=os.getenv("OPENROUTER_MODEL", "google/gemini-2.0-flash-001"),
+            base_url=os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1"),
             api_key=os.getenv("OPENROUTER_API_KEY")
-        )
-        llm_with_tools = llm.bind_tools(tools)
-        
-        print("Ready. Type 'quit' to exit.")
+        ).bind_tools(tools)
         
         while True:
-            try:
-                user_in = input("User: ").strip()
-                if user_in.lower() in ("quit", "exit"): break
+            user_in = console.input("\n[bold yellow]User:[/bold yellow] ")
+            if user_in.lower() in ("quit", "exit"): break
+            
+            msgs = [HumanMessage(content=user_in)]
+            ai_msg = await llm.ainvoke(msgs)
+            msgs.append(ai_msg)
+
+            if ai_msg.tool_calls:
+                for tc in ai_msg.tool_calls:
+                    console.print(f"[cyan]Lilith Intercepting:[/cyan] [bold]{tc['name']}[/bold]")
+                    try:
+                        tool = next(t for t in tools if t.name == tc["name"])
+                        res = await tool.ainvoke(tc["args"])
+                        text = res['content'][0]['text']
+                        console.print(f"[green]Allowed.[/green] Response: [dim]{text[:50]}...[/dim]")
+                        msgs.append(ToolMessage(content=text, tool_call_id=tc["id"]))
+                    except PolicyViolationError as e:
+                        console.print(f"[bold red]BLOCKED BY LILITH:[/bold red] {e}")
+                        msgs.append(ToolMessage(content=f"Error: {e}", tool_call_id=tc["id"]))
                 
-                msgs = [HumanMessage(content=user_in)]
-                ai_msg = await llm_with_tools.ainvoke(msgs)
-                msgs.append(ai_msg)
-
-                if ai_msg.tool_calls:
-                    print(f"Agent calls: {[tc['name'] for tc in ai_msg.tool_calls]}")
-                    for tc in ai_msg.tool_calls:
-                        try:
-                            tool = next(t for t in tools if t.name == tc["name"])
-                            print(f"Lilith Executing: {tc['name']}...")
-                            res = await tool.ainvoke(tc["args"])
-                            print(f"Lilith Allowed: {res}")
-                            msgs.append(ToolMessage(content=str(res), tool_call_id=tc["id"]))
-                        except PolicyViolationError as e:
-                            print(f"Lilith BLOCKED: {e}")
-                            msgs.append(ToolMessage(content=f"Security Block: {e}", tool_call_id=tc["id"]))
-                        except Exception as e:
-                            print(f"Error: {e}")
-                            msgs.append(ToolMessage(content=str(e), tool_call_id=tc["id"]))
-                    
-                    final = await llm_with_tools.ainvoke(msgs)
-                    print(f"Assistant: {final.content}")
-                else:
-                    print(f"Assistant: {ai_msg.content}")
-
-            except KeyboardInterrupt: break
-            except Exception as e: print(f"Loop error: {e}")
+                final = await llm.ainvoke(msgs)
+                console.print(f"[bold magenta]Assistant:[/bold magenta] {final.content}")
+            else:
+                console.print(f"[bold magenta]Assistant:[/bold magenta] {ai_msg.content}")
 
 if __name__ == "__main__":
     asyncio.run(main())

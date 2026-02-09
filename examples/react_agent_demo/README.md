@@ -22,7 +22,7 @@ The setup consists of:
 
 - Python 3.10+
 - An [OpenRouter](https://openrouter.ai/) API Key (for LLM inference)
-- Lilith binary built (run `cargo build` in `sentinel/`)
+- Lilith binary built (run `cargo build` in project root)
 
 ## Setup
 
@@ -33,8 +33,8 @@ The setup consists of:
 
 2.  Ensure Lilith is built:
     ```bash
-    cd ../../sentinel
-    cargo build
+    cd ../../
+    cargo build -p lilith-zero
     # Can use --release for speed, but debug is fine for demo
     ```
 

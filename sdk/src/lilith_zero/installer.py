@@ -31,7 +31,7 @@ from typing import Optional
 
 from .exceptions import LilithConfigError
 
-logger = logging.getLogger("Lilith_installer")
+_logger = logging.getLogger("lilith_zero.installer")
 
 # GitHub Release Information
 GITHUB_REPO = "peti12352/lilith-zero"
@@ -64,7 +64,7 @@ def _get_platform_asset_name() -> Optional[str]:
     
     return None
 
-def download_Lilith(interactive: bool = True) -> str:
+def download_lilith(interactive: bool = True) -> str:
     """
     Download and install the Lilith binary from GitHub Releases.
     
@@ -112,10 +112,10 @@ def download_Lilith(interactive: bool = True) -> str:
         if response and response != 'y':
             raise LilithConfigError("Installation declined by user.")
     else:
-        logger.info("Auto-downloading Lilith binary...")
+        _logger.info("Auto-downloading Lilith binary...")
 
     try:
-        logger.info(f"Downloading {download_url}...")
+        _logger.info(f"Downloading {download_url}...")
         # Rigour: add timeout to prevent indefinite hanging
         with urllib.request.urlopen(download_url, timeout=30.0) as response, open(target_path, 'wb') as out_file:
             shutil.copyfileobj(response, out_file)
@@ -125,11 +125,13 @@ def download_Lilith(interactive: bool = True) -> str:
             st = os.stat(target_path)
             os.chmod(target_path, st.st_mode | stat.S_IEXEC)
             
-        logger.info(f"Successfully installed Lilith to {target_path}")
+        _logger.info(f"Successfully installed Lilith to {target_path}")
         return target_path
     except Exception as e:
         # Provide config_key for consistent structured error reporting
         raise LilithConfigError(f"Failed to download Lilith binary: {e}", config_key="binary")
 
-# Backwards compatibility alias
-install_Lilith = download_Lilith
+# Aliases
+download_Lilith = download_lilith
+install_lilith = download_lilith
+install_Lilith = download_lilith
