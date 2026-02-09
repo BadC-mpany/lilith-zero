@@ -86,7 +86,7 @@ def _find_binary() -> str:
     if path_binary:
         return os.path.abspath(path_binary)
 
-    # 3. Standard User Install Location (~/.Lilith/bin)
+    # 3. Standard User Install Location (~/.lilith_zero/bin)
     user_bin = os.path.join(get_default_install_dir(), _BINARY_NAME)
     if os.path.exists(user_bin):
         return os.path.abspath(user_bin)
@@ -97,8 +97,7 @@ def _find_binary() -> str:
     try:
         current_dir = os.path.dirname(os.path.abspath(__file__))
         # Go up to repo root: sdk/sdk/client.py -> sdk/sdk -> sdk -> repo
-        repo_root = os.path.dirname(os.path.dirname(current_dir)) 
-        dev_binary = os.path.join(repo_root, "Lilith", "target", "release", _BINARY_NAME)
+        dev_binary = os.path.join(repo_root, "lilith-zero", "target", "release", _BINARY_NAME)
         if os.path.exists(dev_binary):
              _logger.debug(f"Found dev binary at {dev_binary}")
              return dev_binary

@@ -1,9 +1,8 @@
 # lilith_zero/__init__.py
-# Compatibility shim so "import lilith_zero" works when the repo root is on sys.path.
-# Re-export the real package located at lilith_zero/lilith_zero.
+# Root package initialization for the SDK.
 
-from .lilith_zero import (  # noqa: F401
-    Lilith,
+from .lilith_zero.client import Lilith
+from .lilith_zero.exceptions import (
     LilithError,
     LilithConfigError,
     LilithConnectionError,

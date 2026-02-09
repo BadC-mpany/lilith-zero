@@ -74,9 +74,9 @@ graph TD
 The Python SDK handles the entire lifecycle. It automatically downloads the correct `Lilith Zero` binary for your OS/Arch (Windows, Linux, macOS) from GitHub Releases if not found locally.
 
 ```bash
-uv add lilith-zero-sdk
+uv add lilith-zero
 # or
-pip install lilith-zero-sdk
+pip install lilith-zero
 ```
 
 No manual binary compilation is required. The SDK ensures strict hermetic execution.
