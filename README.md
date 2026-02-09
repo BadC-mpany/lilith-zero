@@ -116,18 +116,18 @@ When enabled, if a session acquires both `ACCESS_PRIVATE` and `UNTRUSTED_SOURCE`
 Lilith Zero integrates with standard agent architectures by wrapping the tool server invocation.
 
 ```python
-from lilith_zero import Lilith Zero, PolicyViolationError
+from lilith_zero import Lilith, PolicyViolationError
 
 async def main():
     # Automatic binary discovery and process management
-    async with Lilith Zero("python tools.py", policy="policy.yaml") as Lilith Zero:
+    async with Lilith("python tools.py", policy="policy.yaml") as az:
         try:
             # Authorized call
-            await Lilith Zero.call_tool("calculator", {"expression": "2+2"})
+            await az.call_tool("calculator", {"expression": "2+2"})
             
             # Blocked by Taint Tracking
-            data = await Lilith Zero.call_tool("read_customer_data", {"id": "123"})
-            await Lilith Zero.call_tool("export_analytics", {"data": data})
+            data = await az.call_tool("read_customer_data", {"id": "123"})
+            await az.call_tool("export_analytics", {"data": data})
             
         except PolicyViolationError as e:
             # Handle security interception
