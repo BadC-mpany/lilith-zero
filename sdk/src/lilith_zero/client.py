@@ -241,7 +241,6 @@ class Lilith:
 
         Raises:
             PolicyViolationError: If blocked by policy.
-            ToolExecutionError: If the tool itself fails.
             LilithProcessError: If communication fails.
         """
         payload = {"name": name, "arguments": arguments}

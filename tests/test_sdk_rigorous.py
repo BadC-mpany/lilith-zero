@@ -17,7 +17,6 @@ from lilith_zero import (
     LilithConnectionError, 
     LilithProcessError, 
     PolicyViolationError,
-    ToolExecutionError,
     client as lilith_client
 )
 

@@ -107,17 +107,3 @@ class PolicyViolationError(LilithError):
         super().__init__(message, context={"policy_details": policy_details or {}})
         self.policy_details: Dict[str, Any] = policy_details or {}
 
-class ToolExecutionError(LilithError):
-    """Raised when the upstream tool itself fails (not a policy block)."""
-    def __init__(
-        self, 
-        message: str, 
-        tool_name: Optional[str] = None, 
-        upstream_error: Any = None
-    ) -> None:
-        super().__init__(
-            message, 
-            context={"tool": tool_name, "upstream_error": upstream_error}
-        )
-        self.tool_name = tool_name
-        self.upstream_error = upstream_error
