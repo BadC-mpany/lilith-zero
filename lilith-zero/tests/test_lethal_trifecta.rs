@@ -1,12 +1,12 @@
 //! Integration tests for lethal trifecta protection feature
 
-use lilith-zero::config::Config;
-use lilith-zero::core::crypto::CryptoSigner;
-use lilith-zero::core::events::{SecurityDecision, SecurityEvent};
-use lilith-zero::core::models::{PolicyDefinition, PolicyRule, ResourceRule};
-use lilith-zero::core::security_core::SecurityCore;
-use lilith-zero::core::taint::Tainted;
-use lilith-zero::core::types::TaintedString;
+use lilith_zero::config::Config;
+use lilith_zero::engine_core::crypto::CryptoSigner;
+use lilith_zero::engine_core::events::{SecurityDecision, SecurityEvent};
+use lilith_zero::engine_core::models::{PolicyDefinition, PolicyRule, ResourceRule};
+use lilith_zero::engine_core::security_core::SecurityCore;
+use lilith_zero::engine_core::taint::Tainted;
+use lilith_zero::engine_core::types::TaintedString;
 use std::collections::HashMap;
 use std::sync::Arc;
 

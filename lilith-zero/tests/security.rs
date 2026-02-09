@@ -1,6 +1,6 @@
-use lilith-zero::core::constants::spotlight;
-use lilith-zero::core::crypto::CryptoSigner;
-use lilith-zero::utils::security::SecurityEngine;
+use lilith_zero::engine_core::constants::spotlight;
+use lilith_zero::engine_core::crypto::CryptoSigner;
+use lilith_zero::utils::security::SecurityEngine;
 
 #[test]
 fn test_spotlighting_structure() {
