@@ -6,6 +6,12 @@ on:
   pull_request:
     branches: [ "main" ]
   workflow_dispatch:
+    inputs:
+      force_security:
+        description: 'Force Rigorous Security Suite'
+        required: false
+        default: 'false'
+        type: boolean
 
 env:
   CARGO_TERM_COLOR: always
@@ -137,3 +143,76 @@ jobs:
                  tests/test_security_hardening.py \
                  tests/test_v0_1_0_compliance.py \
                  tests/test_robustness.py
+
+  # --------------------------------------------------------------------------
+  # Rigorous Security Suite (Trigger: [run-sec-rigorous] or Dispatch)
+  # --------------------------------------------------------------------------
+  security-rigorous:
+    name: Rigorous Security (E2E + Fuzz + Formal)
+    if: |
+      github.event_name == 'workflow_dispatch' || 
+      contains(github.event.head_commit.message, '[run-sec]') ||
+      contains(github.event.pull_request.title, '[run-sec]')
+    runs-on: ubuntu-latest
+    needs: [rust-core]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: lilith-zero -> target
+
+      # Supply Chain Security
+      - name: Cargo Audit (CVE Scan)
+        run: |
+          cargo install --locked cargo-audit
+          cargo audit
+        working-directory: lilith-zero
+
+      - name: Cargo Deny (License + Advisory)
+        run: |
+          cargo install --locked cargo-deny
+          cargo deny check advisories licenses
+        working-directory: lilith-zero
+
+      # Formal Verification
+      - name: Install Kani
+        run: |
+          cargo install --locked kani-verifier
+          cargo-kani setup
+
+      - name: Formal Verification (Kani)
+        run: cargo kani
+        working-directory: lilith-zero
+
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Download Rust Binary
+        uses: actions/download-artifact@v4
+        with:
+          name: lilith-zero-ubuntu-latest
+          path: lilith-zero/target/release
+
+      - name: Install SDK & Red Team Tools
+        run: |
+          uv pip install --system -e sdk/
+          uv pip install --system pytest pytest-asyncio pyjwt faker
+
+      - name: Run Red Team Attack Suite
+        env:
+          LILITH_ZERO_BINARY_PATH: lilith-zero/target/release/lilith-zero
+          RUST_LOG: debug
+        run: |
+          chmod +x $LILITH_ZERO_BINARY_PATH
+          pytest tests/red_team/test_attacks.py
