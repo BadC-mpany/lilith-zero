@@ -37,5 +37,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Python SDK
 - Example tools and policies
 
-[Unreleased]: https://github.com/peti12352/lilith-zero/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/peti12352/lilith-zero/releases/tag/v0.1.0
+[Unreleased]: https://github.com/BadC-mpany/lilith-zero/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/BadC-mpany/lilith-zero/releases/tag/v0.1.0

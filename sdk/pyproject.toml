@@ -29,4 +29,4 @@ classifiers = ["Programming Language :: Python :: 3"]
 dependencies = []
 
 [project.urls]
-Homepage = "https://github.com/peti12352/lilith-zero"
+Homepage = "https://github.com/BadC-mpany/lilith-zero"

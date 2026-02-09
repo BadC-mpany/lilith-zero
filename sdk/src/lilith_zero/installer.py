@@ -33,7 +33,7 @@ from .exceptions import LilithConfigError
 _logger = logging.getLogger("lilith_zero.installer")
 
 # GitHub Release Information
-GITHUB_REPO = "peti12352/lilith-zero"
+GITHUB_REPO = "BadC-mpany/lilith-zero"
 # If running mainly from pypi, we might default to "latest" or match the SDK version
 # For now, let's look for "latest" to reduce friction
 TAG_NAME = "latest"
