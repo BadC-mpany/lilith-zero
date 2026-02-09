@@ -1,0 +1,42 @@
+name: Publish Python SDK
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write  # MANDATORY for PyPI Trusted Publishing
+
+jobs:
+  pypi-publish:
+    name: Build & Publish to PyPI
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/lilith-zero
+    
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install build tools (uv)
+        uses: astral-sh/setup-uv@v5
+
+      - name: Build Package
+        # Build sdist and wheel
+        run: |
+          uv pip install build
+          python -m build sdk/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: sdk/dist/
+          # Trusted Publishing: No password/username needed if configured on PyPI.
+          # If using tokens, set password: ${{ secrets.PYPI_API_TOKEN }}
