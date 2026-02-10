@@ -6,6 +6,7 @@ edit_uri: edit/main/docs/
 
 # Configuration is inside docs/, so docs_dir is the current directory
 docs_dir: .
+site_dir: ../site
 
 theme:
   name: material
