@@ -217,6 +217,5 @@ jobs:
           RUST_LOG: debug
         run: |
           chmod +x $LILITH_ZERO_BINARY_PATH
-          source .venv/bin/activate
           # Run the rigorous security suite from new location
           uv run pytest sdk/tests/red_team/test_attacks.py

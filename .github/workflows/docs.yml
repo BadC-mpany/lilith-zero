@@ -34,7 +34,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          uv pip install --system -r docs/requirements.txt
+          uv pip install --system -r requirements.txt
           # Install SDK in editable mode so mkdocstrings can find it
           uv pip install --system -e sdk/
 

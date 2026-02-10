@@ -92,4 +92,5 @@ target/*
 .agent/*
 .gemini/
 .ruff_cache/
-docs/
+site/
+resources/
