@@ -1,0 +1,96 @@
+site_name: Lilith Zero
+site_url: https://BadC-mpany.github.io/lilith-zero/
+repo_url: https://github.com/BadC-mpany/lilith-zero
+repo_name: BadC-mpany/lilith-zero
+edit_uri: edit/main/docs/
+
+# Configuration is inside docs/, so docs_dir is the current directory
+docs_dir: .
+site_dir: ../site
+
+theme:
+  name: material
+  custom_dir: overrides
+  features:
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.sections
+    - navigation.expand
+    - navigation.path
+    - navigation.indexes
+    - toc.follow
+    - search.suggest
+    - search.highlight
+    - search.share
+    - content.code.copy
+    - content.action.edit
+    - content.tooltips
+  palette:
+    # Palette toggle for light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to dark mode
+
+    # Palette toggle for dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-night
+        name: Switch to light mode
+  font:
+    text: Roboto
+    code: Roboto Mono
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - tables
+  - attr_list
+  - md_in_html
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [../sdk/src]
+          options:
+            docstring_style: google
+  - minify:
+      minify_html: true
+
+nav:
+  - Home: index.md
+  - Getting Started:
+    - Installation: getting-started/installation.md
+    - Quickstart: getting-started/index.md
+  - Core Concepts:
+    - Architecture: concepts/architecture.md
+    - Security Model: concepts/security-model.md
+    - Process Isolation: concepts/process-isolation.md
+  - Developer Guides:
+    - Middleware Setup: guides/middleware-setup.md
+    - Writing Policies: guides/writing-policies.md
+    - Red Teaming: guides/red-teaming.md
+  - API Reference:
+    - Python SDK: reference/sdk.md
+    - CLI Reference: reference/cli.md
+  - Community:
+    - Contributing: contributing.md
