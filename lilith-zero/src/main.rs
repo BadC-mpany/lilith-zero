@@ -13,9 +13,10 @@
 // limitations under the License.
 
 // Main entry point for lilith-zero MCP Middleware
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use std::sync::Arc;
 use tracing::info;
+use lilith_zero::mcp::supervisor;
 
 use lilith_zero::config::Config;
 use lilith_zero::mcp::server::McpMiddleware;
@@ -36,6 +37,21 @@ struct Cli {
     /// Upstream tool arguments (e.g. "tools.py")
     #[arg(last = true)]
     upstream_args: Vec<String>,
+
+    /// Hidden internal subcommand
+    #[command(subcommand)]
+    command: Option<Commands>,
+}
+
+#[derive(Subcommand, Debug)]
+enum Commands {
+    #[command(hide = true, name = "__supervisor")]
+    __Supervisor {
+        #[arg(long)]
+        parent_pid: u32,
+        
+        cmd_args: Vec<String>,
+    }
 }
 
 #[tokio::main]
@@ -61,6 +77,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     if let Err(e) = init_tracing(&config) {
         eprintln!("Failed to init tracing: {}", e);
+    }
+
+    // Check for Supervisor Mode First
+    if let Some(Commands::__Supervisor { parent_pid, cmd_args }) = cli.command {
+        if cmd_args.is_empty() {
+             return Err("Missing command for supervisor".into());
+        }
+        let cmd = cmd_args[0].clone();
+        let args = cmd_args[1..].to_vec();
+        
+        // Run Supervisor Logic
+        supervisor::supervisor_main(parent_pid, cmd, args).await?;
+        return Ok(());
     }
 
     info!("Starting lilith-zero in Middleware Mode");

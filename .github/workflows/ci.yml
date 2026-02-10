@@ -97,7 +97,8 @@ jobs:
         run: mypy sdk/src/lilith_zero --strict --ignore-missing-imports
 
       - name: Hermetic Tests
-        run: pytest tests/test_sdk_hermetic.py
+      - name: Hermetic Tests
+        run: pytest sdk/tests/test_client.py
 
   # --------------------------------------------------------------------------
   # Bulletproof Integration Tests
@@ -132,6 +133,12 @@ jobs:
           uv pip install --system -e sdk/
           uv pip install --system pytest pytest-asyncio pyjwt
 
+      - name: Run Integration Tests
+        run: |
+          source .venv/bin/activate
+          # Point to new consolidated SDK tests
+          uv run pytest sdk/tests/
+
       - name: Run End-to-End Validation
         shell: bash
         env:
@@ -139,10 +146,7 @@ jobs:
           RUST_LOG: info
         run: |
           if [ "${{ runner.os }}" != "Windows" ]; then chmod +x $LILITH_ZERO_BINARY_PATH; fi
-          pytest tests/test_basic_flow.py \
-                 tests/test_security_hardening.py \
-                 tests/test_v0_1_0_compliance.py \
-                 tests/test_robustness.py
+          # This step is now empty as tests moved to 'Run Integration Tests'
 
   # --------------------------------------------------------------------------
   # Rigorous Security Suite (Trigger: [run-sec-rigorous] or Dispatch)
@@ -209,10 +213,12 @@ jobs:
           uv pip install --system -e sdk/
           uv pip install --system pytest pytest-asyncio pyjwt faker
 
-      - name: Run Red Team Attack Suite
+      - name: Run Red Team Attacks
         env:
           LILITH_ZERO_BINARY_PATH: lilith-zero/target/release/lilith-zero
           RUST_LOG: debug
         run: |
           chmod +x $LILITH_ZERO_BINARY_PATH
-          pytest tests/red_team/test_attacks.py
+          source .venv/bin/activate
+          # Run the rigorous security suite from new location
+          uv run pytest sdk/tests/red_team/test_attacks.py

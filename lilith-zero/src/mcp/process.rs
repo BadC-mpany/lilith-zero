@@ -53,9 +53,39 @@ impl ProcessSupervisor {
     ) -> Result<ProcessSpawnResult, crate::engine_core::errors::InterceptorError> {
         debug!("ProcessSupervisor: spawning '{}' with args {:?}", cmd, args);
 
+        // ------------------------------------------------------------------
+        // MACOS: Re-Exec Supervisor Pattern
+        // ------------------------------------------------------------------
+        // To avoid unsafe pre_exec hooks, we spawn lilith-zero itself in 
+        // __supervisor mode. It wraps the target command and monitors our PID.
+        #[cfg(target_os = "macos")]
+        let mut command = {
+            let self_exe = std::env::current_exe().map_err(|e| {
+                crate::engine_core::errors::InterceptorError::ProcessError(format!(
+                    "Failed to get current executable path: {}",
+                    e
+                ))
+            })?;
+            let pid = std::process::id();
+            let mut c = Command::new(self_exe);
+            c.arg("__supervisor");
+            c.arg("--parent-pid");
+            c.arg(pid.to_string());
+            c.arg("--");
+            c.arg(cmd);
+            c.args(args);
+            c
+        };
+
+        // ------------------------------------------------------------------
+        // OTHER OS: Direct Spawn
+        // ------------------------------------------------------------------
+        #[cfg(not(target_os = "macos"))]
         let mut command = Command::new(cmd);
+        #[cfg(not(target_os = "macos"))]
+        command.args(args); 
+
         command
-            .args(args)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
@@ -74,74 +104,9 @@ impl ProcessSupervisor {
                 Ok(())
             });
         }
+        
+        // MACOS Unsafe Block REMOVED - Replaced by Supervisor Wrapper above.
 
-        // ------------------------------------------------------------------
-        // MACOS: kqueue EVFILT_PROC for parent death monitoring
-        // ------------------------------------------------------------------
-        // macOS doesn't have PR_SET_PDEATHSIG. We use a pre_exec hook to spawn
-        // a monitoring thread that watches the parent PID via kqueue.
-        // If the parent dies, this thread sends SIGKILL to self.
-        #[cfg(target_os = "macos")]
-        unsafe {
-            command.pre_exec(|| {
-                // Capture parent PID before fork
-                let parent_pid = libc::getppid();
-
-                // Create kqueue
-                let kq = libc::kqueue();
-                if kq < 0 {
-                    return Err(std::io::Error::last_os_error());
-                }
-
-                // Register for NOTE_EXIT on parent process
-                let event = libc::kevent {
-                    ident: parent_pid as usize,
-                    filter: libc::EVFILT_PROC,
-                    flags: libc::EV_ADD | libc::EV_ENABLE | libc::EV_ONESHOT,
-                    fflags: libc::NOTE_EXIT,
-                    data: 0,
-                    udata: std::ptr::null_mut(),
-                };
-
-                let ret = libc::kevent(kq, &event, 1, std::ptr::null_mut(), 0, std::ptr::null());
-
-                if ret < 0 {
-                    libc::close(kq);
-                    return Err(std::io::Error::last_os_error());
-                }
-
-                // Spawn thread to wait for parent death
-                std::thread::spawn(move || {
-                    let mut events = [libc::kevent {
-                        ident: 0,
-                        filter: 0,
-                        flags: 0,
-                        fflags: 0,
-                        data: 0,
-                        udata: std::ptr::null_mut(),
-                    }];
-
-                    // Block until parent exits
-                    let n = libc::kevent(
-                        kq,
-                        std::ptr::null(),
-                        0,
-                        events.as_mut_ptr(),
-                        1,
-                        std::ptr::null(),
-                    );
-
-                    libc::close(kq);
-
-                    if n > 0 {
-                        // Parent died, terminate ourselves
-                        libc::kill(libc::getpid(), libc::SIGKILL);
-                    }
-                });
-
-                Ok(())
-            });
-        }
 
         // ------------------------------------------------------------------
         // WINDOWS: Job Objects (Part 1 - Creation)

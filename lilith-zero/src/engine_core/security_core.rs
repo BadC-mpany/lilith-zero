@@ -415,6 +415,12 @@ impl SecurityCore {
         if let Some(prefix) = pattern.strip_suffix("*") {
             return uri.starts_with(prefix);
         }
+        if let Some(suffix) = pattern.strip_prefix("*") {
+            return uri.ends_with(suffix);
+        }
+        if let Some((prefix, suffix)) = pattern.split_once('*') {
+            return uri.starts_with(prefix) && uri.ends_with(suffix);
+        }
         uri == pattern
     }
 }

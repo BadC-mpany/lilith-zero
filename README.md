@@ -85,7 +85,7 @@ No manual binary compilation is required. The SDK ensures strict hermetic execut
 Security boundaries are defined in a structured YAML schema.
 
 #### Lethal Trifecta Protection
-The "Lethal Trifecta" (Access Private Data + Access Untrusted Source + Exfiltration) is the most critical agentic risk. Lilith Zero can block this pattern **automatically**, without complex rule definitions.
+The "Lethal Trifecta" (Access Private Data + Access Untrusted Source + External Communication) is the most critical agentic risk. Lilith Zero can block this pattern **automatically**, without complex rule definitions.
 
 **Option A: Global Enforcement (Ops / CI)**
 Set `LILITH_ZERO_FORCE_LETHAL_TRIFECTA=true` in your environment. This overrides local policies and enforces protection globally.

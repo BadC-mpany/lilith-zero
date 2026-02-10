@@ -68,3 +68,7 @@ libc = "0.2"
 rusty-sandbox = "0.2"
 nix = { version = "0.31", features = ["signal"] }
 libc = "0.2"
+
+[dev-dependencies]
+assert_cmd = "2.1.2"
+predicates = "3.1.3"
