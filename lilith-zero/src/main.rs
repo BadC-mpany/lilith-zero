@@ -14,9 +14,9 @@
 
 // Main entry point for lilith-zero MCP Middleware
 use clap::{Parser, Subcommand};
+use lilith_zero::mcp::supervisor;
 use std::sync::Arc;
 use tracing::info;
-use lilith_zero::mcp::supervisor;
 
 use lilith_zero::config::Config;
 use lilith_zero::mcp::server::McpMiddleware;
@@ -49,9 +49,9 @@ enum Commands {
     __Supervisor {
         #[arg(long)]
         parent_pid: u32,
-        
+
         cmd_args: Vec<String>,
-    }
+    },
 }
 
 #[tokio::main]
@@ -80,13 +80,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Check for Supervisor Mode First
-    if let Some(Commands::__Supervisor { parent_pid, cmd_args }) = cli.command {
+    if let Some(Commands::__Supervisor {
+        parent_pid,
+        cmd_args,
+    }) = cli.command
+    {
         if cmd_args.is_empty() {
-             return Err("Missing command for supervisor".into());
+            return Err("Missing command for supervisor".into());
         }
         let cmd = cmd_args[0].clone();
         let args = cmd_args[1..].to_vec();
-        
+
         // Run Supervisor Logic
         supervisor::supervisor_main(parent_pid, cmd, args).await?;
         return Ok(());

@@ -26,7 +26,11 @@ use tokio::signal::unix::{signal, SignalKind};
 use libc;
 
 /// Entry point for the supervisor process.
-pub async fn supervisor_main(parent_pid: u32, cmd: String, args: Vec<String>) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn supervisor_main(
+    parent_pid: u32,
+    cmd: String,
+    args: Vec<String>,
+) -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(not(unix))]
     {
         let _ = parent_pid;
@@ -37,7 +41,10 @@ pub async fn supervisor_main(parent_pid: u32, cmd: String, args: Vec<String>) ->
 
     #[cfg(unix)]
     {
-        eprintln!("[supervisor] Starting for parent {} wrapping '{}'", parent_pid, cmd);
+        eprintln!(
+            "[supervisor] Starting for parent {} wrapping '{}'",
+            parent_pid, cmd
+        );
 
         // 1. Spawn the child process (Upstream Tool)
         let mut child = Command::new(&cmd)
@@ -50,7 +57,7 @@ pub async fn supervisor_main(parent_pid: u32, cmd: String, args: Vec<String>) ->
         // 2. Set up Parent Monitoring
         #[cfg(target_os = "macos")]
         let parent_died = monitor_parent_kqueue(parent_pid as i32)?;
-        
+
         #[cfg(not(target_os = "macos"))]
         let parent_died = std::future::pending::<()>();
 
@@ -63,7 +70,7 @@ pub async fn supervisor_main(parent_pid: u32, cmd: String, args: Vec<String>) ->
             _ = parent_died => {
                 eprintln!("[supervisor] Parent died! Killing child...");
                 let _ = child.kill().await;
-                std::process::exit(1); 
+                std::process::exit(1);
             }
             status = child.wait() => {
                 match status {
@@ -89,12 +96,14 @@ pub async fn supervisor_main(parent_pid: u32, cmd: String, args: Vec<String>) ->
 }
 
 #[cfg(target_os = "macos")]
-fn monitor_parent_kqueue(pid: i32) -> Result<impl std::future::Future<Output = ()>, std::io::Error> {
+fn monitor_parent_kqueue(
+    pid: i32,
+) -> Result<impl std::future::Future<Output = ()>, std::io::Error> {
     // We need to run kqueue in a way that is awaitable.
     // Since kqueue is blocking, we can spawn a blocking task.
-    
+
     // Safety: calling kqueue/kevent is safe in a fresh process.
-    
+
     let kq = unsafe { libc::kqueue() };
     if kq < 0 {
         return Err(std::io::Error::last_os_error());
@@ -111,9 +120,7 @@ fn monitor_parent_kqueue(pid: i32) -> Result<impl std::future::Future<Output = (
         }
     };
 
-    let ret = unsafe {
-        libc::kevent(kq, &event, 1, std::ptr::null_mut(), 0, std::ptr::null())
-    };
+    let ret = unsafe { libc::kevent(kq, &event, 1, std::ptr::null_mut(), 0, std::ptr::null()) };
 
     if ret < 0 {
         unsafe { libc::close(kq) };
@@ -144,12 +151,13 @@ fn monitor_parent_kqueue(pid: i32) -> Result<impl std::future::Future<Output = (
                     std::ptr::null(),
                 )
             };
-            
+
             unsafe { libc::close(kq) };
-            
+
             if n > 0 {
                 return; // Triggered
             }
-        }).await;
+        })
+        .await;
     })
 }
