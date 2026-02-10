@@ -134,7 +134,6 @@ jobs:
 
       - name: Run Integration Tests
         run: |
-          source .venv/bin/activate
           # Point to new consolidated SDK tests
           uv run pytest sdk/tests/
 
