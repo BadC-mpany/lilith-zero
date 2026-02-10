@@ -37,7 +37,7 @@ env.bak/
 venv.bak/
 lilith-zero_env/
 temp_env/
-docs/
+
 archive/
 
 # --- Sensitive Information ---
