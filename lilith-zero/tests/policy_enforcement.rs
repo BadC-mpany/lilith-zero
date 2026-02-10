@@ -6,7 +6,7 @@
 
 use lilith_zero::config::{Config, SecurityLevel};
 use lilith_zero::engine_core::crypto::CryptoSigner;
-use lilith_zero::engine_core::events::{SecurityDecision, SecurityEvent, OutputTransform};
+use lilith_zero::engine_core::events::{OutputTransform, SecurityDecision, SecurityEvent};
 use lilith_zero::engine_core::models::{PolicyDefinition, PolicyRule, ResourceRule};
 use lilith_zero::engine_core::security_core::SecurityCore;
 use lilith_zero::engine_core::taint::Tainted;
@@ -38,14 +38,16 @@ fn create_test_policy(protect_trifecta: bool) -> PolicyDefinition {
     static_rules.insert("send_email".to_string(), "ALLOW".to_string());
     static_rules.insert("post_api".to_string(), "ALLOW".to_string());
     static_rules.insert("conditional_access".to_string(), "ALLOW".to_string());
-    
+
     // Define rules that add specific taints
     let taint_rules = vec![
         ("read_db", "ACCESS_PRIVATE"),
         ("fetch_url", "UNTRUSTED_SOURCE"),
         ("send_email", "EXFILTRATION"),
         ("post_api", "EXFILTRATION"),
-    ].into_iter().map(|(tool, tag)| PolicyRule {
+    ]
+    .into_iter()
+    .map(|(tool, tag)| PolicyRule {
         tool: Some(tool.to_string()),
         tool_class: None,
         action: "ADD_TAINT".to_string(),
@@ -55,7 +57,8 @@ fn create_test_policy(protect_trifecta: bool) -> PolicyDefinition {
         error: None,
         pattern: None,
         exceptions: None,
-    }).collect();
+    })
+    .collect();
 
     PolicyDefinition {
         id: "test-policy".to_string(),
@@ -67,7 +70,7 @@ fn create_test_policy(protect_trifecta: bool) -> PolicyDefinition {
         created_at: None,
         resource_rules: vec![
             // Simplified for brevity, logic remains valid
-             ResourceRule {
+            ResourceRule {
                 uri_pattern: "file:///private/*".to_string(),
                 action: "ALLOW".to_string(),
                 exceptions: None,
@@ -90,7 +93,7 @@ fn create_test_policy(protect_trifecta: bool) -> PolicyDefinition {
 async fn test_fail_closed_no_policy() {
     let mut core = create_core_with_defaults(); // Default is BlockParams
     let token = core.session_id.clone();
-    
+
     // 1. Attempt Tool Call without Policy
     let event = create_security_event("any_tool", &token);
     let decision = core.evaluate(event).await;
@@ -110,7 +113,7 @@ async fn test_audit_only_allow() {
         security_level: SecurityLevel::AuditOnly,
         ..Config::default()
     };
-    
+
     let signer = CryptoSigner::try_new().unwrap();
     let mut core = SecurityCore::new(Arc::new(config), signer).unwrap();
     let token = core.session_id.clone();
@@ -121,7 +124,7 @@ async fn test_audit_only_allow() {
 
     // 2. Assert Allow
     match decision {
-        SecurityDecision::Allow | SecurityDecision::AllowWithTransforms { .. } => {},
+        SecurityDecision::Allow | SecurityDecision::AllowWithTransforms { .. } => {}
         _ => panic!("FAIL: Expected AuditOnly Allow, got {:?}", decision),
     }
 }
@@ -133,14 +136,18 @@ async fn test_lethal_trifecta_enforcement() {
     let token = core.session_id.clone();
 
     // 1. Access Private Data
-    core.evaluate(create_security_event("read_db", &token)).await;
+    core.evaluate(create_security_event("read_db", &token))
+        .await;
 
     // 2. Access Untrusted Source
-    core.evaluate(create_security_event("fetch_url", &token)).await;
+    core.evaluate(create_security_event("fetch_url", &token))
+        .await;
 
     // 3. Attempt Exfiltration (Should be BLOCKED)
-    let decision = core.evaluate(create_security_event("send_email", &token)).await;
-    
+    let decision = core
+        .evaluate(create_security_event("send_email", &token))
+        .await;
+
     match decision {
         SecurityDecision::Deny { reason, .. } => {
             assert!(reason.contains("lethal trifecta"));
@@ -156,15 +163,22 @@ async fn test_lethal_trifecta_disabled() {
     let token = core.session_id.clone();
 
     // 1. Trigger Trifecta Conditions
-    core.evaluate(create_security_event("read_db", &token)).await;
-    core.evaluate(create_security_event("fetch_url", &token)).await;
+    core.evaluate(create_security_event("read_db", &token))
+        .await;
+    core.evaluate(create_security_event("fetch_url", &token))
+        .await;
 
     // 2. Attempt Exfiltration (Should be ALLOWED)
-    let decision = core.evaluate(create_security_event("send_email", &token)).await;
+    let decision = core
+        .evaluate(create_security_event("send_email", &token))
+        .await;
 
     match decision {
-        SecurityDecision::Allow | SecurityDecision::AllowWithTransforms { .. } => {},
-        _ => panic!("FAIL: Expected Allow (Protection Disabled), got {:?}", decision),
+        SecurityDecision::Allow | SecurityDecision::AllowWithTransforms { .. } => {}
+        _ => panic!(
+            "FAIL: Expected Allow (Protection Disabled), got {:?}",
+            decision
+        ),
     }
 }
 
@@ -191,13 +205,18 @@ async fn test_resource_trifecta_contribution() {
     core.evaluate(http_event).await;
 
     // 3. Exfiltrate (Blocked)
-    let decision = core.evaluate(create_security_event("post_api", &token)).await;
+    let decision = core
+        .evaluate(create_security_event("post_api", &token))
+        .await;
 
     match decision {
         SecurityDecision::Deny { reason, .. } => {
             assert!(reason.contains("lethal trifecta"));
         }
-        _ => panic!("FAIL: Expected Mixed-Source Trifecta Block, got {:?}", decision),
+        _ => panic!(
+            "FAIL: Expected Mixed-Source Trifecta Block, got {:?}",
+            decision
+        ),
     }
 }
 
@@ -214,11 +233,10 @@ async fn test_argument_matching() {
     // We want to ALLOW "us-west-1" and BLOCK "us-east-1".
     // Since we added conditional_access to static rules as ALLOW, it's allowed by default.
     // We add a rule to BLOCK if region == "us-east-1".
-    let condition = lilith_zero::engine_core::models::LogicCondition::ToolArgsMatch(
-        serde_json::json!({
+    let condition =
+        lilith_zero::engine_core::models::LogicCondition::ToolArgsMatch(serde_json::json!({
             "region": "us-east-1"
-        })
-    );
+        }));
 
     let mut policy = create_test_policy(false);
     policy.taint_rules.push(PolicyRule {
@@ -232,7 +250,7 @@ async fn test_argument_matching() {
         pattern: Some(condition),
         exceptions: None,
     });
-    
+
     core.set_policy(policy);
     let token = core.session_id.clone();
 
@@ -244,10 +262,10 @@ async fn test_argument_matching() {
         arguments: args_good,
         session_token: Some(token.clone()),
     };
-    
+
     let decision = core.evaluate(event_good).await;
     match decision {
-        SecurityDecision::Allow | SecurityDecision::AllowWithTransforms { .. } => {},
+        SecurityDecision::Allow | SecurityDecision::AllowWithTransforms { .. } => {}
         _ => panic!("FAIL: Expected Allow for matching arg, got {:?}", decision),
     }
 
@@ -263,7 +281,10 @@ async fn test_argument_matching() {
     let decision_bad = core.evaluate(event_bad).await;
     match decision_bad {
         SecurityDecision::Deny { reason, .. } => assert!(reason.contains("Region blocked")),
-        _ => panic!("FAIL: Expected Deny for non-matching arg, got {:?}", decision_bad),
+        _ => panic!(
+            "FAIL: Expected Deny for non-matching arg, got {:?}",
+            decision_bad
+        ),
     }
 }
 
@@ -285,7 +306,7 @@ async fn test_wildcard_resource_access() {
         exceptions: None,
         taints_to_add: None,
     });
-    
+
     core.set_policy(policy);
     let token = core.session_id.clone();
 
@@ -296,7 +317,7 @@ async fn test_wildcard_resource_access() {
         session_token: Some(token.clone()),
     };
     match core.evaluate(event_log).await {
-        SecurityDecision::AllowWithTransforms { .. } => {},
+        SecurityDecision::AllowWithTransforms { .. } => {}
         d => panic!("FAIL: Expected Allow for *.log, got {:?}", d),
     }
 
@@ -317,11 +338,11 @@ async fn test_spotlighting_enabled() {
     let config = Config {
         security_level: SecurityLevel::BlockParams,
         ..Config::default()
-    }; 
+    };
     // Spotlighting is enabled by default in SecurityLevel Config, but let's be explicit if possible.
     // Config struct doesn't have direct spotlight bool, it's inferred from level.
     // BlockParams -> Spotlighting ON.
-    
+
     let signer = CryptoSigner::try_new().unwrap();
     let mut core = SecurityCore::new(Arc::new(config), signer).unwrap();
     core.set_policy(create_test_policy(false));
@@ -332,9 +353,13 @@ async fn test_spotlighting_enabled() {
     let decision = core.evaluate(event).await;
 
     match decision {
-        SecurityDecision::AllowWithTransforms { output_transforms, .. } => {
-            assert!(output_transforms.iter().any(|t| matches!(t, OutputTransform::Spotlight { .. })));
-        },
+        SecurityDecision::AllowWithTransforms {
+            output_transforms, ..
+        } => {
+            assert!(output_transforms
+                .iter()
+                .any(|t| matches!(t, OutputTransform::Spotlight { .. })));
+        }
         _ => panic!("FAIL: Expected Spotlighting, got {:?}", decision),
     }
 }
