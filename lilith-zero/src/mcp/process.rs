@@ -56,7 +56,7 @@ impl ProcessSupervisor {
         // ------------------------------------------------------------------
         // MACOS: Re-Exec Supervisor Pattern
         // ------------------------------------------------------------------
-        // To avoid unsafe pre_exec hooks, we spawn lilith-zero itself in 
+        // To avoid unsafe pre_exec hooks, we spawn lilith-zero itself in
         // __supervisor mode. It wraps the target command and monitors our PID.
         #[cfg(target_os = "macos")]
         let mut command = {
@@ -83,7 +83,7 @@ impl ProcessSupervisor {
         #[cfg(not(target_os = "macos"))]
         let mut command = Command::new(cmd);
         #[cfg(not(target_os = "macos"))]
-        command.args(args); 
+        command.args(args);
 
         command
             .stdin(Stdio::piped())
@@ -104,9 +104,8 @@ impl ProcessSupervisor {
                 Ok(())
             });
         }
-        
-        // MACOS Unsafe Block REMOVED - Replaced by Supervisor Wrapper above.
 
+        // MACOS Unsafe Block REMOVED - Replaced by Supervisor Wrapper above.
 
         // ------------------------------------------------------------------
         // WINDOWS: Job Objects (Part 1 - Creation)

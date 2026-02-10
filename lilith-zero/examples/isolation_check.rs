@@ -8,7 +8,7 @@ fn main() {
 
     // Check OS
     println!("OS: {}", std::env::consts::OS);
-    
+
     // Check Configured Primitives based on OS
     #[cfg(target_os = "windows")]
     {
