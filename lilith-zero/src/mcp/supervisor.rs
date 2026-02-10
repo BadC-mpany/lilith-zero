@@ -20,6 +20,10 @@
 //! invoking UB in a pre_exec hook.
 
 #[cfg(unix)]
+use std::process::Stdio;
+#[cfg(unix)]
+use tokio::process::Command;
+#[cfg(unix)]
 use tokio::signal::unix::{signal, SignalKind};
 
 #[cfg(target_os = "macos")]
