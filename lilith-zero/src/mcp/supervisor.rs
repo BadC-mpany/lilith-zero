@@ -113,15 +113,13 @@ fn monitor_parent_kqueue(
         return Err(std::io::Error::last_os_error());
     }
 
-    let event = unsafe {
-        libc::kevent {
-            ident: pid as usize,
-            filter: libc::EVFILT_PROC,
-            flags: libc::EV_ADD | libc::EV_ENABLE | libc::EV_ONESHOT,
-            fflags: libc::NOTE_EXIT,
-            data: 0,
-            udata: std::ptr::null_mut(),
-        }
+    let event = libc::kevent {
+        ident: pid as usize,
+        filter: libc::EVFILT_PROC,
+        flags: libc::EV_ADD | libc::EV_ENABLE | libc::EV_ONESHOT,
+        fflags: libc::NOTE_EXIT,
+        data: 0,
+        udata: std::ptr::null_mut(),
     };
 
     let ret = unsafe { libc::kevent(kq, &event, 1, std::ptr::null_mut(), 0, std::ptr::null()) };
@@ -133,16 +131,14 @@ fn monitor_parent_kqueue(
 
     Ok(async move {
         let _ = tokio::task::spawn_blocking(move || {
-            let mut events = unsafe {
-                [libc::kevent {
-                    ident: 0,
-                    filter: 0,
-                    flags: 0,
-                    fflags: 0,
-                    data: 0,
-                    udata: std::ptr::null_mut(),
-                }]
-            };
+            let mut events = [libc::kevent {
+                ident: 0,
+                filter: 0,
+                flags: 0,
+                fflags: 0,
+                data: 0,
+                udata: std::ptr::null_mut(),
+            }];
 
             // This blocks until parent exits
             let n = unsafe {
@@ -159,7 +155,7 @@ fn monitor_parent_kqueue(
             unsafe { libc::close(kq) };
 
             if n > 0 {
-                return; // Triggered
+                // Triggered
             }
         })
         .await;
