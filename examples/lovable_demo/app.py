@@ -339,7 +339,7 @@ with col_main:
                         log_step("Spawning supervisor in Restricted Token sandbox...")
                         log_step("Performing MCP handshake and session negotiation...")
                         log_step("Context-aware security session established.")
-                        log_step(f"Intercepting tool call: {tool}")
+                        log_step(f"Intercepting tool call: {tool}({json.dumps(args)})")
                         
                         start_time = datetime.now()
                         result = await client.call_tool(tool, args)
