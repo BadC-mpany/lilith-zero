@@ -71,7 +71,11 @@ fi
 
 # 5. Run Demo
 echo -e "\n[STEP 3/3] Launching Security Demo..."
-echo -e "\033[90mStarting interactive session...\033[0m\n"
 
-# Ensure we use the correct Python from venv to run the demo
-"$PYTHON_EXEC" "$SCRIPT_DIR/secure_vibe_demo.py"
+if [[ "$*" == *"--ui"* ]]; then
+    echo -e "\033[32mStarting Streamlit Dashboard...\033[0m\n"
+    "$PYTHON_EXEC" -m streamlit run "$SCRIPT_DIR/app.py"
+else
+    echo -e "\033[90mStarting interactive CLI session...\033[0m\n"
+    "$PYTHON_EXEC" "$SCRIPT_DIR/secure_vibe_demo.py"
+fi

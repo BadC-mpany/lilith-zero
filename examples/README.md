@@ -30,13 +30,15 @@ python examples/enterprise_demo/agent.py
 # 3. ReAct Agent (Requires LLM)
 python examples/react_agent_demo/agent.py
 
-# 4. Lovable AI Demo (Automated Setup)
+# 4. MCP Security Middleware Demo (Automated Setup)
 # On Windows:
-powershell examples/lovable_demo/run_demo.ps1
+powershell examples/lovable_demo/run_demo.ps1        # Launches CLI
+powershell examples/lovable_demo/run_demo.ps1 --ui   # Launches Streamlit Dashboard
 
 # On macOS/Linux:
 chmod +x examples/lovable_demo/run_demo.sh
-./examples/lovable_demo/run_demo.sh
+./examples/lovable_demo/run_demo.sh                  # Launches CLI
+./examples/lovable_demo/run_demo.sh --ui             # Launches Streamlit Dashboard
 ```
 
 ##  Key Concepts Demonstrated

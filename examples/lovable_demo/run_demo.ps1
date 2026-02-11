@@ -75,7 +75,13 @@ try {
 
 # 5. Run Demo
 Write-Host "`n[STEP 3/3] Launching Security Demo..." -ForegroundColor Cyan
-Write-Host "Starting interactive session...`n" -ForegroundColor Gray
 
-# Ensure we use the correct Python from venv to run the demo
-& $PythonExec (Join-Path $ScriptDir "secure_vibe_demo.py")
+$UseUI = $args -contains "--ui"
+
+if ($UseUI) {
+    Write-Host "Starting Streamlit Dashboard...`n" -ForegroundColor Green
+    & $PythonExec -m streamlit run (Join-Path $ScriptDir "app.py")
+} else {
+    Write-Host "Starting interactive CLI session...`n" -ForegroundColor Gray
+    & $PythonExec (Join-Path $ScriptDir "secure_vibe_demo.py")
+}
