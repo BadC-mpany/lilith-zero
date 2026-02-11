@@ -71,15 +71,22 @@ graph TD
 ## Implementation
 
 ### 1. Installation & Auto-Discovery
-The Python SDK handles the entire lifecycle. It automatically downloads the correct `Lilith Zero` binary for your OS/Arch (Windows, Linux, macOS) from GitHub Releases if not found locally.
+
+**Option A: Python SDK (Recommended)**
+The Python SDK handles the entire lifecycle. It automatically downloads the correct `Lilith Zero` binary for your OS/Arch from GitHub Releases.
 
 ```bash
-uv add lilith-zero
-# or
 pip install lilith-zero
 ```
 
-No manual binary compilation is required. The SDK ensures strict hermetic execution.
+**Option B: Shell Installer (Unix/macOS)**
+For CI/CD or non-Python environments, fetch the standalone Rust binary directly:
+
+```bash
+curl -sSfL https://raw.githubusercontent.com/BadC-mpany/lilith-zero/main/install.sh | sh
+```
+
+No manual binary compilation is required. The installer ensure strict platform-matching execution.
 
 ### 2. Policy Configuration (`policy.yaml`)
 Security boundaries are defined in a structured YAML schema.
