@@ -71,7 +71,7 @@ async def run_scenario(name: str, objective: str, tool: str, args: Dict[str, Any
     
     try:
         async with Lilith(
-            upstream=f"python {SERVER_SCRIPT}",
+            upstream=f"{sys.executable} {SERVER_SCRIPT}",
             policy=POLICY_FILE,
             binary=LILITH_BINARY
         ) as client:

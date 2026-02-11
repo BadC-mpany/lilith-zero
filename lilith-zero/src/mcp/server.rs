@@ -158,6 +158,25 @@ impl McpMiddleware {
                             warn!("Upstream process terminated (Exit Code: {:?}).", code);
                             self.upstream_stdin = None;
                             self.upstream_supervisor = None;
+                            
+                            // Fail all pending requests that were waiting for this upstream
+                            let ids_to_fail: Vec<String> = self.pending_decisions.keys().cloned().collect();
+                            for id_str in ids_to_fail {
+                                self.pending_decisions.remove(&id_str);
+                                // Parse the ID back to a JSON Value (could be string or number)
+                                let id_val = if let Ok(n) = id_str.parse::<i64>() {
+                                    serde_json::Value::Number(n.into())
+                                } else {
+                                    serde_json::Value::String(id_str)
+                                };
+                                
+                                let _ = self.write_error(
+                                    &mut downstream_writer,
+                                    id_val,
+                                    jsonrpc::ERROR_INTERNAL,
+                                    "Upstream process terminated before responding",
+                                ).await;
+                            }
                         }
                         None => {
                             // Upstream channel closed (shouldn't happen unless we drop sender)

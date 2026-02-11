@@ -614,4 +614,15 @@ class Lilith:
             return await asyncio.wait_for(future, timeout=30.0)
         except asyncio.TimeoutError as e:
             self._pending_requests.pop(req_id, None)
-            raise LilithError(f"Request '{method}' timed out after 30s") from e
+            
+            # Diagnostic: check if process is actually still alive
+            if self._process and self._process.returncode is not None:
+                err_msg = ""
+                # We can't easily read stderr here without potentially blocking or 
+                # competing with the background reader, but we can report the exit code.
+                raise LilithProcessError(
+                    f"Request '{method}' failed because Lilith process exited with code {self._process.returncode}",
+                    exit_code=self._process.returncode
+                ) from e
+                
+            raise LilithError(f"Request '{method}' timed out after 30s. Ensure upstream tool is responsive.") from e
