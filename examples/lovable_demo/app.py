@@ -50,7 +50,7 @@ def get_resource_stats():
 st.set_page_config(
     page_title="LILITH ZERO | SECURITY CONTROLLER",
     layout="wide",
-    initial_sidebar_state="collapsed"
+    initial_sidebar_state="expanded"
 )
 
 # --- ULTRA POLISHED DARK TERMINAL THEME ---
@@ -108,6 +108,36 @@ st.markdown("""
     .status-allowed { color: #33ff66; border-left-color: #33ff66; }
     .status-info { color: #33ccff; border-left-color: #33ccff; }
 
+    /* Sidebar Styling */
+    section[data-testid="stSidebar"] {
+        background-color: #080808 !important;
+        border-right: 1px solid #1a1a1a;
+    }
+    
+    .sidebar-intel-header {
+        font-size: 0.75rem;
+        color: #33ff66;
+        font-weight: 700;
+        letter-spacing: 1px;
+        margin-bottom: 15px;
+        border-bottom: 1px solid #33ff66;
+        padding-bottom: 5px;
+    }
+    
+    .sidebar-text {
+        font-size: 0.7rem;
+        color: #888;
+        line-height: 1.5;
+        margin-bottom: 10px;
+    }
+    
+    .intel-tag {
+        color: #ccc;
+        font-weight: bold;
+        display: block;
+        margin-top: 10px;
+    }
+
     .stButton>button {
         background-color: #000;
         color: #fff;
@@ -152,6 +182,43 @@ st.markdown("""
     }
 </style>
 """, unsafe_allow_html=True)
+
+# --- SIDEBAR: SECURITY INTELLIGENCE ---
+with st.sidebar:
+    st.markdown('<div class="sidebar-intel-header">SECURITY INTELLIGENCE [CORE_V0.1]</div>', unsafe_allow_html=True)
+    
+    with st.expander("🛡️ THREAT MITIGATION MATRIX", expanded=True):
+        st.markdown("""
+            <div class="sidebar-text">
+                <span class="intel-tag">[ RLS_BYPASS_PROTECTION ]</span>
+                Mitigates <b>CVE-2025-48757</b>. Traditional DB wrappers often expose raw SQL tools. Lilith enforces argument-level predicates (e.g., mandatory <code>COUNT</code> or <code>WHERE</code> clauses) at the protocol layer, preventing full-table dumps even if the agent is compromised.
+                
+                <span class="intel-tag">[ EXFILTRATION_CONTAINMENT ]</span>
+                Blocks the <b>"Lethal Trifecta"</b>: The combined pattern of Accessing Private Resources + Accessing Untrusted Contexts + Triggering Outbound Egress. Lilith tracks "Taint" across the session and auto-nullifies network sends if sensitive data was previously handled.
+                
+                <span class="intel-tag">[ PROTOCOL_HARDENING ]</span>
+                Prevents <b>JSON-RPC Smuggling</b>. By enforcing strictly framed <code>Content-Length</code> headers and deterministic parsing, Lilith eliminates desynchronization attacks common in generic stdio interposers.
+            </div>
+        """, unsafe_allow_html=True)
+
+    with st.expander("⚡ TECHNICAL SUPERIORITY"):
+        st.markdown("""
+            <div class="sidebar-text">
+                <span class="intel-tag">[ DETERMINISTIC_RUST_CORE ]</span>
+                Engineered in <b>Rust</b> for memory safety and zero non-determinism. Unlike probabilistic LLM-based monitors, Lilith's policy engine is a formal state machine that fails-closed by default.
+                
+                <span class="intel-tag">[ ZERO_COPY_ARCHITECTURE ]</span>
+                Achieves <b>sub-millisecond latency (<0.7ms)</b>. Reference-based internal message passing ensures security interposition doesn't bottleneck high-frequency agent tool calls.
+                
+                <span class="intel-tag">[ OS_LEVEL_SANDBOXING ]</span>
+                Implements <b>Tier-2 Restricted Tokens</b> and Windows Job Objects (or Unix Cgroups). Upstream processes are hermetically sealed, preventing resource exhaustion and lateral movement.
+                
+                <span class="intel-tag">[ CRYPTOGRAPHIC_AUDIT ]</span>
+                Every decision is emitted as an <b>HMAC-SHA256 signed log</b>. This provides non-repudiation, ensuring audit trails cannot be tampered with by an escalated agent process.
+            </div>
+        """, unsafe_allow_html=True)
+    
+    st.markdown("<br><br>", unsafe_allow_html=True)
 
 # Main Application Frame
 st.markdown("""
