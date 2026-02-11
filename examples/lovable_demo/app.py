@@ -64,8 +64,12 @@ st.markdown("""
         font-family: 'JetBrains Mono', monospace;
     }
     
-    .stMarkdown, .stText, p, h1, h2, h3, h4, span, label, .stRadio label {
+    .stMarkdown, .stText, p, h1, h2, h3, h4, label, .stRadio label {
         font-family: 'JetBrains Mono', monospace !important;
+    }
+    /* Explicitly exclude Streamlit icons from global font override */
+    [data-testid="stIcon"], .main-svg, span:has(svg), .st-emotion-cache-1vt4y6f {
+        font-family: inherit !important;
     }
 
     header[data-testid="stHeader"] {
@@ -157,7 +161,7 @@ st.markdown("""
         border-right: 1px solid #1a1a1a;
     }
     section[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] h2 {
-        color: #33ff66;
+        color: #ff3333;
         font-size: 1rem;
         letter-spacing: 1px;
         border-bottom: 1px solid #222;
@@ -170,9 +174,10 @@ st.markdown("""
         padding: 12px;
         margin-bottom: 15px;
         border-radius: 4px;
+        border-left: 2px solid #ff3333; /* Red indicator */
     }
     .sec-tag {
-        color: #ffaa00;
+        color: #ff3333;
         font-size: 0.6rem;
         font-weight: bold;
         text-transform: uppercase;
@@ -218,21 +223,21 @@ with st.sidebar:
     
     st.markdown("""
         <div class="sec-card">
-            <span class="sec-tag" style="color: #33ccff;">TECH_STRENGTH: RUST_RUNTIME</span>
+            <span class="sec-tag">TECH_STRENGTH: RUST_RUNTIME</span>
             <div class="sec-desc">
                 <b>Language & Framework Agnostic</b>. Unlike code-level libraries, Lilith is a standalone binary that interposes at the transport layer, making it impossible for the agent to bypass security by subverting the runtime.
             </div>
         </div>
 
         <div class="sec-card">
-            <span class="sec-tag" style="color: #33ccff;">TECH_STRENGTH: FAIL_CLOSED</span>
+            <span class="sec-tag">TECH_STRENGTH: FAIL_CLOSED</span>
             <div class="sec-desc">
                 <b>Zero-Trust Defaults</b>. If a policy is missing, corrupted, or if an evaluation error occurs, Lilith terminates the upstream process immediately, preventing unprotected tool usage.
             </div>
         </div>
 
         <div class="sec-card">
-            <span class="sec-tag" style="color: #33ccff;">TECH_STRENGTH: HMAC_SIGNING</span>
+            <span class="sec-tag">TECH_STRENGTH: HMAC_SIGNING</span>
             <div class="sec-desc">
                 <b>Non-Repudiation</b>. Every security decision and log entry is cryptographically signed using HMAC-SHA256, ensuring that audit trails remain intact and verifiable.
             </div>
@@ -243,11 +248,11 @@ with st.sidebar:
 st.markdown("""
     <div style='display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 40px;'>
         <div>
-            <h1 style='margin: 0; font-weight: 700; font-size: 1.5rem; letter-spacing: -1px;'>LILITH<span style='color: #33ff66;'>ZERO</span></h1>
+            <h1 style='margin: 0; font-weight: 700; font-size: 1.5rem; letter-spacing: -1px;'>LILITH<span style='color: #ff3333;'>ZERO</span></h1>
             <p style='color: #555; font-size: 0.7rem; margin: 0;'>SECURE MCP MIDDLEWARE // ARCHITECTURAL VERSION 0.1.1</p>
         </div>
         <div style='text-align: right;'>
-            <p style='color: #33ff66; font-size: 0.7rem; margin: 0;'>[ SYSTEM: ONLINE ]</p>
+            <p style='color: #ff3333; font-size: 0.7rem; margin: 0;'>[ SYSTEM: ONLINE ]</p>
             <p style='color: #555; font-size: 0.7rem; margin: 0;'>ENFORCEMENT MODE: ACTIVE</p>
         </div>
     </div>
@@ -256,7 +261,7 @@ st.markdown("""
 col_config, col_main = st.columns([1, 2], gap="large")
 
 with col_config:
-    st.markdown('<div class="terminal-header">Routing & Policy</div>', unsafe_allow_html=True)
+    st.markdown('<div class="terminal-header" style="color: #ff3333">Routing & Policy</div>', unsafe_allow_html=True)
     
     if os.path.exists(POLICY_PATH):
         with open(POLICY_PATH, "r") as f:
@@ -280,7 +285,7 @@ with col_config:
     """, unsafe_allow_html=True)
 
 with col_main:
-    st.markdown('<div class="terminal-header">Security Controller // Live Intercept</div>', unsafe_allow_html=True)
+    st.markdown('<div class="terminal-header" style="color: #ff3333">Security Controller // Live Intercept</div>', unsafe_allow_html=True)
     
     scenario = st.radio(
         "SELECT OPERATIONAL CONTEXT:",
