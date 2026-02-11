@@ -617,7 +617,6 @@ class Lilith:
             
             # Diagnostic: check if process is actually still alive
             if self._process and self._process.returncode is not None:
-                err_msg = ""
                 # We can't easily read stderr here without potentially blocking or 
                 # competing with the background reader, but we can report the exit code.
                 raise LilithProcessError(
