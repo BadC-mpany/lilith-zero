@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.10"
 
 [[package]]
@@ -333,7 +333,7 @@ wheels = [
 
 [[package]]
 name = "langchain-core"
-version = "1.2.8"
+version = "1.2.11"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "jsonpatch" },
@@ -345,9 +345,28 @@ dependencies = [
     { name = "typing-extensions" },
     { name = "uuid-utils" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/75/cc/55bf57b83cbc164cbf84cbf0c5e4fb640d673546af131db70797b97b125b/langchain_core-1.2.8.tar.gz", hash = "sha256:76d933c3f4cfd8484d8131c39bf25f562e2df4d0d5fe3218e05ff773210713b6", size = 814506, upload-time = "2026-02-02T15:35:33.056Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/12/17/1943cedfc118e04b8128e4c3e1dbf0fa0ea58eefddbb6198cfd699d19f01/langchain_core-1.2.11.tar.gz", hash = "sha256:f164bb36602dd74a3a50c1334fca75309ad5ed95767acdfdbb9fa95ce28a1e01", size = 831211, upload-time = "2026-02-10T20:35:28.35Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/cc/d4/37fef9639b701c1fb1eea9e68447b72d86852ca3dc3253cdfd9c0afe228d/langchain_core-1.2.8-py3-none-any.whl", hash = "sha256:c732301272d63cfbcd75d114540257678627878f11b87046241272a25ba12ea7", size = 495753, upload-time = "2026-02-02T15:35:31.284Z" },
+    { url = "https://files.pythonhosted.org/packages/10/30/1f80e3fc674353cad975ed5294353d42512535d2094ef032c06454c2c873/langchain_core-1.2.11-py3-none-any.whl", hash = "sha256:ae11ceb8dda60d0b9d09e763116e592f1683327c17be5b715f350fd29aee65d3", size = 500062, upload-time = "2026-02-10T20:35:26.698Z" },
+]
+
+[[package]]
+name = "langchain-lilith-demo"
+version = "0.1.0"
+source = { virtual = "." }
+dependencies = [
+    { name = "langchain" },
+    { name = "langchain-openai" },
+    { name = "lilith-zero" },
+    { name = "python-dotenv" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "langchain" },
+    { name = "langchain-openai" },
+    { name = "lilith-zero", editable = "../../sdk" },
+    { name = "python-dotenv" },
 ]
 
 [[package]]
@@ -362,25 +381,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/38/b7/30bfc4d1b658a9ee524bcce3b0b2ec9c45a11c853a13c4f0c9da9882784b/langchain_openai-1.1.7.tar.gz", hash = "sha256:f5ec31961ed24777548b63a5fe313548bc6e0eb9730d6552b8c6418765254c81", size = 1039134, upload-time = "2026-01-07T19:44:59.728Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/64/a1/50e7596aca775d8c3883eceeaf47489fac26c57c1abe243c00174f715a8a/langchain_openai-1.1.7-py3-none-any.whl", hash = "sha256:34e9cd686aac1a120d6472804422792bf8080a2103b5d21ee450c9e42d053815", size = 84753, upload-time = "2026-01-07T19:44:58.629Z" },
-]
-
-[[package]]
-name = "langchain-sentinel-demo"
-version = "0.1.0"
-source = { virtual = "." }
-dependencies = [
-    { name = "langchain" },
-    { name = "langchain-openai" },
-    { name = "python-dotenv" },
-    { name = "sentinel-sdk" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "langchain" },
-    { name = "langchain-openai" },
-    { name = "python-dotenv" },
-    { name = "sentinel-sdk", editable = "../../sentinel_sdk" },
 ]
 
 [[package]]
@@ -458,6 +458,11 @@ sdist = { url = "https://files.pythonhosted.org/packages/8e/15/35f49a0b2efd33002
 wheels = [
     { url = "https://files.pythonhosted.org/packages/cd/2d/2389e65522ebeab17489df72b4fabcfc661fced8af178aa6c2bc3b9afff5/langsmith-0.6.8-py3-none-any.whl", hash = "sha256:d17da18aeef15fdb4c3baec348bad64056591d785629cd5ba4846fd93cab166b", size = 319165, upload-time = "2026-02-02T23:20:00.456Z" },
 ]
+
+[[package]]
+name = "lilith-zero"
+version = "0.1.1"
+source = { editable = "../../sdk" }
 
 [[package]]
 name = "openai"
@@ -977,11 +982,6 @@ sdist = { url = "https://files.pythonhosted.org/packages/f3/61/d7545dafb7ac2230c
 wheels = [
     { url = "https://files.pythonhosted.org/packages/3f/51/d4db610ef29373b879047326cbf6fa98b6c1969d6f6dc423279de2b1be2c/requests_toolbelt-1.0.0-py2.py3-none-any.whl", hash = "sha256:cccfdd665f0a24fcf4726e690f65639d272bb0637b9b92dfd91a5568ccf6bd06", size = 54481, upload-time = "2023-05-01T04:11:28.427Z" },
 ]
-
-[[package]]
-name = "sentinel-sdk"
-version = "0.1.0"
-source = { editable = "../../sentinel_sdk" }
 
 [[package]]
 name = "sniffio"
