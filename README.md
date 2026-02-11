@@ -83,7 +83,7 @@ pip install lilith-zero
 For CI/CD or non-Python environments, fetch the standalone Rust binary directly:
 
 ```bash
-curl -sSfL https://badcompany.xyz/lilith.sh | sh
+curl -sSfL https://badcompany.xyz/lilith-zero/install.sh | sh
 ```
 
 No manual binary compilation is required. The installer ensure strict platform-matching execution.
