@@ -80,13 +80,16 @@ pip install lilith-zero
 ```
 
 **Option B: Shell Installer (Unix/macOS)**
-For CI/CD or non-Python environments, fetch the standalone Rust binary directly:
-
 ```bash
-curl -sSfL https://badcompany.xyz/lilith-zero/install.sh | sh
+curl -sSfL badcompany.xyz/lilith-zero/install.sh | sh
 ```
 
-No manual binary compilation is required. The installer ensure strict platform-matching execution.
+**Option C: PowerShell Installer (Windows)**
+```powershell
+irm badcompany.xyz/lilith-zero/install.ps1 | iex
+```
+
+No manual binary compilation is required. The installers ensure strict platform-matching execution.
 
 ### 2. Policy Configuration (`policy.yaml`)
 Security boundaries are defined in a structured YAML schema.
