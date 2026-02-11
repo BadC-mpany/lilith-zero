@@ -26,7 +26,6 @@ SERVER_SCRIPT = os.path.join(os.path.dirname(__file__), "vulnerable_server.py")
 # Page Config
 st.set_page_config(
     page_title="Lilith Zero | MCP Security Controller",
-    page_icon="🛡️",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -55,7 +54,7 @@ st.markdown("""
 
 # Sidebar: Policy Management
 with st.sidebar:
-    st.title("🛡️ Controller")
+    st.title("Controller")
     st.subheader("Security Policy")
     
     if os.path.exists(POLICY_PATH):
@@ -99,18 +98,18 @@ with col1:
     
     async def run_lilith_op(tool_name, tool_args, expect_block=True):
         status_placeholder = st.empty()
-        log_placeholder = st.empty()
         
         status_placeholder.info(f"Initiating {tool_name}...")
         
         try:
+            # Use sys.executable to ensure we use the same environment's python
             async with Lilith(
-                upstream=f"python {SERVER_SCRIPT}",
+                upstream=f"{sys.executable} {SERVER_SCRIPT}",
                 policy=POLICY_PATH,
                 binary=LILITH_BINARY
             ) as client:
                 
-                status_placeholder.warning(f"Handshake established. Lilith Middleware active.")
+                status_placeholder.warning("Handshake established. Lilith Middleware active.")
                 
                 try:
                     start_time = datetime.now()
@@ -130,11 +129,12 @@ with col1:
                     status_placeholder.error("SECURITY ENFORCED: REQUEST DENIED")
                     st.write("### Violation Report")
                     st.error(f"**Reason:** {str(e)}")
-                    st.warning("**Intervention:** Blocked attempt to bypass database isolation rules.")
+                    st.warning("Intervention: Blocked attempt to bypass database isolation rules.")
                 except Exception as e:
-                    st.error(f"Execution Error: {str(e)}")
+                    st.error(f"Execution Error: {repr(e)}")
         except Exception as e:
-            st.error(f"Middleware Error: {str(e)}")
+            st.error(f"Middleware Error: {repr(e)}")
+            st.info(f"Binary Path: {LILITH_BINARY}")
             st.info("Ensure the Lilith binary is built: `cargo build --release`")
 
     if st.button("Execute Request", type="primary"):
@@ -142,13 +142,20 @@ with col1:
             st.error("CRITICAL: Exposing direct access (No Middleware)")
             st.write("### Unprotected Result")
             st.code("[{'id': 1, 'username': 'admin', 'api_key': 'sk_live_88374'}, ...]", language="json")
-            st.critical("Impact: RLS Bypass Successful. Full DB Dump Exfiltrated.")
-        elif scenario == "Protected: SQL Containment (RLS)":
-            asyncio.run(run_lilith_op("execute_sql", {"query": "SELECT * FROM users"}))
-        elif scenario == "Protected: Network Egress Control":
-            asyncio.run(run_lilith_op("fetch_url", {"url": "http://evil-competitor.com/leak"}))
-        elif scenario == "Protected: Valid Intelligence Aggregate":
-            asyncio.run(run_lilith_op("execute_sql", {"query": "SELECT COUNT(*) FROM users"}, expect_block=False))
+            st.error("Impact: RLS Bypass Successful. Full DB Dump Exfiltrated.")
+        else:
+            # Helper to run async in Streamlit
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
+            if scenario == "Protected: SQL Containment (RLS)":
+                loop.run_until_complete(run_lilith_op("execute_sql", {"query": "SELECT * FROM users"}))
+            elif scenario == "Protected: Network Egress Control":
+                loop.run_until_complete(run_lilith_op("fetch_url", {"url": "http://evil-competitor.com/leak"}))
+            elif scenario == "Protected: Valid Intelligence Aggregate":
+                loop.run_until_complete(run_lilith_op("execute_sql", {"query": "SELECT COUNT(*) FROM users"}, expect_block=False))
+            
+            loop.close()
 
 with col2:
     st.subheader("Middleware Audit Trail")
@@ -164,9 +171,9 @@ with col2:
     st.divider()
     st.subheader("Architectural Insight")
     st.write("""
-    Lilith Zero differs from standard proxies by performing **deep inspection** of the JSON-RPC stream:
+    Lilith Zero differs from standard proxies by performing deep inspection of the JSON-RPC stream:
     - **Spotlighting**: Injects randomized tokens to prevent LLM data exfiltration.
-    - **Process Tiering**: Forces upstream tools into Restricted Tokens (Tier 2 isolation).
+    - **Process Supervision**: Forces upstream tools into isolated supervision.
     - **Deterministic Logic**: Policy evaluation happens in sub-millisecond Rust core.
     """)
     
