@@ -1,0 +1,32 @@
+graph LR
+    subgraph "Untrusted Zone"
+        A[Lovable / AI Agent]
+        style A fill:#ffcccc,stroke:#d00,stroke-width:2px
+    end
+
+    subgraph "Lilith Zero Security Layer"
+        LZ[Lilith Zero Middleware]
+        P[Policy Engine]
+        N[Network Firewall]
+        
+        A -->|MCP JSON-RPC| LZ
+        LZ <--> P
+        LZ <--> N
+        style LZ fill:#ccffcc,stroke:#090,stroke-width:2px
+    end
+
+    subgraph "Protected Infrastructure"
+        DB[(Production DB)]
+        API[Internal API]
+        FS[Filesystem]
+        
+        LZ -->|Filtered Request| DB
+        LZ -->|Safe Request| API
+        LZ -->|Read-Only Access| FS
+        style DB fill:#eee,stroke:#333
+        style API fill:#eee,stroke:#333
+        style FS fill:#eee,stroke:#333
+    end
+
+    A --x|"SELECT * (Blocked)"| DB
+    A --x|"curl malicious.com (Blocked)"| API

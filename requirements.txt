@@ -1,4 +1,20 @@
+# Lilith Zero - Consolidated Development Requirements
+
+# Core SDK & Testing
+-e ./sdk
+pytest
+pytest-asyncio
+pyjwt
+faker
+
+# Documentation
 mkdocs-material
 mkdocstrings[python]
 mkdocs-minify-plugin
-black
+
+# Examples & Demos
+langchain
+langchain-openai
+python-dotenv
+openai
+mcp[cli]

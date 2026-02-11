@@ -1,0 +1,39 @@
+id: "mcp-security-policy"
+customerId: "enterprise-user"
+name: "MCP Security Middleware Demo"
+version: 1
+
+staticRules:
+  execute_sql: "ALLOW"
+  fetch_url: "ALLOW"
+
+taintRules:
+  # Anti-RLS Bypass: Block unauthorized access to 'users' table unless aggregated.
+  - tool: "execute_sql"
+    action: "BLOCK"
+    pattern:
+      and:
+        - or:
+            - tool_args_match:
+                query: "*users*"
+            - tool_args_match:
+                query: "*USERS*"
+        - not:
+            or:
+              - tool_args_match:
+                  query: "*count*"
+              - tool_args_match:
+                  query: "*COUNT*"
+    error: "Security Policy Violation: Direct access to 'users' table is restricted. Use approved aggregation methods."
+
+  # Egress Control: Block URLs not matching trusted domain
+  - tool: "fetch_url"
+    action: "BLOCK"
+    pattern:
+      not:
+        tool_args_match:
+          url: "*analytics.internal.corp*"
+    error: "Network Security Violation: Connection to untrusted domain blocked."
+
+resourceRules: []
+protectLethalTrifecta: true

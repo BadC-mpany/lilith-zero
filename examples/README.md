@@ -8,6 +8,7 @@ Curated examples of the Lilith Security Middleware in action.
 - **`enterprise_demo/`**: Comprehensive feature showcase. Demonstrates **Taint Tracking (Induction/Enforcement/Removal)**, **Logic Rules with Exceptions**, **Resource Access Control**, and **Resource Discovery**.
 - **`react_agent_demo/`**: Autonomous Agent loop. Shows Lilith guarding a ReAct reasoning loop using LLMs.
 - **`langchain_agent/`**: Framework integration. Demonstrates wrapping LangChain tools with Lilith security.
+- **`lovable_demo/`**: "Vibe Coding" Protection. Secures Lovable-generated apps against RLS bypass and data exfiltration.
 
 ##  Requirements
 
@@ -28,6 +29,14 @@ python examples/enterprise_demo/agent.py
 
 # 3. ReAct Agent (Requires LLM)
 python examples/react_agent_demo/agent.py
+
+# 4. Lovable AI Demo (Automated Setup)
+# On Windows:
+powershell examples/lovable_demo/run_demo.ps1
+
+# On macOS/Linux:
+chmod +x examples/lovable_demo/run_demo.sh
+./examples/lovable_demo/run_demo.sh
 ```
 
 ##  Key Concepts Demonstrated

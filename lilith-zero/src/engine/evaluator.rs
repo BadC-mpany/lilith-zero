@@ -68,6 +68,11 @@ impl PolicyEvaluator {
 
         for rule in &policy.taint_rules {
             if let Some(pattern) = &rule.pattern {
+                // BUG FIX: Ensure the rule actually applies to this tool before evaluating the pattern
+                if !rule.matches_tool(tool_name, &augmented_classes) {
+                    continue;
+                }
+
                 let pattern_matched = PatternMatcher::evaluate_pattern_with_args(
                     pattern,
                     session_history,

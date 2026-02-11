@@ -15,16 +15,19 @@ We use standard `cargo` workflows.
 cargo build
 ```
 
-### 2. Python Environment (SDK)
+### 2. Python Environment
 
-We use `uv` for Python dependency management.
+We use a single consolidated virtual environment for the SDK, examples, and documentation.
 
 ```bash
-# Install dependencies
-uv pip install -e "sdk[dev]"
+# Create the environment
+uv venv
+
+# Install all dependencies (SDK, Docs, Examples)
+uv pip install -r requirements.txt
 ```
 
-### 3. Running Tests
+## Running Tests
 
 We have a rigorous test suite.
 
@@ -38,16 +41,13 @@ uv run pytest sdk/tests/
 
 ## Documentation
 
-The documentation (this site) is built with [MkDocs Material](https://squidfunk.github.io/mkdocs-material/).
+The documentation is built with [MkDocs Material](https://squidfunk.github.io/mkdocs-material/).
 
 To run the documentation server locally:
 
 ```bash
-# Install docs dependencies
-uv pip install -r docs/requirements.txt
-
-# Run the server
-mkdocs serve
+# Run the server (using the consolidated environment)
+uv run mkdocs serve --config-file docs/mkdocs.yml
 ```
 
 The site will be available at `http://127.0.0.1:8000`.
