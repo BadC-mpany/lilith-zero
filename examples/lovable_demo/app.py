@@ -108,36 +108,6 @@ st.markdown("""
     .status-allowed { color: #33ff66; border-left-color: #33ff66; }
     .status-info { color: #33ccff; border-left-color: #33ccff; }
 
-    /* Sidebar Styling */
-    section[data-testid="stSidebar"] {
-        background-color: #080808 !important;
-        border-right: 1px solid #1a1a1a;
-    }
-    
-    .sidebar-intel-header {
-        font-size: 0.75rem;
-        color: #33ff66;
-        font-weight: 700;
-        letter-spacing: 1px;
-        margin-bottom: 15px;
-        border-bottom: 1px solid #33ff66;
-        padding-bottom: 5px;
-    }
-    
-    .sidebar-text {
-        font-size: 0.7rem;
-        color: #888;
-        line-height: 1.5;
-        margin-bottom: 10px;
-    }
-    
-    .intel-tag {
-        color: #ccc;
-        font-weight: bold;
-        display: block;
-        margin-top: 10px;
-    }
-
     .stButton>button {
         background-color: #000;
         color: #fff;
@@ -180,45 +150,94 @@ st.markdown("""
         color: #33ff66;
         font-weight: bold;
     }
+
+    /* Sidebar Styling */
+    section[data-testid="stSidebar"] {
+        background-color: #080808 !important;
+        border-right: 1px solid #1a1a1a;
+    }
+    section[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] h2 {
+        color: #33ff66;
+        font-size: 1rem;
+        letter-spacing: 1px;
+        border-bottom: 1px solid #222;
+        padding-bottom: 10px;
+        margin-top: 30px;
+    }
+    .sec-card {
+        background: #0d0d0d;
+        border: 1px solid #1a1a1a;
+        padding: 12px;
+        margin-bottom: 15px;
+        border-radius: 4px;
+    }
+    .sec-tag {
+        color: #ffaa00;
+        font-size: 0.6rem;
+        font-weight: bold;
+        text-transform: uppercase;
+        margin-bottom: 5px;
+        display: block;
+    }
+    .sec-desc {
+        font-size: 0.75rem;
+        color: #888;
+        line-height: 1.4;
+    }
 </style>
 """, unsafe_allow_html=True)
 
-# --- SIDEBAR: SECURITY INTELLIGENCE ---
+# --- SIDEBAR INTERFACE ---
 with st.sidebar:
-    st.markdown('<div class="sidebar-intel-header">SECURITY INTELLIGENCE [CORE_V0.1]</div>', unsafe_allow_html=True)
+    st.markdown("## SECURITY ADVISORY")
     
-    with st.expander("🛡️ THREAT MITIGATION MATRIX", expanded=True):
-        st.markdown("""
-            <div class="sidebar-text">
-                <span class="intel-tag">[ RLS_BYPASS_PROTECTION ]</span>
-                Mitigates <b>CVE-2025-48757</b>. Traditional DB wrappers often expose raw SQL tools. Lilith enforces argument-level predicates (e.g., mandatory <code>COUNT</code> or <code>WHERE</code> clauses) at the protocol layer, preventing full-table dumps even if the agent is compromised.
-                
-                <span class="intel-tag">[ EXFILTRATION_CONTAINMENT ]</span>
-                Blocks the <b>"Lethal Trifecta"</b>: The combined pattern of Accessing Private Resources + Accessing Untrusted Contexts + Triggering Outbound Egress. Lilith tracks "Taint" across the session and auto-nullifies network sends if sensitive data was previously handled.
-                
-                <span class="intel-tag">[ PROTOCOL_HARDENING ]</span>
-                Prevents <b>JSON-RPC Smuggling</b>. By enforcing strictly framed <code>Content-Length</code> headers and deterministic parsing, Lilith eliminates desynchronization attacks common in generic stdio interposers.
+    st.markdown("""
+        <div class="sec-card">
+            <span class="sec-tag">VULNERABILITY: RLS_BYPASS</span>
+            <div class="sec-desc">
+                Mitigates <b>CVE-2025-48757</b>. Traditional DB wrappers often allow unrestricted SQL execution. Lilith enforces argument-level predicates (e.g., mandatory aggregations) before tool invocation.
             </div>
-        """, unsafe_allow_html=True)
+        </div>
+        
+        <div class="sec-card">
+            <span class="sec-tag">THREAT: AGENT_EXFILTRATION</span>
+            <div class="sec-desc">
+                Blocks the <b>Lethal Trifecta</b>: (Access Private Data) + (Access Untrusted Source) + (External Communication). Lilith tracks session-bound taints to identify data leakage paths.
+            </div>
+        </div>
 
-    with st.expander("⚡ TECHNICAL SUPERIORITY"):
-        st.markdown("""
-            <div class="sidebar-text">
-                <span class="intel-tag">[ DETERMINISTIC_RUST_CORE ]</span>
-                Engineered in <b>Rust</b> for memory safety and zero non-determinism. Unlike probabilistic LLM-based monitors, Lilith's policy engine is a formal state machine that fails-closed by default.
-                
-                <span class="intel-tag">[ ZERO_COPY_ARCHITECTURE ]</span>
-                Achieves <b>sub-millisecond latency (<0.7ms)</b>. Reference-based internal message passing ensures security interposition doesn't bottleneck high-frequency agent tool calls.
-                
-                <span class="intel-tag">[ OS_LEVEL_SANDBOXING ]</span>
-                Implements <b>Tier-2 Restricted Tokens</b> and Windows Job Objects (or Unix Cgroups). Upstream processes are hermetically sealed, preventing resource exhaustion and lateral movement.
-                
-                <span class="intel-tag">[ CRYPTOGRAPHIC_AUDIT ]</span>
-                Every decision is emitted as an <b>HMAC-SHA256 signed log</b>. This provides non-repudiation, ensuring audit trails cannot be tampered with by an escalated agent process.
+        <div class="sec-card">
+            <span class="sec-tag">ATTACK: JSON_SMUGGLING</span>
+            <div class="sec-desc">
+                Hardens the MCP protocol layer. Enforces strict <b>Content-Length</b> framing and LSP-style headers to prevent desynchronization and protocol-level orchestration attacks.
             </div>
-        """, unsafe_allow_html=True)
+        </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown("## CORE ARCHITECTURE")
     
-    st.markdown("<br><br>", unsafe_allow_html=True)
+    st.markdown("""
+        <div class="sec-card">
+            <span class="sec-tag" style="color: #33ccff;">TECH_STRENGTH: RUST_RUNTIME</span>
+            <div class="sec-desc">
+                <b>Language & Framework Agnostic</b>. Unlike code-level libraries, Lilith is a standalone binary that interposes at the transport layer, making it impossible for the agent to bypass security by subverting the runtime.
+            </div>
+        </div>
+
+        <div class="sec-card">
+            <span class="sec-tag" style="color: #33ccff;">TECH_STRENGTH: FAIL_CLOSED</span>
+            <div class="sec-desc">
+                <b>Zero-Trust Defaults</b>. If a policy is missing, corrupted, or if an evaluation error occurs, Lilith terminates the upstream process immediately, preventing unprotected tool usage.
+            </div>
+        </div>
+
+        <div class="sec-card">
+            <span class="sec-tag" style="color: #33ccff;">TECH_STRENGTH: HMAC_SIGNING</span>
+            <div class="sec-desc">
+                <b>Non-Repudiation</b>. Every security decision and log entry is cryptographically signed using HMAC-SHA256, ensuring that audit trails remain intact and verifiable.
+            </div>
+        </div>
+    """, unsafe_allow_html=True)
 
 # Main Application Frame
 st.markdown("""
