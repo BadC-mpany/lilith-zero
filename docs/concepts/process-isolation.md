@@ -1,4 +1,4 @@
-# Process Isolation & Sandboxing
+# Process Supervision & Lifecycle Management
 
 **Lilith Zero** implements rigorous, OS-specific mechanisms to ensure that tool compliance is not just a suggestion, but a kernel-enforced law.
 

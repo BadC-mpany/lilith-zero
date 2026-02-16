@@ -1,65 +1,75 @@
 # Writing Policies
 
-The security of your agent workflow depends on the quality of your policies. Lilith Zero uses a declarative YAML format to define what tools can run and how.
+The security of your agent workflow depends on the quality of your policies. Lilith Zero uses a declarative YAML format to define what tools can run and how permissions are handled.
 
 ## Policy File Structure
 
-A policy file (`policies.yaml`) consists of a list of definitions, each targeting a specific tool or command pattern.
+A policy file (`policy.yaml`) defines the security boundaries for a Lilith session.
 
 ```yaml
-# policies.yaml
-version: "1.0"
-policies:
-  - name: "Allow Python Math"
-    command: "python"
-    args: ["-c", "print(.*)"] # Regex matching
-    isolation:
-      network: false
-      filesystem: "readonly"
-  
-  - name: "Allow Current Date"
-    command: "date"
-    args: []
+id: "my-policy"
+customerId: "user-123"
+name: "Production Security Policy"
+version: 1
+
+# 1. Static Access Control List (Tool Name -> Action)
+staticRules:
+  calculator: "ALLOW"
+  read_file: "ALLOW"
+  delete_file: "DENY"
+
+# 2. Dynamic Taint Tracking Rules
+taintRules:
+  - tool: "read_file"
+    action: "ADD_TAINT"
+    tag: "SENSITIVE_DATA"
+
+  - tool: "curl"
+    action: "CHECK_TAINT"
+    forbiddenTags: ["SENSITIVE_DATA"] # Block internet if we touched sensitive data
+    error: "Cannot access internet with sensitive data."
+
+# 3. Resource Access Rules
+resourceRules:
+  - uriPattern: "file:///tmp/*"
+    action: "ALLOW"
+  - uriPattern: "file:///etc/*"
+    action: "BLOCK"
+
+# 4. Global Settings
+protectLethalTrifecta: true
 ```
 
-## Policy Fields
+## Sections
 
-### `name` (Required)
-A human-readable description of the policy rule. Useful for audit logs.
+### `staticRules`
+Simple Allow/Deny logic based on the tool name.
+-   Key: Tool Name (e.g., `read_file`)
+-   Value: `"ALLOW"` or `"DENY"`
+-   **Default**: If a tool is not listed here, it is **DENIED** (Fail-Closed).
 
-### `command` (Required)
-The exact binary name or path to the executable.
-- Example: `python`, `/usr/bin/git`, `node`
+### `taintRules`
+Manage information flow control using "Taints".
+-   `tool`: The tool name this rule applies to.
+-   `action`: 
+    -   `ADD_TAINT`: Adds a tag to the session (e.g., `CONFIDENTIAL`).
+    -   `CHECK_TAINT`: Checks if specific tags are present.
+    -   `REMOVE_TAINT`: Clears a tag (sanitization).
+    -   `BLOCK`: Unconditionally blocks the tool (useful with logic patterns).
+-   `tag`: The tag to add or remove.
+-   `forbiddenTags`: List of tags that, if present, will cause the tool to be blocked.
+-   `requiredTags`: List of tags that MUST be present.
 
-### `args` (Optional)
-A list of **Regular Expressions** that the arguments must match.
-- If omitted or empty, **NO** arguments are allowed (strict mode).
-- If you want to allow *any* argument, use `.*`.
-- **Warning**: Be careful with `.*`. It allows `rm -rf /` if applied to `bash`.
+### `resourceRules`
+Controls access to URI-based resources (files, URLs) if the protocol supports `resources`.
+-   `uriPattern`: Glob pattern (e.g., `file:///home/user/public/*`).
+-   `action`: `"ALLOW"` or `"BLOCK"`.
 
-### `isolation` (Optional)
-Defines the sandbox constraints for this tool.
+### `protectLethalTrifecta`
+If set to `true`, Lilith automatically injects rules to prevent the "Lethal Trifecta":
+1.  Accessing private data (`ACCESS_PRIVATE` taint).
+2.  Accessing untrusted sources (`UNTRUSTED_SOURCE` taint).
+3.  Exfiltrating data (calling tools classified as `EXFILTRATION`).
 
-| Field | Type | Default | Description |
-| :--- | :--- | :--- | :--- |
-| `network` | `bool` | `false` | Allow network access? |
-| `filesystem` | `string` | `"none"` | `"none"`, `"readonly"`, or `"readwrite"` (workspace only) |
-| `cpu_limit` | `float` | `1.0` | Max CPU cores (e.g., 0.5 for half core) |
-| `memory_limit_mb` | `int` | `512` | Max RAM in Megabytes |
+If a session accumulates both potentially dangerous taints, exfiltration tools are blocked.
 
-## Example: Secure Python Calculator
-
-To allow an agent to use Python for math but prevent it from accessing files or the network:
-
-```yaml
-policies:
-  - name: "Safe Python Math"
-    command: "python"
-    # Allow "-c" followed by simple math expressions (digits, operators)
-    args: 
-      - "-c"
-      - "^print\\([0-9+\\-*/\\s.]+\\)$" 
-    isolation:
-      network: false
-      filesystem: "none"
-```

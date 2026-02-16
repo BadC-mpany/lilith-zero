@@ -1,71 +1,100 @@
 # Quickstart: Hello World
 
-Let's build a secure "Hello World" agent using Lilith Zero. We will create a simple Python script that uses `curl` to fetch a webpage, and we will protect it with a policy.
+Let's build a secure "Hello World" agent using Lilith Zero. We will create a simple MCP tool server and a client (Agent), then enforce a policy that allows one tool but blocks another.
 
-## 1. Create the Agent
+## 1. Create the Tool Server
 
-Create a file named `agent.py`:
+Create a file named `server.py`. This script simulates an MCP server with two tools: `ping` (safe) and `read_secret` (sensitive).
 
 ```python
-import subprocess
-import sys
+from mcp_helper import MCPServer # You can use any MCP SDK here
 
-# This is an "unsafe" agent that tries to access the internet
-def main():
-    print("Agent: I am going to try and fetch google.com...")
-    try:
-        result = subprocess.run(
-            ["curl", "-I", "https://www.google.com"], 
-            capture_output=True, 
-            text=True
-        )
-        print(f"Agent: Success! Output:\n{result.stdout}")
-    except FileNotFoundError:
-        print("Agent: Failed to run curl.")
+server = MCPServer("MinimalServer")
+
+@server.tool
+def ping() -> str:
+    """Simple health check."""
+    return "pong"
+
+@server.tool
+def read_secret() -> str:
+    """Reads sensitive data."""
+    return "SECRET_DATA_123"
 
 if __name__ == "__main__":
-    main()
+    server.run()
 ```
+
+*Note: For this example, we assume a simple helper `MCPServer`, but you can use the official Python MCP SDK.*
 
 ## 2. Define the Policy
 
-Create a file named `policies.yaml` that **allows** `python` but **blocks** network access by default.
+Create a file named `policy.yaml`. We will **ALLOW** `ping` but **DENY** `read_secret`.
 
 ```yaml
-version: "1.0"
-policies:
-  - name: "Allow Python Agent"
-    command: "python"
-    args: [".*"]
-    isolation:
-      network: false  # <--- BLOCK THE INTERNET
-      filesystem: "readonly"
+id: "quickstart-policy"
+customerId: "local-user"
+name: "Quickstart Policy"
+version: 1
+
+staticRules:
+  ping: "ALLOW"
+  read_secret: "DENY"
+
+taintRules: []
+resourceRules: []
+protectLethalTrifecta: false
 ```
 
-## 3. Run with Lilith Zero
+## 3. Create the Client (Agent)
 
-Now, run the agent wrapped in the middleware:
+Create a file named `agent.py` that uses the Lilith SDK to connect to the server securely.
+
+```python
+import asyncio
+from lilith_zero import Lilith
+from lilith_zero.exceptions import PolicyViolationError
+
+async def main():
+    # Start Lilith, which wraps the upstream server
+    async with Lilith(
+        upstream="python server.py", 
+        policy="policy.yaml"
+    ) as lilith:
+        
+        # 1. Call an ALLOWED tool
+        print("Calling 'ping'...")
+        result = await lilith.call_tool("ping", {})
+        print(f"Result: {result}")
+
+        # 2. Call a DENIED tool
+        print("\nCalling 'read_secret'...")
+        try:
+            await lilith.call_tool("read_secret", {})
+        except PolicyViolationError as e:
+            print(f"Blocked: {e}")
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+## 4. Run It
 
 ```bash
-lilith-zero --policy policies.yaml -- python agent.py
+python agent.py
 ```
 
 ### Expected Output
 
-You should see the agent start, but the `curl` command inside it will fail (or hang/timeout depending on how `curl` handles network errors) because Lilith Zero blocked the network access at the process level.
+```text
+Calling 'ping'...
+Result: pong
 
-If you check the audit log, you'll see the violation.
-
-## 4. Allow Access
-
-Edit `policies.yaml` to allow network:
-
-```yaml
-    isolation:
-      network: true # <--- ALLOW THE INTERNET
+Calling 'read_secret'...
+Blocked: Tool 'read_secret' is forbidden by static policy
 ```
 
-Run it again, and it should succeed!
+You have successfully intercepted and blocked a tool call using Lilith Zero!
 
 ## Next Steps
 

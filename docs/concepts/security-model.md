@@ -23,18 +23,21 @@ The "Lethal Trifecta" occurs when an Agent has:
 Lilith Zero breaks the trifecta by enforcing strict **separation of concerns** and **principle of least privilege**.
 
 ### 1. Breaking "Private Data Access"
-Lilith Zero enforces **Filesystem isolation**. Tools run in a sandbox that only sees a temporary workspace or strictly allowlisted directories. They **cannot** read `~/.ssh/id_rsa` or `.env` files unless you explicitly allow it.
+Lilith Zero enforces **Policy-based Access Control**. Tools are inspected before execution. If an agent tries to call `read_file` on `~/.ssh/id_rsa`, the Policy Engine:
+1.  Intercepts the call.
+2.  Matches the arguments against allowlisted Regex patterns.
+3.  **Blocks** the request if it violates the policy.
 
 ### 2. Breaking "Untrusted Computation"
 We assume the LLM *will* try to run malicious code.
 -   **Input Validation**: Strict schema validation for tool arguments.
--   **Execution Limits**: Tools have timeouts and memory limits.
--   **Sandboxing**: Even if the tool is malicious, it runs in a Restricted Token context (Windows) or a restricted namespace (Linux), limiting the blast radius.
+-   **Execution Limits**: Tools are child processes with strict lifecycle management.
+-   **Dependencies**: Tools run in hermetic environments (via `uv`) where possible.
 
 ### 3. Breaking "Exfiltration"
-Lilith Zero acts as a network firewall for the Agent.
--   **Network Block by Default**: Sandboxed processes have **NO** network access by default.
--   **Audit Logging**: Every byte sent to `stdout` is logged. If data leaks, you have a forensic trail.
+Lilith Zero acts as a sentinel for Tool capabilities.
+-   **Capability Restriction**: You can define a policy that strictly **DENIES** any tool capable of network access (e.g., `curl`, `requests`).
+-   **Audit Logging**: Every tool execution and its result is logged.
 
 ## Fail-Closed Design
 
