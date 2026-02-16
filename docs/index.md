@@ -14,6 +14,9 @@
 
 ```bash
 pip install lilith-zero
+
+# or with uv
+uv add lilith-zero
 ```
 
 Or build the Rust core from source:
