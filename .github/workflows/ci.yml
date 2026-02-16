@@ -42,8 +42,8 @@ jobs:
         with:
           workspaces: lilith-zero -> target
 
-      - name: Format Check
-        run: cargo fmt --all --check
+      - name: Format Check (Strict)
+        run: cargo fmt --all -- --check
         working-directory: lilith-zero
 
       - name: Clippy (Strict)
