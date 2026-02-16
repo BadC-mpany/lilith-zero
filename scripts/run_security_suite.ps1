@@ -32,6 +32,9 @@ function Run-Command ($Command, $Arguments) {
 Print-Header "PHASE 1: Rust Static Analysis"
 Set-Location "$PSScriptRoot/../lilith-zero"
 
+Write-Host "Running Cargo Fmt (Strict)..." -ForegroundColor Yellow
+Run-Command "cargo" "fmt", "--all", "--", "--check"
+
 Write-Host "Running Cargo Clippy..." -ForegroundColor Yellow
 Run-Command "cargo" "clippy", "--all-targets", "--all-features", "--", "-D", "warnings"
 
