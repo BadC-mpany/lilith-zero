@@ -23,7 +23,7 @@ where = ["src"]
 name = "lilith-zero"
 version = "0.1.1"
 description = "Lilith MCP Middleware SDK"
-readme = "README.md"
+readme = { file = "README.md", content-type = "text/markdown" }
 authors = [
     { name = "Peter Tallosy" },
     { name = "BadCompany", email = "peter.tallosy@badcompany.dev" },
