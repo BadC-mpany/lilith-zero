@@ -38,6 +38,6 @@ jobs:
         with:
           packages-dir: sdk/dist/
           print-hash: true
-          attestations: true
+          attestations: false
           # Trusted Publishing: No password/username needed if configured on PyPI.
           # If using tokens, set password: ${{ secrets.PYPI_API_TOKEN }}
