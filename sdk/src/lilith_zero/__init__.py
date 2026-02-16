@@ -23,7 +23,7 @@ Provides security controls for Model Context Protocol tool servers including:
 
 from .client import _MCP_PROTOCOL_VERSION, Lilith
 
-__version__ = "0.1.1"
+__version__ = "0.1.2"
 __all__ = [
     "_MCP_PROTOCOL_VERSION",
     "Lilith",
