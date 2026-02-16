@@ -1,6 +1,6 @@
 site_name: Lilith Zero
 site_url: https://BadC-mpany.github.io/lilith-zero/
-site_description: Secure middleware for the Model Context Protocol (MCP). Process isolation, policy enforcement, and formal verification for AI Agent workflows.
+site_description: Security middleware for agents and MCP servers. Process isolation, policy enforcement, and formal verification for AI agent workflows.
 repo_url: https://github.com/BadC-mpany/lilith-zero
 repo_name: BadC-mpany/lilith-zero
 edit_uri: edit/main/docs/

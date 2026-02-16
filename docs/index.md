@@ -1,8 +1,8 @@
 # Lilith Zero
 
-**Secure Middleware for the Model Context Protocol (MCP)**
+**Security Middleware for Agents and MCP Servers**
 
-*Process isolation, policy enforcement, and formal verification for AI Agent workflows.*
+*Process isolation, policy enforcement, and formal verification for AI agent workflows.*
 
 ---
 
