@@ -1,8 +1,10 @@
 site_name: Lilith Zero
 site_url: https://BadC-mpany.github.io/lilith-zero/
+site_description: Secure middleware for the Model Context Protocol (MCP). Process isolation, policy enforcement, and formal verification for AI Agent workflows.
 repo_url: https://github.com/BadC-mpany/lilith-zero
 repo_name: BadC-mpany/lilith-zero
 edit_uri: edit/main/docs/
+copyright: Copyright &copy; 2026 BadCompany — Apache-2.0
 
 # Configuration is inside docs/, so docs_dir is the current directory
 docs_dir: .
@@ -11,6 +13,9 @@ site_dir: ../site
 theme:
   name: material
   custom_dir: overrides
+  icon:
+    logo: material/shield-lock
+    repo: fontawesome/brands/github
   features:
     - navigation.tabs
     - navigation.tabs.sticky
@@ -18,34 +23,47 @@ theme:
     - navigation.expand
     - navigation.path
     - navigation.indexes
+    - navigation.top
+    - navigation.footer
     - toc.follow
     - search.suggest
     - search.highlight
     - search.share
     - content.code.copy
+    - content.code.annotate
     - content.action.edit
     - content.tooltips
   palette:
-    # Palette toggle for light mode
-    - media: "(prefers-color-scheme: light)"
-      scheme: default
-      primary: indigo
-      accent: indigo
-      toggle:
-        icon: material/weather-sunny
-        name: Switch to dark mode
-
-    # Palette toggle for dark mode
+    # Dark mode first (default)
     - media: "(prefers-color-scheme: dark)"
       scheme: slate
-      primary: indigo
-      accent: indigo
+      primary: black
+      accent: teal
       toggle:
         icon: material/weather-night
         name: Switch to light mode
+
+    # Light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: black
+      accent: teal
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to dark mode
   font:
-    text: Roboto
-    code: Roboto Mono
+    text: Inter
+    code: JetBrains Mono
+
+extra_css:
+  - assets/extra.css
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/BadC-mpany/lilith-zero
+    - icon: fontawesome/brands/python
+      link: https://pypi.org/project/lilith-zero/
 
 markdown_extensions:
   - admonition
@@ -64,6 +82,9 @@ markdown_extensions:
   - tables
   - attr_list
   - md_in_html
+  - def_list
+  - pymdownx.tasklist:
+      custom_checkbox: true
 
 plugins:
   - search
@@ -85,12 +106,16 @@ nav:
     - Architecture: concepts/architecture.md
     - Security Model: concepts/security-model.md
     - Process Isolation: concepts/process-isolation.md
-  - Developer Guides:
+    - Formal Verification: concepts/formal-verification.md
+  - Guides:
     - Middleware Setup: guides/middleware-setup.md
     - Writing Policies: guides/writing-policies.md
     - Red Teaming: guides/red-teaming.md
-  - API Reference:
+  - Reference:
+    - CLI: reference/cli.md
     - Python SDK: reference/sdk.md
-    - CLI Reference: reference/cli.md
+    - Policy Schema: reference/policy-schema.md
   - Community:
     - Contributing: contributing.md
+    - Security Policy: security.md
+    - Changelog: changelog.md
