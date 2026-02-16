@@ -56,4 +56,4 @@ uv add lilith-zero
 | :--- | :--- | :--- |
 | **Windows** | ✅ Yes | Job Objects, Restricted Tokens |
 | **macOS** | ✅ Yes | Re-Exec Supervisor, `kqueue` |
-| **Linux** | ✅ Yes | `PR_SET_PDEATHSIG`, Namespaces |
+| **Linux** | ✅ Yes | `PR_SET_PDEATHSIG` |

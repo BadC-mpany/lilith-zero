@@ -12,12 +12,13 @@ lilith-zero [OPTIONS] -- <YOUR_COMMAND> [ARGS]
 
 ### Key Options
 
-| Option | Description | Default |
-| :--- | :--- | :--- |
-| `-p, --policy <FILE>` | Path to the YAML policy file. | `policies.yaml` |
-| `-a, --audit-log <FILE>` | Path to write the JSON-L audit log. | `audit.jsonl` |
-| `--enforce` | Enable strict enforcement (Hard Fail). | `true` |
-| `--dry-run` | Log violations but do not block them (Audit Mode). | `false` |
+| Option | Description |
+| :--- | :--- |
+| `-p, --policy <FILE>` | Path to the YAML policy file. |
+| `-u, --upstream-cmd <CMD>` | Command to launch the upstream tool server (e.g., "python"). |
+| `-- <ARGS>` | Arguments for the upstream command (e.g., "server.py"). |
+
+*Note: Configuration like log levels and security levels are handled via Environment Variables (e.g. `LILITH_LOG_LEVEL`, `LILITH_SECURITY_LEVEL`).*
 
 ## Production Deployment
 
