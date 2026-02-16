@@ -26,14 +26,14 @@ lilith-zero [OPTIONS] -- <YOUR_COMMAND> [ARGS]
 Ensure that `lilith-zero` is in your `PATH` or available at a known location.
 
 ### 2. Define the Policy
-Create a loose `policies.yaml` first, run your agent in `--dry-run` mode to collect usage patterns, and then tighten the policy.
+Create a loose `policy.yaml` first, run your agent in `--dry-run` mode to collect usage patterns, and then tighten the policy.
 
 ### 3. Run the Supervisor
 Launch your agent under Lilith Zero's supervision.
 
 ```bash
 # Example: Running a LangChain agent
-lilith-zero --policy production-policies.yaml --audit-log /var/log/lilith/audit.jsonl -- python my_agent.py
+lilith-zero --policy production-policy.yaml --audit-log /var/log/lilith/audit.jsonl -- python my_agent.py
 ```
 
 ## Logging & Observability

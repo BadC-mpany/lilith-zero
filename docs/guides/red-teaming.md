@@ -8,7 +8,7 @@ Located in `sdk/tests/red_team/`, this Python test suite simulates a compromised
 
 ### Running attacks against your Policy
 
-You can run these tests against your specific `policies.yaml` to see if it holds up.
+You can run these tests against your specific `policy.yaml` to see if it holds up.
 
 ```bash
 # Install the SDK with test dependencies
@@ -23,7 +23,7 @@ pytest sdk/tests/red_team/test_attacks.py
 The suite attempts the following exploits:
 
 1.  **File Read**: Attempts to read `/etc/passwd` (Linux) or `C:\Windows\win.ini`.
-2.  **File Write**: Attempts to overwrite `policies.yaml` or creating persistence.
+2.  **File Write**: Attempts to overwrite `policy.yaml` or creating persistence.
 3.  **Network Connect**: Attempts `curl`, `wget`, or Python `requests` to external IPs.
 4.  **env leakage**: Attempts to print environment variables (`printenv`).
 5.  **Fork Bomb**: Attempts to crash the host via resource exhaustion (mitigated by Job Objects).
@@ -34,4 +34,4 @@ The suite attempts the following exploits:
 -   **FAIL**: The attack succeeded. Your policy is too permissive!
 
 !!! tip "Continuous Verification"
-    We recommend adding this Red Team step to your CI/CD pipeline. Every time you update `policies.yaml`, run the attacks to ensure no regressions.
+    We recommend adding this Red Team step to your CI/CD pipeline. Every time you update `policy.yaml`, run the attacks to ensure no regressions.

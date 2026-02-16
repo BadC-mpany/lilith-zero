@@ -12,20 +12,13 @@ lilith-zero [OPTIONS] -- <COMMAND> [ARGS]...
 
 ### `--policy <FILE>`
 - **Description**: Path to the YAML policy file defining allowed tools.
-- **Default**: `policies.yaml`
-- **Env Var**: `LILITH_POLICY`
+- **Env Var**: `ENV_POLICIES_YAML_PATH`
 
-### `--audit-log <FILE>`
-- **Description**: Path to the output audit log file (JSON-L format).
-- **Default**: `audit.jsonl`
-- **Env Var**: `LILITH_AUDIT_LOG`
+### `--upstream-cmd <CMD>`
+- **Description**: The command to execute to start the upstream MCP server.
 
-### `--enforce`
-- **Description**: If set, Lilith Zero will **block** any policy violations. If unset (or if `--dry-run` is used), it will only log them.
-- **Default**: `true` (Enforcement is ON by default).
-
-### `--dry-run`
-- **Description**: Alias for disabling enforcement. Useful for learning tool usage patterns before locking them down.
+### `[ARGS]...`
+- **Description**: Arguments to pass to the upstream command (must follow `--`).
 
 ### `--parent-pid <PID>`
 - **Description**: (Internal) Used by the Supervisor mode to track the parent process ID. Do not use manually.
