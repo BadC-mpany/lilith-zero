@@ -12,9 +12,22 @@ To use Lilith Zero, you need two components:
 
 ## 1. Installing the Middleware
 
-You can install the middleware directly from crates.io or build it from source.
+You can install the middleware automatically via the SDK, or manually from source/releases.
 
-=== "From Source (Recommended)"
+=== "Option 1: Automatic (Easiest)"
+
+    The Python SDK includes an installer that attempts to automatically download the correct binary for your system if it's not found.
+
+    ```bash
+    pip install lilith-zero
+    # The first time you run it, it will prompt to download the binary.
+    ```
+
+=== "Option 2: Pre-built Binaries"
+
+    Check the [GitHub Releases](https://github.com/BadC-mpany/lilith-zero/releases) page for pre-compiled binaries for Windows, macOS, and Linux.
+
+=== "Option 3: From Source (Recommended for Dev)"
 
     Clone the repository and install via cargo:
 
@@ -28,10 +41,6 @@ You can install the middleware directly from crates.io or build it from source.
     ```bash
     lilith-zero --version
     ```
-
-=== "Pre-built Binaries"
-
-    Check the [GitHub Releases](https://github.com/BadC-mpany/lilith-zero/releases) page for pre-compiled binaries for Windows, macOS, and Linux.
 
 ## 2. Installing the Python SDK
 
