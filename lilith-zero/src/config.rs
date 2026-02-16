@@ -76,8 +76,8 @@ impl Config {
             ),
             mcp_version: env::var(crate::engine_core::constants::config::ENV_MCP_VERSION)
                 .unwrap_or_else(|_| "2024-11-05".to_string()),
-            jwt_secret: env::var("lilith-zero_JWT_SECRET").ok(),
-            protect_lethal_trifecta: env::var("lilith-zero_FORCE_LETHAL_TRIFECTA")
+            jwt_secret: env::var("LILITH_ZERO_JWT_SECRET").ok(),
+            protect_lethal_trifecta: env::var("LILITH_ZERO_FORCE_LETHAL_TRIFECTA")
                 .map(|v| v.to_lowercase() == "true" || v == "1")
                 .unwrap_or(false),
         })

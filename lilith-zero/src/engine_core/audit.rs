@@ -48,12 +48,16 @@ impl AuditLogger {
         // Sign the payload
         let signature = self.signer.sign(payload_str.as_bytes());
 
-        // Emit structured log with signature
+        // Emit structured log with signature directly to stderr to match README format
+        // [AUDIT] <Signature> <Payload>
+        eprintln!("[AUDIT] {} {}", signature, payload_str);
+
+        // Also trace for debugging
         info!(
             target: "audit",
             signature = %signature,
             payload = %payload_str,
-            "SECURE_AUDIT_LOG"
+            "SECURE_AUDIT_LOG_EMITTED"
         );
     }
 }

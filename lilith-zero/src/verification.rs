@@ -46,12 +46,12 @@ mod verification {
         
         // Prove: comparison is safe and doesn't overflow
         let is_valid = len_value <= MAX_MESSAGE_SIZE;
-        kani::assert!(is_valid || !is_valid, "Comparison must be total");
+        kani::assert(is_valid || !is_valid, "Comparison must be total");
         
         // Prove: casting to usize is safe when under limit
         if len_value <= MAX_MESSAGE_SIZE {
             let as_usize = len_value as usize;
-            kani::assert!(as_usize <= usize::MAX, "No overflow on valid size");
+            kani::assert(as_usize <= usize::MAX, "No overflow on valid size");
         }
     }
 
@@ -68,7 +68,7 @@ mod verification {
         match result {
             Ok(None) => { /* Expected: waiting for body */ }
             Ok(Some(_)) => {
-                kani::assert!(false, "Should not have full frame with only header");
+                kani::assert(false, "Should not have full frame with only header");
             }
             Err(_) => { /* Also acceptable: error on malformed */ }
         }
@@ -90,13 +90,13 @@ mod verification {
         let metadata = TaintMetadata { tags };
         
         // Invariant: The tag must be present after construction
-        kani::assert!(
+        kani::assert(
             metadata.tags.contains(&initial_tag),
             "Taint tag must persist after construction"
         );
         
         // Prove: Length is preserved
-        kani::assert!(metadata.tags.len() >= 1, "Tags cannot be silently removed");
+        kani::assert(metadata.tags.len() >= 1, "Tags cannot be silently removed");
     }
     
     /// Prove: Adding a second tag preserves the first tag.
@@ -113,15 +113,15 @@ mod verification {
         let metadata = TaintMetadata { tags };
         
         // Both tags must be present
-        kani::assert!(
+        kani::assert(
             metadata.tags.contains(&first_tag),
             "First taint must persist after adding second"
         );
-        kani::assert!(
+        kani::assert(
             metadata.tags.contains(&second_tag),
             "Second taint must be present"
         );
-        kani::assert!(
+        kani::assert(
             metadata.tags.len() == 2,
             "Exactly two tags must be present"
         );
@@ -147,7 +147,7 @@ mod verification {
             .unwrap_or("DENY");  // This is exactly what evaluator.rs does
         
         // Invariant: Unknown tools must be denied
-        kani::assert!(
+        kani::assert(
             permission == "DENY",
             "Unknown tools must be denied by default"
         );
@@ -166,14 +166,14 @@ mod verification {
             .get("safe_tool")
             .map(|s| s.as_str())
             .unwrap_or("DENY");
-        kani::assert!(safe_permission == "ALLOW", "Explicit ALLOW must be respected");
+        kani::assert(safe_permission == "ALLOW", "Explicit ALLOW must be respected");
         
         // Non-allowed tool (not in map)
         let unsafe_permission = static_rules
             .get("dangerous_tool")
             .map(|s| s.as_str())
             .unwrap_or("DENY");
-        kani::assert!(unsafe_permission == "DENY", "Missing tools must be denied");
+        kani::assert(unsafe_permission == "DENY", "Missing tools must be denied");
     }
 
     // =========================================================================
@@ -189,7 +189,7 @@ mod verification {
         const MIN_SESSION_ID_LEN: usize = UUID_V4_LEN + DELIMITER_LEN + HMAC_SHA256_HEX_LEN;
         
         // This is the expected format: uuid.hmac
-        kani::assert!(MIN_SESSION_ID_LEN == 101, "Session ID must be at least 101 chars");
+        kani::assert(MIN_SESSION_ID_LEN == 101, "Session ID must be at least 101 chars");
         
         // Prove that a valid session ID has sufficient entropy
         // 128 bits (UUID) + 256 bits (HMAC) = 384 bits of entropy
@@ -197,7 +197,74 @@ mod verification {
         const HMAC_ENTROPY_BITS: u32 = 256;
         const TOTAL_ENTROPY: u32 = UUID_ENTROPY_BITS + HMAC_ENTROPY_BITS;
         
-        kani::assert!(TOTAL_ENTROPY >= 256, "Session ID must have at least 256 bits of entropy");
+        kani::assert(TOTAL_ENTROPY >= 256, "Session ID must have at least 256 bits of entropy");
+    }
+
+    // =========================================================================
+    // TAINT SANITIZATION PROOF
+    // =========================================================================
+    /// Prove: Taint::into_inner() (simulated sanitation) effectively removes wrapper.
+    /// Note: The type system guarantees this, but we verify the transmutations/moves are safe.
+    /// In a real sanitizer, we would prove that the data content is modified.
+    /// Here we prove that the 'Tainted' wrapper is gone.
+    #[kani::proof]
+    fn prove_taint_clean_logic() {
+        use crate::engine_core::taint::Tainted;
+        
+        // 1. Start with Tainted data
+        let secret_val: u64 = kani::any();
+        let tags = vec!["TOP_SECRET".to_string()];
+        let tainted = Tainted::new(secret_val, tags);
+        
+        // 2. Simulate Sanitization (e.g., via a trusted declassifier)
+        // Accessing inner via into_inner() requires ownership and intent.
+        let cleaned_val = tainted.into_inner();
+        
+        // 3. Prove data integrity is preserved across the strict boundary
+        kani::assert(cleaned_val == secret_val, "Data must be preserved during sanitization");
+    }
+
+    // =========================================================================
+    // POLICY VALIDATOR CONSISTENCY PROOF
+    // =========================================================================
+    /// Prove: The PolicyValidator correctly rejects a policy with conflicting rules.
+    /// Conflict Definition: A rule has both 'tool' and 'tool_class' set (invalid config).
+    #[kani::proof]
+    fn prove_policy_validator_rejects_ambiguity() {
+        use crate::utils::policy_validator::PolicyValidator;
+        use crate::engine_core::models::{PolicyDefinition, PolicyRule};
+        use std::collections::HashMap;
+
+        // Construct an invalid policy (tool AND tool_class set)
+        let invalid_rule = PolicyRule {
+            tool: Some("ambiguous_tool".to_string()),
+            tool_class: Some("AMBIGUOUS_CLASS".to_string()),
+            action: "BLOCK".to_string(),
+            tag: None,
+            forbidden_tags: None,
+            required_taints: None,
+            error: None,
+            pattern: None,
+            exceptions: None,
+        };
+
+        let policy = PolicyDefinition {
+            id: "invalid-policy".to_string(),
+            customer_id: "test".to_string(),
+            name: "invalid".to_string(),
+            version: 1,
+            static_rules: HashMap::new(),
+            resource_rules: Vec::new(),
+            taint_rules: vec![invalid_rule],
+            created_at: None,
+            protect_lethal_trifecta: false,
+        };
+
+        // Run validation
+        let result = PolicyValidator::validate_policies(&[policy]);
+
+        // Prove: Result must be Err
+        kani::assert(result.is_err(), "Validator MUST reject ambiguous rule config");
     }
 }
 

@@ -305,6 +305,8 @@ impl SecurityCore {
             vec!["READ".to_string()]
         } else if name.starts_with("write_") || name.starts_with("delete_") {
             vec!["WRITE".to_string()]
+        } else if matches!(name, "curl" | "wget" | "fetch" | "requests" | "http") {
+             vec!["EXFILTRATION".to_string(), "NETWORK".to_string()]
         } else {
             vec![]
         }

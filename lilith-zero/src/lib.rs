@@ -24,3 +24,7 @@ pub mod engine_core;
 pub mod mcp;
 pub mod protocol;
 pub mod utils;
+
+#[cfg(any(test, kani))]
+pub mod verification;
+

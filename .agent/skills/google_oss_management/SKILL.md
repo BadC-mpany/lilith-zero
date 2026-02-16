@@ -19,15 +19,15 @@ This skill enforces strict engineering rigor for the **Lilith** project (`C:\Use
 ### 1. Pre-Commit Workflow Validation (The "Green Build" Rule)
 Before generating any commit messages, you MUST ask the user to run the relevant verification commands. Do not assume pass.
 
-#### A. Rust Core Changes (`sentinel\`)
-If changes touch `sentinel\src`, `sentinel\Cargo.toml`, or `sentinel\tests`:
+#### A. Rust Core Changes (`lilith-zero\`)
+If changes touch `lilith-zero\src`, `lilith-zero\Cargo.toml`, or `lilith-zero\tests`:
 1.  **Format & Lint:**
-    *   `cd sentinel; cargo fmt --all -- --check`
-    *   `cd sentinel; cargo clippy --all-targets --all-features -- -D warnings`
+    *   `cd lilith-zero; cargo fmt --all -- --check`
+    *   `cd lilith-zero; cargo clippy --all-targets --all-features -- -D warnings`
 2.  **Test:**
-    *   `cd sentinel; cargo test --all-features`
+    *   `cd lilith-zero; cargo test --all-features`
 3.  **Audit (Optional):**
-    *   `cd sentinel; cargo audit`
+    *   `cd lilith-zero; cargo audit`
 
 #### B. Python SDK Changes (`lilith_zero\`)
 If changes touch `lilith_zero\`, `lilith_zero\src`, or `pyproject.toml`:
@@ -41,11 +41,11 @@ If changes touch `lilith_zero\`, `lilith_zero\src`, or `pyproject.toml`:
 #### C. Integration/Full System
 If changes affect the interaction between Rust and Python:
 1.  **Build Rust Binary:**
-    *   `cd sentinel; cargo build --release`
-    *   *Note: Set env var:* `$env:LILITH_ZERO_BINARY_PATH = "sentinel\target\release\sentinel.exe"`
+    *   `cd lilith-zero; cargo build --release`
+    *   *Note: Set env var:* `$env:LILITH_ZERO_BINARY_PATH = "lilith-zero\target\release\lilith-zero.exe"`
 2.  **Run Integration Test:**
 4.  **Sandbox Verification (Windows/Linux):**
-    *   `cd sentinel; cargo run --example sandbox_check`
+    *   `cd lilith-zero; cargo run --example sandbox_check`
 
 ### 2. Semantic Changelog Generation
 Generate a technically accurate, compact changelog entry based on the diff.
@@ -75,14 +75,14 @@ Generate descriptive, conventional commit messages.
 ### Scenario: User modifies Rust Policy Engine
 **User:** "I updated `policy_validator.rs` in the core."
 **Agent Response:**
-"I see changes in `sentinel\src\policy\policy_validator.rs`.
+"I see changes in `lilith-zero\src\policy\policy_validator.rs`.
 1. **Verification Required:**
-   *   `cd sentinel; cargo fmt --all -- --check; cargo clippy --all-targets --all-features -- -D warnings; cargo test --all-features`
+   *   `cd lilith-zero; cargo fmt --all -- --check; cargo clippy --all-targets --all-features -- -D warnings; cargo test --all-features`
 2. **Changelog Draft:**
    *   `### Fixed`
    *   `- **core/policy**: Strengthened validation logic in `policy_validator.rs` to reject ambiguous rules.`
 3. **Proposed Commit:**
    *   `fix(core): reject ambiguous rules in policy validator`
-   *   `git add sentinel\src\policy\policy_validator.rs`
+   *   `git add lilith-zero\src\policy\policy_validator.rs`
    *   `git commit -m "fix(core): reject ambiguous rules in policy validator"`
 *Do you authorize the test run and subsequent commit?*"

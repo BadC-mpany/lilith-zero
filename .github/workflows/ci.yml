@@ -168,54 +168,18 @@ jobs:
         with:
           workspaces: lilith-zero -> target
 
-      # Supply Chain Security
-      - name: Cargo Audit (CVE Scan)
-        run: |
-          cargo install --locked cargo-audit
-          cargo audit
-        working-directory: lilith-zero
-
-      - name: Cargo Deny (License + Advisory)
-        run: |
-          cargo install --locked cargo-deny
-          cargo deny check advisories licenses
-        working-directory: lilith-zero
-
-      # Formal Verification
-      - name: Install Kani
-        run: |
-          cargo install --locked kani-verifier
-          cargo-kani setup
-
-      - name: Formal Verification (Kani)
-        run: cargo kani
-        working-directory: lilith-zero
-
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-
-      - name: Download Rust Binary
-        uses: actions/download-artifact@v4
-        with:
-          name: lilith-zero-ubuntu-latest
-          path: lilith-zero/target/release
-
-      - name: Install SDK & Red Team Tools
-        run: |
-          uv pip install --system -e sdk/
-          uv pip install --system pytest pytest-asyncio pyjwt faker
-
-      - name: Run Red Team Attacks
+      # Centralized Security Suite Execution
+      - name: Run Centralized Security Suite
+        shell: pwsh
         env:
-          LILITH_ZERO_BINARY_PATH: lilith-zero/target/release/lilith-zero
           RUST_LOG: debug
+          LILITH_ZERO_BINARY_PATH: lilith-zero/target/release/lilith-zero
         run: |
-          chmod +x $LILITH_ZERO_BINARY_PATH
-          # Run the rigorous security suite from new location
-          uv run pytest sdk/tests/red_team/test_attacks.py
+          # Install dependencies required by the script
+          cargo install --locked cargo-audit
+          cargo install --locked cargo-deny
+          cargo install --locked kani-verifier
+          cargo kani setup
+          
+          # Execute the suite
+          ./scripts/run_security_suite.ps1
