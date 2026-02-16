@@ -27,4 +27,3 @@ pub mod utils;
 
 #[cfg(any(test, kani))]
 pub mod verification;
-

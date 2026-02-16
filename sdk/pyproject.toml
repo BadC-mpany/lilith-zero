@@ -26,7 +26,7 @@ description = "Lilith MCP Middleware SDK"
 readme = "README.md"
 authors = [
     { name = "Peter Tallosy" },
-    { name = "BadCompany", email = "oss@badcompany.dev" },
+    { name = "BadCompany", email = "peter.tallosy@badcompany.dev" },
 ]
 requires-python = ">=3.10"
 classifiers = ["Programming Language :: Python :: 3"]
