@@ -12,9 +12,9 @@ The system is composed of three main layers:
 
 ```mermaid
 graph TD
-    classDef trusted fill:#e1f5fe,stroke:#01579b,stroke-width:2px;
-    classDef untrusted fill:#ffebee,stroke:#b71c1c,stroke-width:2px;
-    classDef managed fill:#f1f8e9,stroke:#33691e,stroke-width:2px;
+    classDef trusted fill:#0277bd,stroke:#01579b,stroke-width:2px,color:#fff;
+    classDef untrusted fill:#ec407a,stroke:#b71c1c,stroke-width:2px,color:#fff;
+    classDef managed fill:#558b2f,stroke:#33691e,stroke-width:2px,color:#fff;
 
     Agent[AI Agent / LLM]:::untrusted
     Middleware[Lilith Zero Middleware]:::trusted
