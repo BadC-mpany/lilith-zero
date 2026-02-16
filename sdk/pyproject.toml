@@ -29,7 +29,12 @@ authors = [
     { name = "BadCompany", email = "peter.tallosy@badcompany.dev" },
 ]
 requires-python = ">=3.10"
-classifiers = ["Programming Language :: Python :: 3"]
+license = { text = "Apache-2.0" }
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+]
 dependencies = []
 
 [project.urls]
