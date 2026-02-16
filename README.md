@@ -191,7 +191,7 @@ Full integration examples are available in the `examples/` directory:
 
 ## Security & Assurance
 
-Lilith Zero is engineered with **industry-leading rigor**, employing a multi-layered verification strategy to ensure mathematical correctness and runtime invulnerability.
+Lilith Zero is engineered with **high-assurance rigor**, employing a multi-layered verification strategy to ensure mathematical correctness and runtime invulnerability.
 
 | Assurance Layer | implementation | Status |
 | :--- | :--- | :--- |

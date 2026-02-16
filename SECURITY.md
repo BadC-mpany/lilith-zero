@@ -7,7 +7,7 @@ Lilith Zero operates on a **Zero Trust, Defense-in-Depth** architecture designed
 2.  **Tools are Vectors:** External tools may be coerced into exfiltrating data.
 3.  **Runtime is Hostile:** The execution environment must be rigorously isolated.
 
-Our security engineering process adheres to **industry-leading assurance standards**, integrating formal verification, continuous fuzzing, and hermetic red-teaming into every CI pipeline.
+Our security engineering process adheres to **rigorous assurance standards**, integrating formal verification, continuous fuzzing, and hermetic red-teaming into every CI pipeline.
 
 ## Rigorous Verification Methodology
 
