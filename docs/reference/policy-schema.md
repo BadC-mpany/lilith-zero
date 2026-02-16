@@ -32,12 +32,15 @@ staticRules:
 
 | Field | Type | Required | Description |
 |:---|:---|:---|:---|
-| `tool` | `string` | Yes | Tool name this rule applies to. |
+| `tool` | `string` | Conditional | Tool name this rule applies to. Either `tool` or `toolClass` must be set. |
+| `toolClass` | `string` | Conditional | Tool classification category (e.g., `"EXFILTRATION"`, `"DATA_ACCESS"`). Either `tool` or `toolClass` must be set. |
 | `action` | `string` | Yes | One of: `ADD_TAINT`, `CHECK_TAINT`, `REMOVE_TAINT`, `BLOCK`. |
 | `tag` | `string` | Conditional | Tag to add or remove. Required for `ADD_TAINT` / `REMOVE_TAINT`. |
 | `forbiddenTags` | `list<string>` | No | If any of these tags are present, block the tool. |
-| `requiredTags` | `list<string>` | No | All of these tags must be present to allow the tool. |
+| `requiredTaints` | `list<string>` | No | All of these tags must be present to allow the tool. |
 | `error` | `string` | No | Custom error message on violation. |
+| `pattern` | `LogicCondition` | No | Conditional logic pattern for rule evaluation (see below). |
+| `exceptions` | `list<RuleException>` | No | Exception conditions that override the rule (see below). |
 
 ```yaml
 taintRules:
@@ -51,12 +54,106 @@ taintRules:
     error: "Cannot access internet after reading sensitive data."
 ```
 
+## `LogicCondition` — Conditional Rule Evaluation
+
+Taint rules support a typed condition language for expressing complex logic. Conditions are specified in the `pattern` field of a `TaintRule` or the `when` field of a `RuleException`.
+
+### Logical Operators
+
+| Operator | Syntax | Description |
+|:---|:---|:---|
+| **AND** | `and: [cond1, cond2, ...]` | All conditions must be true. |
+| **OR** | `or: [cond1, cond2, ...]` | At least one condition must be true. |
+| **NOT** | `not: cond` | Negates the condition. |
+
+### Comparison Operators
+
+| Operator | Syntax | Description |
+|:---|:---|:---|
+| **Equals** | `==: [lhs, rhs]` | Checks equality between two values. |
+| **Not Equals** | `!=: [lhs, rhs]` | Checks inequality. |
+| **Greater Than** | `>: [lhs, rhs]` | Numeric greater-than comparison. |
+| **Less Than** | `<: [lhs, rhs]` | Numeric less-than comparison. |
+
+### Domain-Specific Operators
+
+| Operator | Syntax | Description |
+|:---|:---|:---|
+| **Tool Args Match** | `tool_args_match: <schema>` | Matches tool arguments against a JSON schema. |
+| **Literal** | `true` / `false` | Constant boolean value. |
+
+### Value References
+
+Values in comparison operators can be:
+
+| Type | Syntax | Example |
+|:---|:---|:---|
+| **Variable** | `{var: "path"}` | `{var: "tool_name"}`, `{var: "args.path"}` |
+| **String** | `"value"` | `"read_file"` |
+| **Number** | `123` | `42`, `3.14` |
+| **Boolean** | `true` / `false` | `true` |
+| **Null** | `null` | `null` |
+
+### Examples
+
+??? example "Block network tools only when sensitive data was accessed"
+
+    ```yaml
+    taintRules:
+      - tool: "curl"
+        action: "BLOCK"
+        pattern:
+          and:
+            - {==: [{var: "tool_name"}, "curl"]}
+            - {not: {==: [{var: "session.taints"}, []]}}
+        error: "Network access denied: session holds taints."
+    ```
+
+??? example "Allow a tool only for specific argument patterns"
+
+    ```yaml
+    taintRules:
+      - tool: "read_file"
+        action: "ALLOW"
+        pattern:
+          tool_args_match:
+            path: "/tmp/*"
+    ```
+
+??? example "Complex OR condition with exceptions"
+
+    ```yaml
+    taintRules:
+      - toolClass: "EXFILTRATION"
+        action: "BLOCK"
+        pattern:
+          or:
+            - {==: [{var: "session.taint_count"}, 0]}
+            - {not: true}
+        error: "Exfiltration blocked."
+        exceptions:
+          - when:
+              ==: [{var: "tool_name"}, "approved_upload"]
+            reason: "Approved upload tool is exempt."
+    ```
+
+## `RuleException` Object
+
+Exceptions allow overriding a rule under specific conditions.
+
+| Field | Type | Required | Description |
+|:---|:---|:---|:---|
+| `when` | `LogicCondition` | Yes | Condition that must be true for the exception to apply. |
+| `reason` | `string` | No | Documentation of why this exception exists. |
+
 ## `ResourceRule` Object
 
 | Field | Type | Required | Description |
 |:---|:---|:---|:---|
 | `uriPattern` | `string` | Yes | Glob pattern for the resource URI. |
 | `action` | `string` | Yes | `"ALLOW"` or `"BLOCK"`. |
+| `exceptions` | `list<RuleException>` | No | Exception conditions for this resource rule. |
+| `taintsToAdd` | `list<string>` | No | Taints to add to the session when this resource is accessed. |
 
 ```yaml
 resourceRules:
@@ -64,6 +161,9 @@ resourceRules:
     action: "ALLOW"
   - uriPattern: "file:///etc/*"
     action: "BLOCK"
+  - uriPattern: "file:///home/user/secrets/*"
+    action: "ALLOW"
+    taintsToAdd: ["SENSITIVE_DATA"]
 ```
 
 ## `protectLethalTrifecta`

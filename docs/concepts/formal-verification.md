@@ -1,10 +1,10 @@
-# Formal Verification
+# Verified Security
 
-Lilith Zero uses [Kani](https://model-checking.github.io/kani/), a Rust model checker backed by the CBMC bounded model checker, to **mathematically prove** that critical security invariants hold for all possible inputs — not just test cases.
+Lilith Zero uses [Kani](https://model-checking.github.io/kani/), a Rust model checker backed by the CBMC bounded model checker, to **mathematically prove** that critical security invariants in the middleware's core components hold for all possible inputs — not just test cases.
 
 ## Why Formal Verification?
 
-Unit tests check specific inputs. Fuzzing explores random inputs. **Formal verification exhaustively proves properties over all reachable states.** For a security middleware, this distinction matters:
+Unit tests check specific inputs. Fuzzing explores random inputs. **Formal verification exhaustively proves properties over all reachable states.** For a security middleware's internal components, this distinction matters:
 
 - A missed edge case in content-length parsing = buffer overflow.
 - A weak session ID = session hijacking.

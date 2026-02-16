@@ -2,7 +2,7 @@
 
 **Security Middleware for Agents and MCP Servers**
 
-*Process isolation, policy enforcement, and formal verification for AI agent workflows.*
+*Process isolation, policy enforcement, and verified security for AI agent tool execution.*
 
 ---
 
@@ -34,33 +34,17 @@ By intercepting all communication, Lilith Zero enforces:
 
 ## Key Features
 
-<div class="grid cards" markdown>
+- :material-shield-lock:{ .lg } **Fail-Closed Security** — Default-deny architecture ensures that no tool runs without explicit permission.
 
--   :material-shield-lock: **Fail-Closed Security**
-    ---
-    Default-deny architecture ensures that no tool runs without explicit permission.
+- :material-eye:{ .lg } **Deep Observability** — Full audit logs of every tool execution, argument, and output.
 
--   :material-eye: **Deep Observability**
-    ---
-    Full audit logs of every tool execution, argument, and output.
+- :material-server-network:{ .lg } **Process Supervision** — Automatic cleanup of zombie processes and resource limits enforcement.
 
--   :material-server-network: **Process Supervision**
-    ---
-    Automatic cleanup of zombie processes and resource limits enforcement.
+- :material-file-document-edit:{ .lg } **Declarative Policies** — Define security rules in simple YAML with logical conditions (`and`, `or`, `not`).
 
--   :material-file-document-edit: **Declarative Policies**
-    ---
-    Define security rules in simple YAML files.
+- :material-check-decagram:{ .lg } **Verified Security** — Critical security invariants proven correct via Kani model checking.
 
--   :material-check-decagram: **Formal Verification**
-    ---
-    Critical invariants proven correct via Kani model checking.
-
--   :material-bug: **Red Team Suite**
-    ---
-    Automated attack simulations to validate your policies.
-
-</div>
+- :material-bug:{ .lg } **Red Team Suite** — Automated attack simulations to validate your policies.
 
 ## Next Steps
 

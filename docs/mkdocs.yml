@@ -1,6 +1,6 @@
 site_name: Lilith Zero
 site_url: https://BadC-mpany.github.io/lilith-zero/
-site_description: Security middleware for agents and MCP servers. Process isolation, policy enforcement, and formal verification for AI agent workflows.
+site_description: Security middleware for agents and MCP servers. Process isolation, policy enforcement, and verified security for AI agent tool execution.
 repo_url: https://github.com/BadC-mpany/lilith-zero
 repo_name: BadC-mpany/lilith-zero
 edit_uri: edit/main/docs/
@@ -26,6 +26,7 @@ theme:
     - navigation.top
     - navigation.footer
     - toc.follow
+    - toc.integrate
     - search.suggest
     - search.highlight
     - search.share
@@ -79,6 +80,9 @@ markdown_extensions:
       anchor_linenums: true
   - pymdownx.inlinehilite
   - pymdownx.snippets
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
   - tables
   - attr_list
   - md_in_html
@@ -94,6 +98,7 @@ plugins:
           paths: [../sdk/src]
           options:
             docstring_style: google
+            show_source: true
   - minify:
       minify_html: true
 
@@ -106,7 +111,7 @@ nav:
     - Architecture: concepts/architecture.md
     - Security Model: concepts/security-model.md
     - Process Isolation: concepts/process-isolation.md
-    - Formal Verification: concepts/formal-verification.md
+    - Verified Security: concepts/formal-verification.md
   - Guides:
     - Middleware Setup: guides/middleware-setup.md
     - Writing Policies: guides/writing-policies.md
