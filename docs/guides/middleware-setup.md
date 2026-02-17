@@ -6,7 +6,7 @@ This guide covers how to configure and run the `lilith-zero` middleware process.
 
 The default usage wraps a command (like your agent script) and injects the middleware into its environment.
 
-```bash
+```bash title="Terminal"
 lilith-zero [OPTIONS] -- <YOUR_COMMAND> [ARGS]
 ```
 
@@ -31,16 +31,18 @@ Create a loose `policy.yaml` first, run your agent in `--dry-run` mode to collec
 ### 3. Run the Supervisor
 Launch your agent under Lilith Zero's supervision.
 
-```bash
-# Example: Running a LangChain agent
-lilith-zero --policy production-policy.yaml --audit-log /var/log/lilith/audit.jsonl -- python my_agent.py
+```bash title="Terminal"
+lilith-zero \
+  --policy production-policy.yaml \
+  --audit-log /var/log/lilith/audit.jsonl \
+  -- python my_agent.py
 ```
 
 ## Logging & Observability
 
 The audit log is a **line-delimited JSON (JSON-L)** file. Each line represents a tool execution attempt.
 
-```json
+```json title="audit.jsonl"
 {
   "timestamp": "2023-10-27T10:00:00Z",
   "event": "tool_execution",

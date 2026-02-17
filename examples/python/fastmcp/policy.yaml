@@ -1,0 +1,14 @@
+id: "fastmcp-policy"
+customerId: "demo-user"
+name: "FastMCP Policy"
+version: 1
+
+staticRules:
+  add: "ALLOW"
+  echo: "ALLOW"
+
+taintRules: []
+resourceRules:
+  - uriPattern: "greetings://*"
+    action: "ALLOW"
+protectLethalTrifecta: true

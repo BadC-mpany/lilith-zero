@@ -4,7 +4,7 @@
 
 The `lilith-zero` Python SDK provides an async client for communicating with MCP tool servers through the Lilith Zero security middleware. Install it via:
 
-```bash
+```bash title="Terminal"
 pip install lilith-zero
 ```
 
@@ -26,7 +26,7 @@ The primary client class. Manages the lifecycle of the middleware process and pr
 
 ??? example "Usage"
 
-    ```python
+    ```python title="agent.py"
     import asyncio
     from lilith_zero import Lilith
     from lilith_zero.exceptions import PolicyViolationError
@@ -56,7 +56,7 @@ All exception classes raised by the SDK.
 
 ??? info "Exception Hierarchy"
 
-    ```
+    ```text title="Class Hierarchy"
     LilithError (base)
     ├── LilithConfigError      — Configuration / missing binary
     ├── LilithConnectionError  — Middleware process communication failure

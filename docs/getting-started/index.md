@@ -6,7 +6,7 @@ Let's build a secure "Hello World" agent using Lilith Zero. We will create a sim
 
 Create a file named `server.py`. This script simulates an MCP server with two tools: `ping` (safe) and `read_secret` (sensitive).
 
-```python
+```python title="server.py"
 from mcp_helper import MCPServer # You can use any MCP SDK here
 
 server = MCPServer("MinimalServer")
@@ -31,7 +31,7 @@ if __name__ == "__main__":
 
 Create a file named `policy.yaml`. We will **ALLOW** `ping` but **DENY** `read_secret`.
 
-```yaml
+```yaml title="policy.yaml"
 id: "quickstart-policy"
 customerId: "local-user"
 name: "Quickstart Policy"
@@ -50,7 +50,7 @@ protectLethalTrifecta: false
 
 Create a file named `agent.py` that uses the Lilith SDK to connect to the server securely.
 
-```python
+```python title="agent.py"
 import asyncio
 from lilith_zero import Lilith
 from lilith_zero.exceptions import PolicyViolationError
@@ -80,13 +80,11 @@ if __name__ == "__main__":
 
 ## 4. Run It
 
-```bash
+```bash title="Terminal"
 python agent.py
 ```
 
-### Expected Output
-
-```text
+```text title="Output"
 Calling 'ping'...
 Result: pong
 
@@ -99,4 +97,6 @@ You have successfully intercepted and blocked a tool call using Lilith Zero!
 ## Next Steps
 
 -   Learn how to [Write granular policies](../guides/writing-policies.md).
+-   Build a [Secure Agent Integration](../guides/secure-agent-integration.md) with real MCP servers.
+-   Use the [Native Python SDK](../guides/python-sdk-integration.md) for cleaner code.
 -   Explore the [Architecture](../concepts/architecture.md).

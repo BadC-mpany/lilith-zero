@@ -18,7 +18,7 @@ You can install the middleware automatically via the SDK, or manually from sourc
 
     The Python SDK includes an installer that attempts to automatically download the correct binary for your system if it's not found.
 
-    ```bash
+    ```bash title="Terminal"
     pip install lilith-zero
     # The first time you run it, it will prompt to download the binary.
     ```
@@ -31,28 +31,33 @@ You can install the middleware automatically via the SDK, or manually from sourc
 
     Clone the repository and install via cargo:
 
-    ```bash
+    ```bash title="Terminal"
     git clone https://github.com/BadC-mpany/lilith-zero.git
     cd lilith-zero
     cargo install --path lilith-zero
     ```
 
     Verify the installation:
-    ```bash
+
+    ```bash title="Terminal"
     lilith-zero --version
+    ```
+
+    ```text title="Output"
+    lilith-zero 0.1.2
     ```
 
 ## 2. Installing the Python SDK
 
 The SDK is available on PyPI.
 
-```bash
+```bash title="Terminal"
 pip install lilith-zero
 ```
 
 Or using `uv`:
 
-```bash
+```bash title="Terminal"
 uv pip install lilith-zero
 
 # Or using uv project management
@@ -63,6 +68,6 @@ uv add lilith-zero
 
 | OS | Supported | Isolation Mechanism |
 | :--- | :--- | :--- |
-| **Windows** | ✅ Yes | Job Objects, Restricted Tokens |
-| **macOS** | ✅ Yes | Re-Exec Supervisor, `kqueue` |
-| **Linux** | ✅ Yes | `PR_SET_PDEATHSIG` |
+| **Windows** | :material-check-bold:{ .lg } Yes | Job Objects, Restricted Tokens |
+| **macOS** | :material-check-bold:{ .lg } Yes | Re-Exec Supervisor, `kqueue` |
+| **Linux** | :material-check-bold:{ .lg } Yes | `PR_SET_PDEATHSIG` |

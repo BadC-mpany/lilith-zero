@@ -1,0 +1,23 @@
+id: "langchain-policy"
+customerId: "demo-user"
+name: "LangChain Integration Policy"
+version: 1
+
+staticRules:
+  calculator: "ALLOW"
+  read_customer_data: "ALLOW"
+  system_maintenance: "DENY"
+  export_analytics: "ALLOW"
+
+taintRules:
+  - tool: "read_customer_data"
+    action: "ADD_TAINT"
+    tag: "PII"
+  
+  - tool: "export_analytics"
+    action: "CHECK_TAINT"
+    forbiddenTags: ["PII"]
+    error: "Cannot export analytics containing PII."
+
+resourceRules: []
+protectLethalTrifecta: true

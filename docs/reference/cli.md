@@ -4,7 +4,7 @@ The `lilith-zero` binary is the core entry point for the middleware.
 
 ## Usage
 
-```bash
+```bash title="Terminal"
 lilith-zero [OPTIONS] -- <COMMAND> [ARGS]...
 ```
 
@@ -25,7 +25,9 @@ lilith-zero [OPTIONS] -- <COMMAND> [ARGS]...
 
 ## Exit Codes
 
-- `0`: Success.
-- `1`: General Error (Configuration, Policy missing).
-- `101`: Middleware Panic (Bug).
-- `137`: Process Killed by Supervisor (OOM or Policy Violation).
+| Code | Meaning |
+| :--- | :--- |
+| `0` | Success. |
+| `1` | General Error (Configuration, Policy missing). |
+| `101` | Middleware Panic (Bug). |
+| `137` | Process Killed by Supervisor (OOM or Policy Violation). |

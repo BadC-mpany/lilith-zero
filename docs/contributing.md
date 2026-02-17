@@ -10,8 +10,7 @@ To work on Lilith Zero, you need a development environment with both Rust and Py
 
 We use standard `cargo` workflows.
 
-```bash
-# Build the middleware
+```bash title="Terminal"
 cargo build
 ```
 
@@ -19,7 +18,7 @@ cargo build
 
 We use a single consolidated virtual environment for the SDK, examples, and documentation.
 
-```bash
+```bash title="Terminal"
 # Create the environment
 uv venv
 
@@ -31,11 +30,11 @@ uv pip install -r requirements.txt
 
 We have a rigorous test suite.
 
-```bash
-# Run Rust Unit Tests
+```bash title="Terminal — Rust"
 cargo test
+```
 
-# Run Python SDK Tests
+```bash title="Terminal — Python"
 uv run pytest sdk/tests/
 ```
 
@@ -45,8 +44,7 @@ The documentation is built with [MkDocs Material](https://squidfunk.github.io/mk
 
 To run the documentation server locally:
 
-```bash
-# Run the server (using the consolidated environment)
+```bash title="Terminal"
 uv run mkdocs serve --config-file docs/mkdocs.yml
 ```
 

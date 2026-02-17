@@ -6,7 +6,7 @@ The security of your agent workflow depends on the quality of your policies. Lil
 
 A policy file (`policy.yaml`) defines the security boundaries for a Lilith session.
 
-```yaml
+```yaml title="policy.yaml"
 id: "my-policy"
 customerId: "user-123"
 name: "Production Security Policy"
@@ -72,4 +72,3 @@ If set to `true`, Lilith automatically injects rules to prevent the "Lethal Trif
 3.  Exfiltrating data (calling tools classified as `EXFILTRATION`).
 
 If a session accumulates both potentially dangerous taints, exfiltration tools are blocked.
-

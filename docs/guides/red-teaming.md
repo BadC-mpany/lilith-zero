@@ -10,12 +10,22 @@ Located in `sdk/tests/red_team/`, this Python test suite simulates a compromised
 
 You can run these tests against your specific `policy.yaml` to see if it holds up.
 
-```bash
+```bash title="Terminal"
 # Install the SDK with test dependencies
 uv pip install -e "sdk[test]"
 
 # Run the attack suite
 pytest sdk/tests/red_team/test_attacks.py
+```
+
+```text title="Output — All attacks blocked (GOOD)"
+==================== test session starts ====================
+test_file_read_attack        PASSED   (blocked)
+test_file_write_attack       PASSED   (blocked)
+test_network_connect_attack  PASSED   (blocked)
+test_env_leakage_attack      PASSED   (blocked)
+test_fork_bomb_attack        PASSED   (blocked)
+==================== 5 passed in 2.31s =====================
 ```
 
 ## Attack Vectors Tested

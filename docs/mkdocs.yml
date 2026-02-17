@@ -57,7 +57,7 @@ theme:
     code: JetBrains Mono
 
 extra_css:
-  - assets/extra.css
+  - assets/terminal.css
 
 extra:
   social:
@@ -78,6 +78,8 @@ markdown_extensions:
       alternate_style: true
   - pymdownx.highlight:
       anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
   - pymdownx.inlinehilite
   - pymdownx.snippets
   - pymdownx.emoji:
@@ -113,6 +115,8 @@ nav:
     - Process Isolation: concepts/process-isolation.md
     - Verified Security: concepts/formal-verification.md
   - Guides:
+    - Secure Agent Integration: guides/secure-agent-integration.md
+    - Python SDK Integration: guides/python-sdk-integration.md
     - Middleware Setup: guides/middleware-setup.md
     - Writing Policies: guides/writing-policies.md
     - Red Teaming: guides/red-teaming.md

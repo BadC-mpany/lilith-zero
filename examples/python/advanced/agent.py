@@ -14,27 +14,29 @@
 
 import asyncio
 import os
+import shutil
 import sys
+from dotenv import load_dotenv
 
-from rich.console import Console
-from rich.panel import Panel
-from rich.table import Table
-from rich.live import Live
-from rich.progress import Progress, SpinnerColumn, TextColumn
+# Optional: Rich for UI
+try:
+    from rich.console import Console
+    from rich.panel import Panel
+    from rich.table import Table
+except ImportError:
+    print("Please install rich and python-dotenv")
+    print("uv pip install rich python-dotenv")
+    exit(1)
 
-# import logging
-# logging.basicConfig(level=logging.INFO)
-
-# Standard Lilith path resolution
-PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../"))
-sys.path.insert(0, os.path.join(PROJECT_ROOT, "sdk", "src"))
-from lilith_zero import Lilith
-from lilith_zero.exceptions import PolicyViolationError
+from lilith_zero import Lilith, PolicyViolationError
 
 console = Console()
 
 # Configuration
-LILITH_BIN = os.getenv("LILITH_ZERO_BINARY_PATH", os.path.join(PROJECT_ROOT, "lilith-zero/target/release/lilith-zero.exe"))
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../"))
+load_dotenv(os.path.join(PROJECT_ROOT, "examples/.env"))
+
+LILITH_BIN = shutil.which("lilith-zero") or os.environ.get("LILITH_ZERO_BINARY_PATH")
 MOCK_SERVER = os.path.join(os.path.dirname(__file__), "mock_server.py")
 POLICY_FILE = os.path.join(os.path.dirname(__file__), "policy.yaml")
 

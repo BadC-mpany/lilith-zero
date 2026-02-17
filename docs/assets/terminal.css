@@ -1,0 +1,432 @@
+/* ============================================================
+   Lilith Zero — Cybersecurity Terminal Theme
+   Dark, minimal, sharp. Inspired by security tooling
+   (CrowdStrike, Snyk, Wiz) and hacker terminal aesthetics.
+   ============================================================ */
+
+/* ── Google Fonts: JetBrains Mono for code ── */
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap');
+
+/* ============================================================
+   1. COLOR TOKENS
+   ============================================================ */
+
+/* --- Dark mode (primary) --- */
+[data-md-color-scheme="slate"] {
+  --md-default-bg-color: #0a0e14;
+  --md-default-bg-color--light: #12171f;
+  --md-default-fg-color: #c5cdd9;
+  --md-default-fg-color--light: #6b7d8f;
+
+  --md-primary-fg-color: #0f1318;
+  --md-primary-bg-color: #c5cdd9;
+  --md-accent-fg-color: #00e5ff;
+
+  --md-typeset-a-color: #00e5ff;
+  --md-typeset-a-color--light: rgba(0, 229, 255, 0.7);
+
+  --md-code-bg-color: #0d1117;
+  --md-code-fg-color: #c5cdd9;
+  --md-code-hl-color: rgba(0, 229, 255, .1);
+
+  --md-footer-bg-color: #0a0e14;
+  --md-footer-bg-color--dark: #060a0f;
+
+  /* Terminal tokens */
+  --term-bg: #0a0e14;
+  --term-header-bg: #0f1318;
+  --term-border: #1c2431;
+  --term-glow: rgba(0, 229, 255, 0.06);
+  --term-accent: #00e5ff;
+  --term-accent-dim: rgba(0, 229, 255, 0.4);
+  --term-prompt: #00e5ff;
+  --term-title-fg: #5a6a7e;
+  --term-success: #00e676;
+}
+
+/* --- Light mode --- */
+[data-md-color-scheme="default"] {
+  --md-primary-fg-color: #1a1f26;
+  --md-primary-bg-color: #ffffff;
+  --md-accent-fg-color: #0077b6;
+  --md-typeset-a-color: #0077b6;
+
+  --term-bg: #f4f6f9;
+  --term-header-bg: #e8ecf1;
+  --term-border: #d0d6df;
+  --term-glow: rgba(0, 119, 182, 0.04);
+  --term-accent: #0077b6;
+  --term-accent-dim: rgba(0, 119, 182, 0.3);
+  --term-prompt: #0077b6;
+  --term-title-fg: #5a6272;
+  --term-success: #2e7d32;
+}
+
+
+/* ============================================================
+   2. GLOBAL POLISH
+   ============================================================ */
+
+/* --- Header: frosted glass --- */
+[data-md-color-scheme="slate"] .md-header {
+  background: rgba(10, 14, 20, .88);
+  backdrop-filter: blur(16px) saturate(1.4);
+  -webkit-backdrop-filter: blur(16px) saturate(1.4);
+  border-bottom: 1px solid #1c2431;
+}
+
+/* --- Tabs bar --- */
+[data-md-color-scheme="slate"] .md-tabs {
+  background: #0a0e14;
+  border-bottom: 1px solid #1c2431;
+}
+
+[data-md-color-scheme="slate"] .md-tabs__link--active,
+[data-md-color-scheme="slate"] .md-tabs__link:hover {
+  color: var(--term-accent);
+}
+
+/* --- Navigation active link --- */
+[data-md-color-scheme="slate"] .md-nav__link--active,
+[data-md-color-scheme="slate"] .md-nav__link:is(:focus, :hover) {
+  color: var(--term-accent);
+}
+
+/* --- Footer --- */
+[data-md-color-scheme="slate"] .md-footer {
+  border-top: 1px solid #1c2431;
+}
+
+/* --- Selection --- */
+[data-md-color-scheme="slate"] ::selection {
+  background: rgba(0, 229, 255, .2);
+}
+
+/* --- Smooth transitions --- */
+.md-nav__link,
+.md-tabs__link,
+.md-typeset a {
+  transition: color .15s ease;
+}
+
+
+/* ============================================================
+   3. TERMINAL-STYLE CODE BLOCKS
+   The core of the cybersec aesthetic.
+   ============================================================ */
+
+/* ── Title bar base ── */
+.md-typeset .highlight .filename {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  background: var(--term-header-bg);
+  border: 1px solid var(--term-border);
+  border-bottom: 1px solid var(--term-border);
+  border-radius: 6px 6px 0 0;
+  /* Default padding for files without icons */
+  padding: .5rem .75rem;
+  font-family: "JetBrains Mono", "SF Mono", "Cascadia Code", "Fira Code", monospace;
+  font-size: .7rem;
+  font-weight: 500;
+  letter-spacing: .04em;
+  text-transform: none;
+  color: var(--term-title-fg);
+  user-select: none;
+}
+
+/* ── Pseudo-element for Icons ── */
+.md-typeset .highlight .filename::before {
+  font-family: "JetBrains Mono", monospace;
+  font-weight: 700;
+  margin-right: 0.2rem;
+}
+
+/* ── 1. Terminals (Bash, Shell, Console) use >_ PROMPT ── */
+.md-typeset .language-bash .filename,
+.md-typeset .language-sh .filename,
+.md-typeset .language-console .filename,
+.md-typeset .language-zsh .filename {
+  padding-left: 2.4rem;
+  /* Space for the prompt */
+}
+
+.md-typeset .language-bash .filename::before,
+.md-typeset .language-sh .filename::before,
+.md-typeset .language-console .filename::before,
+.md-typeset .language-zsh .filename::before {
+  content: ">_";
+  position: absolute;
+  left: .75rem;
+  font-size: .7rem;
+  color: var(--term-accent);
+  text-shadow: 0 0 8px var(--term-accent-dim);
+  opacity: .9;
+}
+
+/* ── 2. Config Files (YAML, JSON, TOML) use simple file aesthetic ── */
+.md-typeset .language-yaml .filename::before,
+.md-typeset .language-json .filename::before,
+.md-typeset .language-toml .filename::before {
+  content: "#";
+  color: var(--md-default-fg-color--light);
+  opacity: 0.5;
+}
+
+/* ── 3. Source Code (Python, Rust) use generic code indicator ── */
+.md-typeset .language-python .filename::before,
+.md-typeset .language-rust .filename::before {
+  content: "//";
+  color: var(--md-default-fg-color--light);
+  opacity: 0.5;
+}
+
+/* ── 4. Outputs (text) use NO icon, cleaner look ── */
+.md-typeset .language-text .filename,
+.md-typeset .language-txt .filename {
+  padding-left: .8rem;
+}
+
+.md-typeset .language-text .filename::before,
+.md-typeset .language-txt .filename::before {
+  content: none;
+}
+
+
+/* ── Code body (when titled) ── */
+.md-typeset .highlight .filename+pre,
+.md-typeset .highlight .filename+.highlighttable {
+  border-radius: 0 0 6px 6px !important;
+  border-top: none !important;
+  margin-top: 0 !important;
+}
+
+/* ── All code blocks: base style ── */
+.highlight pre,
+.highlighttable {
+  border: 1px solid var(--term-border) !important;
+  border-radius: 6px;
+  background: var(--term-bg) !important;
+  box-shadow:
+    0 0 0 1px var(--term-border),
+    0 2px 16px var(--term-glow);
+  transition: box-shadow .2s ease;
+}
+
+.highlight pre:hover,
+.highlighttable:hover {
+  box-shadow:
+    0 0 0 1px var(--term-accent-dim),
+    0 4px 24px var(--term-glow);
+}
+
+/* ── Code font ── */
+.highlight code,
+.md-typeset pre code,
+.md-typeset .highlighttable code {
+  font-family: "JetBrains Mono", "SF Mono", "Cascadia Code", "Fira Code", monospace !important;
+  font-size: .75rem !important;
+  line-height: 1.5 !important;
+  font-variant-ligatures: contextual;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+
+/* ============================================================
+   4. COPY BUTTON — Always visible, clean design
+   ============================================================ */
+
+/* Positioned top-right, styled like a terminal action */
+.md-typeset .md-clipboard {
+  position: absolute;
+  top: .45rem;
+  right: .45rem;
+  z-index: 2;
+  width: 1.8rem;
+  height: 1.8rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  color: var(--term-title-fg);
+  background: transparent;
+  border: 1px solid transparent;
+  opacity: .4;
+  transition: all .2s ease;
+  cursor: pointer;
+}
+
+.md-typeset .md-clipboard:hover {
+  color: var(--term-accent);
+  background: rgba(0, 229, 255, .06);
+  border-color: var(--term-accent-dim);
+  opacity: 1;
+}
+
+.md-typeset .md-clipboard:focus,
+.md-typeset .md-clipboard--copied {
+  color: var(--term-success) !important;
+  opacity: 1;
+}
+
+/* In hover state, make slightly more visible */
+.md-typeset .highlight:hover .md-clipboard {
+  opacity: .7;
+}
+
+/* Copy button adjustment for titled blocks */
+.md-typeset .highlight .filename~.md-clipboard,
+.md-typeset .highlight .filename+pre .md-clipboard {
+  top: .35rem;
+}
+
+/* ============================================================
+   5. INLINE CODE
+   ============================================================ */
+
+[data-md-color-scheme="slate"] .md-typeset code {
+  background: #12171f;
+  border: 1px solid #1c2431;
+  border-radius: 4px;
+  padding: .08em .35em;
+  color: #7dd3e8;
+  font-family: "JetBrains Mono", monospace;
+  font-size: .82em;
+}
+
+[data-md-color-scheme="default"] .md-typeset code {
+  background: #edf1f5;
+  border: 1px solid #d0d6df;
+  border-radius: 4px;
+  padding: .08em .35em;
+  color: #0077b6;
+}
+
+
+/* ============================================================
+   6. ADMONITIONS — Sharp, color-coded borders
+   ============================================================ */
+
+[data-md-color-scheme="slate"] .md-typeset .admonition,
+[data-md-color-scheme="slate"] .md-typeset details {
+  background: #0f1318;
+  border: 1px solid #1c2431;
+  border-radius: 4px;
+  border-left: 3px solid #1c2431;
+}
+
+[data-md-color-scheme="slate"] .md-typeset .admonition.danger,
+[data-md-color-scheme="slate"] .md-typeset details.danger {
+  border-left-color: #ff1744;
+}
+
+[data-md-color-scheme="slate"] .md-typeset .admonition.warning,
+[data-md-color-scheme="slate"] .md-typeset details.warning {
+  border-left-color: #ffab00;
+}
+
+[data-md-color-scheme="slate"] .md-typeset .admonition.tip,
+[data-md-color-scheme="slate"] .md-typeset details.tip,
+[data-md-color-scheme="slate"] .md-typeset .admonition.example,
+[data-md-color-scheme="slate"] .md-typeset details.example {
+  border-left-color: var(--term-success);
+}
+
+[data-md-color-scheme="slate"] .md-typeset .admonition.info,
+[data-md-color-scheme="slate"] .md-typeset details.info,
+[data-md-color-scheme="slate"] .md-typeset .admonition.note,
+[data-md-color-scheme="slate"] .md-typeset details.note {
+  border-left-color: var(--term-accent);
+}
+
+
+/* ============================================================
+   7. TABLES — Clean grid, subtle header
+   ============================================================ */
+
+[data-md-color-scheme="slate"] .md-typeset table:not([class]) {
+  border: 1px solid #1c2431;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+[data-md-color-scheme="slate"] .md-typeset table:not([class]) th {
+  background: #0f1318;
+  border-bottom: 1px solid #1c2431;
+  color: #c5cdd9;
+  font-weight: 600;
+  font-size: .82rem;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
+[data-md-color-scheme="slate"] .md-typeset table:not([class]) td {
+  border-top: 1px solid rgba(28, 36, 49, .6);
+  font-size: .85rem;
+}
+
+[data-md-color-scheme="slate"] .md-typeset table:not([class]) tr:hover td {
+  background: rgba(0, 229, 255, .02);
+}
+
+
+/* ============================================================
+   8. SCROLLBAR — Thin, minimal
+   ============================================================ */
+
+[data-md-color-scheme="slate"] ::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+[data-md-color-scheme="slate"] ::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+[data-md-color-scheme="slate"] ::-webkit-scrollbar-thumb {
+  background: #1c2431;
+  border-radius: 3px;
+}
+
+[data-md-color-scheme="slate"] ::-webkit-scrollbar-thumb:hover {
+  background: #2d3a4d;
+}
+
+
+/* ============================================================
+   9. CONTENT TABS
+   ============================================================ */
+
+[data-md-color-scheme="slate"] .md-typeset .tabbed-labels>label {
+  color: #5a6a7e;
+  border-bottom: 2px solid transparent;
+  transition: color .15s ease, border-color .15s ease;
+}
+
+[data-md-color-scheme="slate"] .md-typeset .tabbed-labels>label--active,
+[data-md-color-scheme="slate"] .md-typeset .tabbed-labels>input:checked+label {
+  color: var(--term-accent);
+  border-color: var(--term-accent);
+}
+
+
+/* ============================================================
+   10. SEARCH BAR
+   ============================================================ */
+
+[data-md-color-scheme="slate"] .md-search__input {
+  background: #12171f;
+  border: 1px solid #1c2431;
+  color: #c5cdd9;
+}
+
+[data-md-color-scheme="slate"] .md-search__input::placeholder {
+  color: #5a6a7e;
+}
+
+[data-md-color-scheme="slate"] .md-search__input:focus {
+  border-color: var(--term-accent-dim);
+  box-shadow: 0 0 0 2px rgba(0, 229, 255, .08);
+}

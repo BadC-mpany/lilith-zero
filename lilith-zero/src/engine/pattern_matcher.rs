@@ -181,7 +181,7 @@ impl PatternMatcher {
     }
 
     /// Simple matching with '*' support (Optimized: Zero Allocation)
-    fn wildcard_match(pattern: &str, text: &str) -> bool {
+    pub(crate) fn wildcard_match(pattern: &str, text: &str) -> bool {
         let mut parts = pattern.split('*');
 
         // 1. Check prefix (first part)

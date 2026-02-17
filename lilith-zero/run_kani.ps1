@@ -1,35 +1,72 @@
-# Helper script to run Kani via Docker on Windows
-$ErrorActionPreference = "Stop"
+# Kani verification via Docker
+# Single compilation pass - runs ALL proof harnesses at once
+$ErrorActionPreference = "Continue"
 
-Write-Host "Building Kani Docker image..." -ForegroundColor Cyan
-docker build -t lilith-kani -f kani.Dockerfile .
+Write-Host ""
+Write-Host "=== Building Kani Docker image ===" -ForegroundColor Cyan
+docker build -t lilith-kani -f kani.Dockerfile . 2>$null | Select-Object -Last 1
 
+Write-Host ""
+Write-Host "=== Running ALL Kani proof harnesses (single compilation) ===" -ForegroundColor Cyan
+Write-Host "Compiling + verifying... takes ~60s on first run" -ForegroundColor DarkGray
+Write-Host ""
 
-# Define harnesses to run (Skipping HashMap-heavy proofs due to solver timeouts)
-$harnesses = @(
-    "prove_content_length_no_overflow",
-    "prove_session_id_format",
-    "prove_taint_clean_logic"
-)
+# Run cargo kani (no --harness = run ALL harnesses in one pass)
+$rawOutput = docker run --rm -v "${PWD}:/app" lilith-kani cargo kani 2>$null
+$exitCode = $LASTEXITCODE
 
-$failed = 0
+# Build output array
+$output = @()
+if ($rawOutput) {
+    $output = $rawOutput | ForEach-Object { "$_" }
+}
 
-foreach ($harness in $harnesses) {
-    Write-Host "Running harness: $harness ..." -ForegroundColor Cyan
-    docker run --rm -v "${PWD}:/app" lilith-kani cargo kani --harness $harness
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "Harness $harness FAILED!" -ForegroundColor Red
-        $failed++
-    } else {
-        Write-Host "Harness $harness PASSED!" -ForegroundColor Green
+# Extract verification results
+$verification_lines = $output | Where-Object { $_ -match "^VERIFICATION:" }
+$total_success = @($verification_lines | Where-Object { $_ -match "SUCCESSFUL" }).Count
+$total_fail = @($verification_lines | Where-Object { $_ -match "FAILED" }).Count
+$total = $total_success + $total_fail
+
+# Print clean report
+Write-Host ""
+Write-Host "========================================================" -ForegroundColor Yellow
+Write-Host "              KANI VERIFICATION REPORT                  " -ForegroundColor Yellow
+Write-Host "========================================================" -ForegroundColor Yellow
+Write-Host ""
+
+$currentHarness = ""
+foreach ($line in $output) {
+    if ($line -match "Checking harness (.+)\.\.\.") {
+        $currentHarness = $Matches[1] -replace "verification::verification::", ""
+    }
+    if ($line -match "Status: SUCCESS") {
+        Write-Host "  [PASS] $currentHarness" -ForegroundColor Green
+    }
+    if ($line -match "Status: FAILURE") {
+        Write-Host "  [FAIL] $currentHarness" -ForegroundColor Red
     }
 }
 
-if ($failed -eq 0) {
-    Write-Host "All specified harnesses PASSED!" -ForegroundColor Green
+# Harness summary from Kani
+$harness_summary = $output | Where-Object { $_ -match "^Complete" -or $_ -match "^Manual Harness" }
+Write-Host ""
+Write-Host "--------------------------------------------------------" -ForegroundColor Yellow
+foreach ($line in $harness_summary) {
+    Write-Host "  $line" -ForegroundColor Cyan
+}
+Write-Host "--------------------------------------------------------" -ForegroundColor Yellow
+Write-Host ""
+
+if ($total_fail -eq 0 -and $total_success -gt 0) {
+    Write-Host "  All $total_success proofs verified successfully." -ForegroundColor Green
     exit 0
+} elseif ($total -eq 0) {
+    Write-Host "  WARNING: No harness results found." -ForegroundColor Yellow
+    Write-Host "  Last 15 lines of Kani output:" -ForegroundColor DarkGray
+    $output | Select-Object -Last 15 | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
+    exit 1
 } else {
-    Write-Host "$failed harnesses FAILED!" -ForegroundColor Red
+    Write-Host "  $total_fail of $total proofs FAILED." -ForegroundColor Red
+    $output | Where-Object { $_ -match "FAILED|error\[" } | ForEach-Object { Write-Host "  $_" -ForegroundColor Red }
     exit 1
 }
-

@@ -19,7 +19,7 @@ Complete reference for the `policy.yaml` configuration file.
 
 Simple allowlist / blocklist keyed by tool name.
 
-```yaml
+```yaml title="policy.yaml — staticRules"
 staticRules:
   calculator: "ALLOW"
   read_file: "ALLOW"
@@ -42,7 +42,7 @@ staticRules:
 | `pattern` | `LogicCondition` | No | Conditional logic pattern for rule evaluation (see below). |
 | `exceptions` | `list<RuleException>` | No | Exception conditions that override the rule (see below). |
 
-```yaml
+```yaml title="policy.yaml — taintRules"
 taintRules:
   - tool: "read_file"
     action: "ADD_TAINT"
@@ -98,7 +98,7 @@ Values in comparison operators can be:
 
 ??? example "Block network tools only when sensitive data was accessed"
 
-    ```yaml
+    ```yaml title="policy.yaml — conditional block"
     taintRules:
       - tool: "curl"
         action: "BLOCK"
@@ -111,7 +111,7 @@ Values in comparison operators can be:
 
 ??? example "Allow a tool only for specific argument patterns"
 
-    ```yaml
+    ```yaml title="policy.yaml — args match"
     taintRules:
       - tool: "read_file"
         action: "ALLOW"
@@ -122,7 +122,7 @@ Values in comparison operators can be:
 
 ??? example "Complex OR condition with exceptions"
 
-    ```yaml
+    ```yaml title="policy.yaml — exceptions"
     taintRules:
       - toolClass: "EXFILTRATION"
         action: "BLOCK"
@@ -155,7 +155,7 @@ Exceptions allow overriding a rule under specific conditions.
 | `exceptions` | `list<RuleException>` | No | Exception conditions for this resource rule. |
 | `taintsToAdd` | `list<string>` | No | Taints to add to the session when this resource is accessed. |
 
-```yaml
+```yaml title="policy.yaml — resourceRules"
 resourceRules:
   - uriPattern: "file:///tmp/*"
     action: "ALLOW"
@@ -174,13 +174,13 @@ When set to `true`, Lilith Zero automatically injects taint rules that:
 2. Tag tools with `UNTRUSTED_SOURCE` when they process untrusted input.
 3. Block any tool classified as `EXFILTRATION` if the session holds both taints.
 
-```yaml
+```yaml title="policy.yaml"
 protectLethalTrifecta: true
 ```
 
 ## Minimal Example
 
-```yaml
+```yaml title="policy.yaml — minimal"
 id: "minimal"
 customerId: "dev"
 name: "Development Policy"

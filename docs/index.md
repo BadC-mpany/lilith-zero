@@ -12,16 +12,19 @@
 
 ## Quick Install
 
-```bash
+```bash title="Terminal"
 pip install lilith-zero
+```
 
-# or with uv
+Or with `uv`:
+
+```bash title="Terminal"
 uv add lilith-zero
 ```
 
 Or build the Rust core from source:
 
-```bash
+```bash title="Terminal"
 cargo install --path lilith-zero
 ```
 
@@ -53,3 +56,4 @@ By intercepting all communication, Lilith Zero enforces:
 
 [Get Started](getting-started/installation.md){ .md-button .md-button--primary }
 [Core Concepts](concepts/architecture.md){ .md-button }
+[See Examples](guides/secure-agent-integration.md){ .md-button }

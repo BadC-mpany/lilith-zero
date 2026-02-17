@@ -28,13 +28,13 @@ Our security engineering process integrates formal verification, continuous fuzz
 
 | Assurance Layer | Method | Status |
 |:---|:---|:---|
-| **Formal Verification** | Kani model checking (bounded proofs) | ✅ All harnesses pass |
-| **Unit Tests** | Rust `cargo test` + Python `pytest` | ✅ Full coverage |
-| **Red Team Suite** | Automated attack simulation against policies | ✅ All vectors blocked |
-| **Static Analysis** | `cargo clippy`, `cargo audit` | ✅ Zero warnings |
+| **Formal Verification** | Kani model checking (bounded proofs) | PASS All harnesses pass |
+| **Unit Tests** | Rust `cargo test` + Python `pytest` | PASS Full coverage |
+| **Red Team Suite** | Automated attack simulation against policies | PASS All vectors blocked |
+| **Static Analysis** | `cargo clippy`, `cargo audit` | PASS Zero warnings |
 
 ## Supported Versions
 
 | Version | Supported |
 |:---|:---|
-| 0.1.x | ✅ Active |
+| 0.1.x | Active |

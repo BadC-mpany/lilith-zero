@@ -1,0 +1,14 @@
+[project]
+name = "lilith-zero-docs"
+version = "0.1.0"
+description = "Documentation and development tooling for Lilith Zero"
+requires-python = ">=3.11"
+
+dependencies = [
+    "mkdocs-material>=9.5",
+    "mkdocstrings[python]>=1.0",
+    "mkdocs-minify-plugin>=0.7",
+]
+
+[tool.uv]
+dev-dependencies = ["pytest>=8.0", "pytest-asyncio>=0.23"]
