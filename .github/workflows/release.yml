@@ -16,19 +16,13 @@ jobs:
   # --------------------------------------------------------------------------
   quality-rust:
     uses: ./.github/workflows/_quality_rust.yml
-    permissions:
-      contents: read
 
   quality-python:
     uses: ./.github/workflows/_quality_python.yml
-    permissions:
-      contents: read
 
   test-matrix:
     needs: [quality-rust, quality-python]
     uses: ./.github/workflows/_test.yml
-    permissions:
-      contents: read
     with:
       cargo_profile: release
 
@@ -38,8 +32,6 @@ jobs:
   build-release:
     needs: [test-matrix]
     uses: ./.github/workflows/_build.yml
-    permissions:
-      contents: read
     with:
       retention-days: 30 # Keep release artifacts
 
@@ -79,10 +71,6 @@ jobs:
     uses: ./.github/workflows/_docs.yml
     with:
       deploy: true
-    permissions:
-      contents: read
-      pages: write
-      id-token: write
 
   # --------------------------------------------------------------------------
   # 5. Publish to PyPI
@@ -90,6 +78,3 @@ jobs:
   publish-pypi:
     needs: [test-matrix] # Ensure tests pass before publishing
     uses: ./.github/workflows/_publish_pypi.yml
-    permissions:
-      contents: read
-      id-token: write
