@@ -10,15 +10,7 @@ on:
 permissions:
   contents: read
 
-# Cancel in-progress runs for the same PR
-concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
-
 jobs:
-  # --------------------------------------------------------------------------
-  # 1. Quality & Supply Chain Security
-  # --------------------------------------------------------------------------
   quality-rust:
     uses: ./.github/workflows/_quality_rust.yml
 
@@ -30,20 +22,14 @@ jobs:
     with:
       deploy: false
 
-  # --------------------------------------------------------------------------
-  # 2. Comprehensive Testing Matrix
-  # --------------------------------------------------------------------------
   test-matrix:
     needs: [quality-rust, quality-python]
     uses: ./.github/workflows/_test.yml
     with:
-      cargo_profile: release # Use release profile for tests in CI to catch optim-bugs
+      cargo_profile: release
 
-  # --------------------------------------------------------------------------
-  # 3. Build Verification (Dry Run)
-  # --------------------------------------------------------------------------
   build-dry-run:
     needs: [test-matrix]
     uses: ./.github/workflows/_build.yml
     with:
-      retention-days: 1 # Short retention for PR builds
+      retention-days: 1
