@@ -39,6 +39,7 @@ jobs:
       if: matrix.language == 'rust'
       run: |
         cargo build --all-targets --all-features
+      working-directory: lilith-zero
 
     - name: Autobuild
       if: matrix.language != 'rust'
