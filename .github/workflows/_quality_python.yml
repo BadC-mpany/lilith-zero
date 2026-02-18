@@ -1,0 +1,47 @@
+name: Python Quality
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  quality-python:
+    name: Python Quality
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@b4ffde65f4633668828d0b93fc2f58342292f163 # v4.1.1
+        with:
+          persist-credentials: false
+
+      - name: Install Python
+        uses: actions/setup-python@0a5c671dd719f949c8f657a840003027b4e9f783 # v5.0.0
+        with:
+          python-version: "3.11"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@1786522c0746658097d812224d06a92911b32d0c # v5.1.0
+        with:
+          enable-cache: true
+          cache-suffix: python-quality
+
+      - name: Install Dependencies
+        working-directory: sdk
+        run: |
+          uv pip install --system ruff mypy
+          uv pip install --system .[dev]
+
+      - name: Lint (Ruff)
+        working-directory: sdk
+        run: ruff check src/lilith_zero tests
+
+      - name: Format Check (Ruff)
+        working-directory: sdk
+        run: ruff format --check src/lilith_zero tests
+
+      - name: Type Check (Mypy)
+        working-directory: sdk
+        # Strict mode enforced
+        run: mypy src/lilith_zero --strict --ignore-missing-imports

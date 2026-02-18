@@ -1,203 +1,59 @@
-name: lilith-zero CI
+name: Main CI
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [main]
   pull_request:
-    branches: [ "main" ]
+    branches: [main]
   workflow_dispatch:
-    inputs:
-      force_security:
-        description: 'Force Rigorous Security Suite'
-        required: false
-        default: 'false'
-        type: boolean
 
-env:
-  CARGO_TERM_COLOR: always
-  RUST_BACKTRACE: 1
-  RUSTFLAGS: "-D warnings"
+permissions:
+  contents: read
+
+# Cancel in-progress runs for the same PR
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   # --------------------------------------------------------------------------
-  # Rust Core Validation (High Assurance)
+  # 1. Quality & Supply Chain Security
   # --------------------------------------------------------------------------
-  rust-core:
-    name: Rust Core (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [windows-latest, ubuntu-latest, macos-latest]
-    steps:
-      - uses: actions/checkout@v4
+  quality-rust:
+    uses: ./.github/workflows/_quality_rust.yml
+    permissions:
+      contents: read
 
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy, rustfmt
+  quality-python:
+    uses: ./.github/workflows/_quality_python.yml
+    permissions:
+      contents: read
 
-      - name: Rust Cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: lilith-zero -> target
-
-      - name: Format Check (Strict)
-        run: cargo fmt --all -- --check
-        working-directory: lilith-zero
-
-      - name: Clippy (Strict)
-        run: cargo clippy --all-targets --all-features -- -D warnings
-        working-directory: lilith-zero
-
-      - name: Unit Tests
-        run: cargo test --all-features
-        working-directory: lilith-zero
-
-      - name: Build Release Artifacts
-        run: cargo build --release
-        working-directory: lilith-zero
-
-      - name: Upload Binary Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: lilith-zero-${{ matrix.os }}
-          path: ${{ runner.os == 'Windows' && 'lilith-zero/target/release/lilith-zero.exe' || 'lilith-zero/target/release/lilith-zero' }}
-          if-no-files-found: error
+  docs-check:
+    uses: ./.github/workflows/_docs.yml
+    permissions:
+      contents: read
+    with:
+      deploy: false
 
   # --------------------------------------------------------------------------
-  # Miri Undefined Behavior Check
+  # 2. Comprehensive Testing Matrix
   # --------------------------------------------------------------------------
-  miri:
-    name: Miri
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install Miri
-        run: |
-          rustup toolchain install nightly --component miri
-          rustup override set nightly
-      - name: Run Miri
-        run: cargo miri test
-        working-directory: lilith-zero
-        env:
-          MIRIFLAGS: "-Zmiri-disable-isolation" # Allow some IO if needed, though models are pure
+  test-matrix:
+    needs: [quality-rust, quality-python]
+    uses: ./.github/workflows/_test.yml
+    permissions:
+      contents: read
+    with:
+      cargo_profile: release # Use release profile for tests in CI to catch optim-bugs
 
   # --------------------------------------------------------------------------
-  # Python SDK Validation (Standardized)
+  # 3. Build Verification (Dry Run)
   # --------------------------------------------------------------------------
-  python-sdk:
-    name: Python SDK (Python ${{ matrix.python-version }})
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ["3.10", "3.11"]
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-
-      - name: Install Dependencies
-        run: |
-          uv pip install --system ruff mypy pytest pytest-asyncio pyjwt
-          uv pip install --system -e sdk/
-
-      - name: Ruff Check
-        run: ruff check sdk/src/lilith_zero
-
-      - name: Mypy Check
-        run: mypy sdk/src/lilith_zero --strict --ignore-missing-imports
-
-      - name: Hermetic Tests
-        run: pytest sdk/tests/test_client.py
-
-  # --------------------------------------------------------------------------
-  # Bulletproof Integration Tests
-  # --------------------------------------------------------------------------
-  integration:
-    name: Integration (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    needs: [rust-core]
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [windows-latest, ubuntu-latest, macos-latest]
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-
-      - name: Download Rust Binary
-        uses: actions/download-artifact@v4
-        with:
-          name: lilith-zero-${{ matrix.os }}
-          path: lilith-zero/target/release
-
-      - name: Install SDK & Tools
-        run: |
-          uv pip install --system -e sdk/
-          uv pip install --system pytest pytest-asyncio pyjwt
-
-      - name: Run Integration Tests
-        run: |
-          # Point to new consolidated SDK tests
-          uv run pytest sdk/tests/
-
-      - name: Run End-to-End Validation
-        shell: bash
-        env:
-          LILITH_ZERO_BINARY_PATH: ${{ runner.os == 'Windows' && 'lilith-zero/target/release/lilith-zero.exe' || 'lilith-zero/target/release/lilith-zero' }}
-          RUST_LOG: info
-        run: |
-          if [ "${{ runner.os }}" != "Windows" ]; then chmod +x $LILITH_ZERO_BINARY_PATH; fi
-          # This step is now empty as tests moved to 'Run Integration Tests'
-
-  # --------------------------------------------------------------------------
-  # Rigorous Security Suite (Trigger: [run-sec-rigorous] or Dispatch)
-  # --------------------------------------------------------------------------
-  security-rigorous:
-    name: Rigorous Security (E2E + Fuzz + Formal)
-    if: |
-      github.event_name == 'workflow_dispatch' || 
-      contains(github.event.head_commit.message, '[run-sec]') ||
-      contains(github.event.pull_request.title, '[run-sec]')
-    runs-on: ubuntu-latest
-    needs: [rust-core]
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Rust Cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: lilith-zero -> target
-
-      # Centralized Security Suite Execution
-      - name: Run Centralized Security Suite
-        shell: pwsh
-        env:
-          RUST_LOG: debug
-          LILITH_ZERO_BINARY_PATH: lilith-zero/target/release/lilith-zero
-        run: |
-          # Install dependencies required by the script
-          cargo install --locked cargo-audit
-          cargo install --locked cargo-deny
-          cargo install --locked kani-verifier
-          cargo kani setup
-          
-          # Execute the suite
-          ./scripts/run_security_suite.ps1
+  build-dry-run:
+    needs: [test-matrix]
+    uses: ./.github/workflows/_build.yml
+    permissions:
+      contents: read
+    with:
+      retention-days: 1 # Short retention for PR builds

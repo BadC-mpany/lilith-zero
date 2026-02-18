@@ -1,92 +1,95 @@
-name: lilith-zero Release
+name: Release Pipeline
 
 on:
-  workflow_run:
-    workflows: ["lilith-zero CI"]
-    branches: [main]
-    types:
-      - completed
   push:
-    tags:
-      - "v*"
+    tags: ["v*"]
+  workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: write # Needed for creating releases
+  pages: write    # Needed for deploying docs
+  id-token: write # Needed for PyPI OIDC & Pages OIDC
 
 jobs:
-  build-and-release:
-    if: ${{ github.event_name == 'push' || github.event.workflow_run.conclusion == 'success' }}
-    name: Build & Release (${{ matrix.target }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        include:
-          - os: windows-latest
-            target: x86_64-pc-windows-msvc
-            name: lilith-zero.exe
-          - os: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
-            name: lilith-zero
-          - os: macos-latest
-            target: x86_64-apple-darwin
-            name: lilith-zero-macos-x86
-          - os: macos-latest
-            target: aarch64-apple-darwin
-            name: lilith-zero-macos-arm
+  # --------------------------------------------------------------------------
+  # 1. Final Quality Gate (Before any upload)
+  # --------------------------------------------------------------------------
+  quality-rust:
+    uses: ./.github/workflows/_quality_rust.yml
+    permissions:
+      contents: read
 
-    steps:
-      - uses: actions/checkout@v4
+  quality-python:
+    uses: ./.github/workflows/_quality_python.yml
+    permissions:
+      contents: read
 
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
+  test-matrix:
+    needs: [quality-rust, quality-python]
+    uses: ./.github/workflows/_test.yml
+    permissions:
+      contents: read
+    with:
+      cargo_profile: release
 
-      - name: Build Binary
-        run: cargo build --release --target ${{ matrix.target }}
-        working-directory: lilith-zero
+  # --------------------------------------------------------------------------
+  # 2. Build Production Artifacts
+  # --------------------------------------------------------------------------
+  build-release:
+    needs: [test-matrix]
+    uses: ./.github/workflows/_build.yml
+    permissions:
+      contents: read
+    with:
+      retention-days: 30 # Keep release artifacts
 
-      - name: Prepare Artifact
-        shell: bash
-        run: |
-          mkdir -p dist
-          if [ "${{ matrix.os }}" == "windows-latest" ]; then
-            cp lilith-zero/target/${{ matrix.target }}/release/lilith-zero.exe dist/${{ matrix.name }}
-          else
-            cp lilith-zero/target/${{ matrix.target }}/release/lilith-zero dist/${{ matrix.name }}
-          fi
-
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.name }}
-          path: dist/${{ matrix.name }}
-          if-no-files-found: error
-
-  create-release:
-    needs: build-and-release
+  # --------------------------------------------------------------------------
+  # 3. Publish Release
+  # --------------------------------------------------------------------------
+  publish:
+    name: Create GitHub Release
+    needs: [build-release]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Download All Artifacts
-        uses: actions/download-artifact@v4
+      - name: Checkout Repository
+        uses: actions/checkout@b4ffde65f4633668828d0b93fc2f58342292f163 # v4.1.1
         with:
-          path: artifacts
+          persist-credentials: false
 
-      - name: Display Structure
-        run: ls -R artifacts
+      - name: Download Artifacts
+        uses: actions/download-artifact@6d24a3e0f49f3e9a58d13a6f3260408422329883 # v4.1.7
+        with:
+          path: dist
+          merge-multiple: true
 
       - name: Create Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844 # v0.1.15
         with:
-          files: |
-            artifacts/lilith-zero.exe/lilith-zero.exe
-            artifacts/lilith-zero/lilith-zero
-            artifacts/lilith-zero-macos-x86/lilith-zero-macos-x86
-            artifacts/lilith-zero-macos-arm/lilith-zero-macos-arm
+          files: dist/*
           generate_release_notes: true
-          draft: false
-          prerelease: false
+          fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # --------------------------------------------------------------------------
+  # 4. Deploy Documentation
+  # --------------------------------------------------------------------------
+  deploy-docs:
+    needs: [test-matrix] # Docs usually depend on successful tests/builds
+    uses: ./.github/workflows/_docs.yml
+    with:
+      deploy: true
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+
+  # --------------------------------------------------------------------------
+  # 5. Publish to PyPI
+  # --------------------------------------------------------------------------
+  publish-pypi:
+    needs: [test-matrix] # Ensure tests pass before publishing
+    uses: ./.github/workflows/_publish_pypi.yml
+    permissions:
+      contents: read
+      id-token: write

@@ -1,0 +1,109 @@
+name: Matrix Tests
+
+on:
+  workflow_call:
+    inputs:
+      cargo_profile:
+        required: false
+        type: string
+        default: release
+
+permissions:
+  contents: read
+
+jobs:
+  # --------------------------------------------------------------------------
+  # Rust Core Tests (Matrix)
+  # --------------------------------------------------------------------------
+  test-core:
+    name: Rust Core (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@b4ffde65f4633668828d0b93fc2f58342292f163 # v4.1.1
+        with:
+          persist-credentials: false
+
+      - name: Install Rust Toolchain
+        uses: dtolnay/rust-toolchain@439cf607258077187679215f6352a77a4c3e7bce # stable
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@23bce251a8cd2ffc3c1075eaa863b2310029516d # v2.7.3
+        with:
+          workspaces: lilith-zero -> target
+
+      - name: Unit Tests
+        working-directory: lilith-zero
+        run: cargo test --all-features --${{ inputs.cargo_profile }}
+
+  # --------------------------------------------------------------------------
+  # Miri Undefined Behavior Check (Nightly)
+  # --------------------------------------------------------------------------
+  miri:
+    name: Miri (UB Check)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@b4ffde65f4633668828d0b93fc2f58342292f163 # v4.1.1
+        with:
+          persist-credentials: false
+
+      - name: Install Miri Toolchain
+        uses: dtolnay/rust-toolchain@439cf607258077187679215f6352a77a4c3e7bce # nightly
+        with:
+          components: miri
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@23bce251a8cd2ffc3c1075eaa863b2310029516d # v2.7.3
+        with:
+          workspaces: lilith-zero -> target
+
+      - name: Run Miri
+        working-directory: lilith-zero
+        env:
+          # Allow IO for time/randomness, disabling strict isolation where safe
+          MIRIFLAGS: "-Zmiri-disable-isolation"
+        run: cargo miri test
+
+  # --------------------------------------------------------------------------
+  # Python SDK Integration Tests (Matrix)
+  # --------------------------------------------------------------------------
+  test-sdk:
+    name: SDK (Py${{ matrix.python }})
+    runs-on: ubuntu-latest
+    needs: [test-core] # Wait for core tests to pass first
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.11", "3.12"]
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@b4ffde65f4633668828d0b93fc2f58342292f163 # v4.1.1
+        with:
+          persist-credentials: false
+
+      - name: Install Python ${{ matrix.python }}
+        uses: actions/setup-python@0a5c671dd719f949c8f657a840003027b4e9f783 # v5.0.0
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@1786522c0746658097d812224d06a92911b32d0c # v5.1.0
+        with:
+          enable-cache: true
+          # Unique cache key per python version
+          cache-suffix: sdk-${{ matrix.python }}
+
+      - name: Install SDK & Tests
+        working-directory: sdk
+        run: |
+          uv pip install --system .[dev] ruff mypy pytest pytest-asyncio pyjwt
+
+      - name: Run SDK Tests
+        working-directory: sdk
+        run: pytest -v

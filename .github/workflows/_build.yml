@@ -1,0 +1,71 @@
+name: Build & Artifacts
+
+on:
+  workflow_call:
+    inputs:
+      retention-days:
+        required: false
+        type: number
+        default: 5
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            artifact_name: lilith-zero-linux-x86_64
+            binary_name: lilith-zero
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact_name: lilith-zero-windows-x86_64.exe
+            binary_name: lilith-zero.exe
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            artifact_name: lilith-zero-macos-x86_64
+            binary_name: lilith-zero
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            artifact_name: lilith-zero-macos-aarch64
+            binary_name: lilith-zero
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@b4ffde65f4633668828d0b93fc2f58342292f163 # v4.1.1
+        with:
+          persist-credentials: false
+
+      - name: Install Rust Toolchain
+        uses: dtolnay/rust-toolchain@439cf607258077187679215f6352a77a4c3e7bce # stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@23bce251a8cd2ffc3c1075eaa863b2310029516d # v2.7.3
+        with:
+          workspaces: lilith-zero -> target
+
+      - name: Build Release Binary
+        working-directory: lilith-zero
+        run: cargo build --release --target ${{ matrix.target }} --locked
+
+      - name: Prepare Artifact
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp "lilith-zero/target/${{ matrix.target }}/release/${{ matrix.binary_name }}" "dist/${{ matrix.artifact_name }}"
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@5d5d22a31266ced268874388b861e4b58bb5c2f3 # v4.3.1
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: dist/${{ matrix.artifact_name }}
+          retention-days: ${{ inputs.retention-days }}
+          if-no-files-found: error

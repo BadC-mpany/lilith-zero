@@ -1,0 +1,47 @@
+name: Publish PyPI
+
+on:
+  workflow_call:
+    inputs:
+      repository-url:
+        required: false
+        type: string
+        # Default is empty, which publishes to official PyPI.
+        # Use https://test.pypi.org/legacy/ for TestPyPI.
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish-pypi:
+    name: Publish to PyPI
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/lilith-zero
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@b4ffde65f4633668828d0b93fc2f58342292f163 # v4.1.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@0a5c671dd719f949c8f657a840003027b4e9f783 # v5.0.0
+        with:
+          python-version: "3.11"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@1786522c0746658097d812224d06a92911b32d0c # v5.1.0
+
+      - name: Build Distribution
+        working-directory: sdk
+        run: uv build --package lilith-zero
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@ed0c53931b1dc9bd32cbe73a98c7f6766f8a527e # release/v1
+        with:
+          packages-dir: sdk/dist/
+          print-hash: true
+          attestations: false # Enable if your PyPI project supports it
+          repository-url: ${{ inputs.repository-url }}

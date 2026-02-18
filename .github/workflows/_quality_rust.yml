@@ -1,0 +1,43 @@
+name: Rust Quality
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  quality-rust:
+    name: Rust Quality
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@b4ffde65f4633668828d0b93fc2f58342292f163 # v4.1.1
+        with:
+          persist-credentials: false
+
+      - name: Install Rust Toolchain
+        uses: dtolnay/rust-toolchain@439cf607258077187679215f6352a77a4c3e7bce # stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@23bce251a8cd2ffc3c1075eaa863b2310029516d # v2.7.3
+        with:
+          workspaces: lilith-zero -> target
+
+      - name: Format Check (Strict)
+        run: cargo fmt --all -- --check
+        working-directory: lilith-zero
+
+      - name: Clippy (Strict)
+        # Deny all warnings to ensure zero-tolerance policy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+        working-directory: lilith-zero
+
+      - name: Dependency Scan (Deny)
+        uses: EmbarkStudios/cargo-deny-action@3f4a782664881cf5725d0c31c93f714420451f2d # v1.6.3
+        with:
+          command: check
+          arguments: --all-features
+          manifest-path: lilith-zero/Cargo.toml
