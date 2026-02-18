@@ -108,6 +108,8 @@ fn monitor_parent_kqueue(
 
     // Safety: calling kqueue/kevent is safe in a fresh process.
 
+    // Safety: calling kqueue/kevent is safe in a fresh process.
+    // We are creating a new kernel queue. The return value is checked.
     let kq = unsafe { libc::kqueue() };
     if kq < 0 {
         return Err(std::io::Error::last_os_error());
@@ -122,9 +124,14 @@ fn monitor_parent_kqueue(
         udata: std::ptr::null_mut(),
     };
 
+    // Safety: We are registering a new event filter.
+    // The event structure is stack-allocated and valid.
+    // kqueue file descriptor `kq` is valid and checked above.
+    // changelist size is 1.
     let ret = unsafe { libc::kevent(kq, &event, 1, std::ptr::null_mut(), 0, std::ptr::null()) };
 
     if ret < 0 {
+        // Safety: Closing a valid file descriptor is safe.
         unsafe { libc::close(kq) };
         return Err(std::io::Error::last_os_error());
     }
@@ -141,6 +148,9 @@ fn monitor_parent_kqueue(
             }];
 
             // This blocks until parent exits
+            // Safety: We are waiting for an event.
+            // `kq` is a valid kqueue descriptor (implicitly captured).
+            // `events` is a valid mutable buffer of size 1.
             let n = unsafe {
                 libc::kevent(
                     kq,
@@ -152,6 +162,7 @@ fn monitor_parent_kqueue(
                 )
             };
 
+            // Safety: Closing the kqueue descriptor when the blocking task finishes.
             unsafe { libc::close(kq) };
 
             if n > 0 {

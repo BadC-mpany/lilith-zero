@@ -10,32 +10,13 @@ Please be respectful and constructive in all interactions. We are committed to p
 
 ### Prerequisites
 
-- **Rust 1.70+** for the interceptor
-- **Python 3.10+** for the SDK
-- **Git** for version control
+Please refer to our **[Development Guide](docs/development.md)** for detailed, cross-platform setup instructions (Linux, macOS, Windows).
 
-### Development Setup
+We strictly enforce the use of:
+- **Rust Toolchain**: Managed via `rustup`.
+- **Python Environment**: Managed via `uv`.
 
-```bash
-# Clone the repository
-git clone https://github.com/yourusername/lilith-zero.git
-cd lilith-zero
-
-# Build the Rust interceptor
-cd lilith-zero_middleware
-cargo build --release
-cd ..
-
-# Create Python virtual environment
-python -m venv .venv
-source .venv/bin/activate  # or .venv\Scripts\activate on Windows
-
-# Install SDK in development mode
-pip install -e lilith_zero
-
-# Run tests
-python tests/test_integration.py
-```
+Ensure your environment is correctly configured before proceeding.
 
 ## How to Contribute
 
@@ -108,17 +89,15 @@ Examples:
 
 ### Running Tests
 
+Detailed testing commands are available in [docs/development.md](docs/development.md#3-build--test-workflow).
+
+Common commands:
 ```bash
-# Rust tests
-cd lilith-zero_middleware
+# Rust Tests
 cargo test
 
-# Python integration tests
-export lilith-zero_BINARY_PATH="./lilith-zero_middleware/target/release/lilith-zero-interceptor"
-python tests/test_integration.py
-
-# Full demo
-python examples/demo.py
+# Python Tests
+pytest
 ```
 
 ### Writing Tests

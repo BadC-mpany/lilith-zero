@@ -356,3 +356,84 @@ mod tests {
         .unwrap());
     }
 }
+
+#[cfg(test)]
+mod proptests {
+    use super::*;
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn test_wildcard_match_properties(pattern in "\\PC*", text in "\\PC*") {
+            // Should never panic
+            let _ = PatternMatcher::wildcard_match(&pattern, &text);
+        }
+
+        #[test]
+        fn test_wildcard_match_identity(text in "\\PC*") {
+            assert!(PatternMatcher::wildcard_match(&text, &text));
+        }
+
+        #[test]
+        fn test_wildcard_match_star(text in "\\PC*") {
+            assert!(PatternMatcher::wildcard_match("*", &text));
+        }
+    }
+
+    // --- Complex AST Fuzzing ---
+
+    use proptest::strategy::{Strategy, BoxedStrategy};
+
+    fn arb_logic_value() -> BoxedStrategy<LogicValue> {
+        prop_oneof![
+            Just(LogicValue::Null),
+            any::<bool>().prop_map(LogicValue::Bool),
+            any::<f64>().prop_map(LogicValue::Num),
+            ".*".prop_map(LogicValue::Str),
+            "[a-z]+".prop_map(|var| LogicValue::Var { var }),
+        ].boxed()
+    }
+
+    fn arb_logic_condition() -> impl Strategy<Value = LogicCondition> {
+        let val = arb_logic_value();
+
+        let leaf = prop_oneof![
+            Just(LogicCondition::Literal(true)),
+            Just(LogicCondition::Literal(false)),
+            // Comparisons
+            prop::collection::vec(val.clone(), 2..3).prop_map(LogicCondition::Eq),
+            prop::collection::vec(val.clone(), 2..3).prop_map(LogicCondition::Neq),
+            prop::collection::vec(val.clone(), 2..3).prop_map(LogicCondition::Gt),
+            prop::collection::vec(val.clone(), 2..3).prop_map(LogicCondition::Lt),
+        ];
+
+
+        leaf.prop_recursive(
+            4,    // 4 levels deep
+            64,   // max size
+            10,   // items per collection
+            |inner: proptest::strategy::BoxedStrategy<LogicCondition>| prop_oneof![
+                prop::collection::vec(inner.clone(), 0..3).prop_map(LogicCondition::And),
+                prop::collection::vec(inner.clone(), 0..3).prop_map(LogicCondition::Or),
+                inner.prop_map(|c| LogicCondition::Not(Box::new(c))),
+            ]
+        )
+    }
+
+    proptest! {
+        #[test]
+        fn test_pattern_eval_fuzz(
+            cond in arb_logic_condition(),
+            // We need a runtime to block on async
+        ) {
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            rt.block_on(async {
+                let args = serde_json::json!({});
+                // Should never panic
+                let _ = PatternMatcher::evaluate_pattern_with_args(
+                    &cond, &[], "test", &[], &HashSet::new(), &args
+                ).await;
+            });
+        }
+    }
+}

@@ -14,7 +14,10 @@
 
 use crate::engine_core::crypto::CryptoSigner;
 use serde::Serialize;
-use tracing::info;
+use std::fs::File;
+use std::io::Write;
+use std::sync::{Arc, Mutex};
+use tracing::{error, info};
 
 #[derive(Serialize)]
 struct AuditEntry<'a> {
@@ -26,11 +29,15 @@ struct AuditEntry<'a> {
 
 pub struct AuditLogger {
     signer: CryptoSigner,
+    file_writer: Option<Arc<Mutex<File>>>,
 }
 
 impl AuditLogger {
-    pub fn new(signer: CryptoSigner) -> Self {
-        Self { signer }
+    pub fn new(signer: CryptoSigner, file_writer: Option<Arc<Mutex<File>>>) -> Self {
+        Self {
+            signer,
+            file_writer,
+        }
     }
 
     pub fn log(&self, session_id: &str, event_type: &str, details: serde_json::Value) {
@@ -51,6 +58,22 @@ impl AuditLogger {
         // Emit structured log with signature directly to stderr to match README format
         // [AUDIT] <Signature> <Payload>
         eprintln!("[AUDIT] {} {}", signature, payload_str);
+
+        // If file logging is enabled, write to it
+        if let Some(writer) = &self.file_writer {
+            if let Ok(mut file) = writer.lock() {
+                // simple JSONL format: {"signature": "...", "payload": json_object}
+                let log_entry = serde_json::json!({
+                    "signature": signature,
+                    "payload": entry
+                });
+                if let Err(e) = writeln!(file, "{}", log_entry) {
+                    error!("Failed to write to audit log file: {}", e);
+                }
+            } else {
+                error!("Failed to acquire audit log file lock");
+            }
+        }
 
         // Also trace for debugging
         info!(

@@ -94,6 +94,10 @@ impl ProcessSupervisor {
         // LINUX: PR_SET_PDEATHSIG
         // ------------------------------------------------------------------
         #[cfg(target_os = "linux")]
+        // SAFETY: We are correctly calling the C API for process control.
+        // PR_SET_PDEATHSIG with SIGKILL is a standard Linux mechanism to ensure
+        // child process termination when the parent dies. The integer constants
+        // are provided by the libc crate and are valid for this platform.
         unsafe {
             command.pre_exec(|| {
                 // Send SIGKILL to child if parent (lilith-zero) dies

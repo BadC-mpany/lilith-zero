@@ -34,6 +34,10 @@ struct Cli {
     #[arg(long)]
     policy: Option<PathBuf>,
 
+    /// Path to audit log output file (structured JSONL)
+    #[arg(long)]
+    audit_logs: Option<PathBuf>,
+
     /// Upstream tool arguments (e.g. "tools.py")
     #[arg(last = true)]
     upstream_args: Vec<String>,
@@ -102,7 +106,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .ok_or_else(|| anyhow::anyhow!("Missing --upstream-cmd"))?;
     info!("Upstream: {} {:?}", upstream_cmd, cli.upstream_args);
 
-    let mut middleware = McpMiddleware::new(upstream_cmd, cli.upstream_args, Arc::new(config))?;
+    let mut middleware = McpMiddleware::new(
+        upstream_cmd,
+        cli.upstream_args,
+        Arc::new(config),
+        cli.audit_logs,
+    )?;
 
     middleware.run().await?;
 

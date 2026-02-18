@@ -66,6 +66,24 @@ jobs:
           if-no-files-found: error
 
   # --------------------------------------------------------------------------
+  # Miri Undefined Behavior Check
+  # --------------------------------------------------------------------------
+  miri:
+    name: Miri
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Miri
+        run: |
+          rustup toolchain install nightly --component miri
+          rustup override set nightly
+      - name: Run Miri
+        run: cargo miri test
+        working-directory: lilith-zero
+        env:
+          MIRIFLAGS: "-Zmiri-disable-isolation" # Allow some IO if needed, though models are pure
+
+  # --------------------------------------------------------------------------
   # Python SDK Validation (Standardized)
   # --------------------------------------------------------------------------
   python-sdk:

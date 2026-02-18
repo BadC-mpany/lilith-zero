@@ -62,6 +62,7 @@ pub fn spawn_downstream_reader(stream: tokio::io::Stdin, tx: mpsc::Sender<Downst
                 Err(e) => {
                     error!("Framing error: {}", e);
                     let _ = tx.send(DownstreamEvent::Error(e.to_string())).await;
+                    break;
                 }
             }
         }

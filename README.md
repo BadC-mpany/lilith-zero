@@ -181,9 +181,12 @@ Full integration examples are available in the `examples/` directory:
 ## Development and Verification
 
 ### Build Requirements
-- **Rust Toolchain**: 1.75+ (Stable)
-- **Python Runtime**: 3.10+
-- **Build System**: Cargo (Rust) and uv (Python)
+
+For full setup instructions, see **[docs/development.md](docs/development.md)**.
+
+- **Rust**: Managed via `rustup` (Stable + Nightly for Miri).
+- **Python**: Managed via `uv` (3.10+).
+- **Supported Platforms**: Linux, Windows, macOS.
 
 ### Technical Constraints
 - **Max Message Size**: 10 MB (JSON-RPC payloads exceeding this are dropped to prevent DoS).

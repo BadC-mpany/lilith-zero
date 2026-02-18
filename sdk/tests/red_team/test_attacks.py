@@ -34,7 +34,7 @@ from lilith_zero.exceptions import LilithError, LilithConnectionError, PolicyVio
 
 # Test configuration
 POLICY_PATH = os.path.join(repo_root, "sdk", "tests", "resources", "v0_1_0_policy.yaml")
-MOCK_SERVER = f"python {os.path.join(repo_root, 'examples', 'simple_demo', 'mock_server.py')}"
+MOCK_SERVER = f"python {os.path.join(repo_root, 'examples', 'python', 'minimal', 'server.py')}"
 
 
 # =============================================================================

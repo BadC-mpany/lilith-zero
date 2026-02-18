@@ -20,7 +20,9 @@
 
 use serde_json::json;
 use std::collections::HashSet;
-use std::sync::Arc;
+use std::fs::OpenOptions;
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 use tracing::{info, warn};
 
 use crate::config::Config;
@@ -49,9 +51,21 @@ impl SecurityCore {
     pub fn new(
         config: Arc<Config>,
         signer: CryptoSigner,
+        audit_log_path: Option<PathBuf>,
     ) -> Result<Self, crate::engine_core::errors::InterceptorError> {
         let session_id = signer.generate_session_id()?;
-        let audit = AuditLogger::new(signer.clone());
+
+        let file_writer = if let Some(path) = audit_log_path {
+            let file = OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&path)?;
+            Some(Arc::new(Mutex::new(file)))
+        } else {
+            None
+        };
+
+        let audit = AuditLogger::new(signer.clone(), file_writer);
         Ok(Self {
             config,
             signer,
@@ -83,6 +97,11 @@ impl SecurityCore {
             });
         }
         self.policy = Some(policy);
+    }
+
+    /// Emit an audit log entry
+    pub fn log_audit(&self, event_type: &str, details: serde_json::Value) {
+        self.audit.log(&self.session_id, event_type, details);
     }
 
     /// Primary entry point for all security decisions.
@@ -438,7 +457,7 @@ mod tests {
     async fn test_security_core_flow() {
         let config = Arc::new(Config::default());
         let signer = CryptoSigner::try_new().unwrap();
-        let mut core = SecurityCore::new(config, signer).unwrap();
+        let mut core = SecurityCore::new(config, signer, None).unwrap();
 
         // 1. Handshake
         let event = SecurityEvent::Handshake {
@@ -509,7 +528,7 @@ mod tests {
         };
 
         let mut audit_core =
-            SecurityCore::new(Arc::new(audit_config), CryptoSigner::try_new().unwrap()).unwrap();
+            SecurityCore::new(Arc::new(audit_config), CryptoSigner::try_new().unwrap(), None).unwrap();
         let valid_token_audit = audit_core.session_id.clone();
         let tool_event_audit = SecurityEvent::ToolRequest {
             request_id: serde_json::Value::String("3".to_string()),

@@ -33,6 +33,7 @@ import logging
 import os
 import shutil
 import uuid
+import tempfile
 from asyncio import Future
 from typing import Any, TypedDict, cast
 
@@ -66,6 +67,14 @@ class ToolCall(TypedDict):
 class ToolResult(TypedDict):
     content: list[dict[str, Any]]
     isError: bool | None
+
+
+class AuditEntry(TypedDict):
+    session_id: str
+    timestamp: float
+    event_type: str
+    details: dict[str, Any]
+    signature: str
 
 
 # Module-level constants
@@ -218,7 +227,15 @@ class Lilith:
         self._session_id: str | None = None
         self._session_event = asyncio.Event()
         self._pending_requests: dict[str, asyncio.Future[Any]] = {}
+        self._audit_logs: list[AuditEntry] = []
+        self._audit_file_path: str | None = None
+        self._audit_task: asyncio.Task[None] | None = None
         self._lock = asyncio.Lock()
+
+    @property
+    def audit_logs(self) -> list[AuditEntry]:
+        """Get the list of structured, tamper-proof audit logs emitted by Lilith."""
+        return list(self._audit_logs)
 
     @property
     def session_id(self) -> str | None:
@@ -284,6 +301,13 @@ class Lilith:
     # -------------------------------------------------------------------------
 
     async def _connect(self) -> None:
+        # Create secure temp file for audit logs
+        # We manually manage deletion to ensure we can read it after process exit if needed,
+        # but defaulting to cleanup in _disconnect.
+        tf = tempfile.NamedTemporaryFile(delete=False, prefix="lilith_audit_", suffix=".jsonl")
+        self._audit_file_path = tf.name
+        tf.close()
+
         cmd = self._build_command()
         _logger.info("Spawning Lilith: %s", " ".join(cmd))
 
@@ -304,6 +328,7 @@ class Lilith:
         # Start background readers
         self._reader_task = asyncio.create_task(self._read_stdout_loop())
         self._stderr_task = asyncio.create_task(self._read_stderr_loop())
+        self._audit_task = asyncio.create_task(self._tail_audit_loop())
 
         try:
             # Wait for session ID
@@ -331,6 +356,8 @@ class Lilith:
             self._reader_task.cancel()
         if self._stderr_task:
             self._stderr_task.cancel()
+        if self._audit_task:
+            self._audit_task.cancel()
 
         if self._process:
             try:
@@ -343,6 +370,14 @@ class Lilith:
         self._session_id = None
         self._session_event.clear()  # Clear the event for future connections
 
+        # Cleanup audit file
+        if self._audit_file_path and os.path.exists(self._audit_file_path):
+            try:
+                os.unlink(self._audit_file_path)
+            except OSError:
+                pass
+        self._audit_file_path = None
+
     def _build_command(self) -> list[str]:
         if not self._binary_path or not self._upstream_cmd:
             raise LilithConfigError("Invalid configuration for build_command")
@@ -351,6 +386,9 @@ class Lilith:
 
         if self._policy_path:
             cmd.extend(["--policy", self._policy_path])
+
+        if self._audit_file_path:
+            cmd.extend(["--audit-logs", self._audit_file_path])
 
         cmd.extend(["--upstream-cmd", self._upstream_cmd])
         if self._upstream_args:
@@ -407,6 +445,7 @@ class Lilith:
                     if len(parts) > 1:
                         self._session_id = parts[1].strip()
                         self._session_event.set()
+                        _logger.debug("Captured session ID: %s", self._session_id)
                         _logger.debug("Captured session ID: %s", self._session_id)
                 else:
                     _logger.debug("[stderr] %s", text)
@@ -491,8 +530,76 @@ class Lilith:
         except Exception as e:
             _logger.exception("Uncaught error in reader loop: %s", e)
             await self._disconnect_with_error(str(e))
+        except Exception as e:
+            _logger.exception("Uncaught error in reader loop: %s", e)
+            await self._disconnect_with_error(str(e))
         finally:
             self._cleanup_pending_requests("Lilith process terminated unexpectedly")
+
+    async def _tail_audit_loop(self) -> None:
+        """Tail the audit log file for new entries."""
+        if not self._audit_file_path:
+            return
+
+        # Give Lilith a moment to create/write to the file
+        await asyncio.sleep(0.1)
+
+        try:
+            with open(self._audit_file_path, "r", encoding="utf-8") as f:
+                while True:
+                    line = f.readline()
+                    if line:
+                        try:
+                            # JSONL: {"signature": "...", "payload": {...}}
+                            # But wait, audit.rs writes nested payload as OBJECT in the json wrapper?
+                            # serde_json::json!({ "signature": signature, "payload": entry });
+                            # entry is AuditEntry struct, which is an object.
+                            
+                            data = json.loads(line)
+                            signature = data.get("signature")
+                            payload = data.get("payload") # This is the full AuditEntry object
+                            
+                            if signature and payload:
+                                entry: AuditEntry = {
+                                    "session_id": payload.get("session_id", ""),
+                                    "timestamp": payload.get("timestamp", 0.0),
+                                    "event_type": payload.get("event_type", "UNKNOWN"),
+                                    "details": payload.get("details", {}),
+                                    "signature": signature
+                                }
+                                self._audit_logs.append(entry)
+                        except json.JSONDecodeError:
+                            pass
+                    else:
+                        # EOF
+                        if not self._process or self._process.returncode is not None:
+                             # Drain remaining
+                             remaining = f.read()
+                             if remaining:
+                                 # Split lines
+                                 for l in remaining.split('\n'):
+                                     if l.strip():
+                                         # Process last bits (copy-paste logic, refactor ideally)
+                                          try:
+                                              data = json.loads(l)
+                                              # ... (same logic, simple checks)
+                                              if "signature" in data and "payload" in data:
+                                                  p = data["payload"]
+                                                  self._audit_logs.append({
+                                                      "session_id": p.get("session_id", ""),
+                                                      "timestamp": p.get("timestamp", 0.0),
+                                                      "event_type": p.get("event_type", "UNKNOWN"),
+                                                      "details": p.get("details", {}),
+                                                      "signature": data["signature"]
+                                                  })
+                                          except:
+                                              pass
+                             break
+                        await asyncio.sleep(0.1)
+        except (asyncio.CancelledError, FileNotFoundError):
+            pass
+        except Exception as e:
+            _logger.warning("Audit tail error: %s", e)
 
     async def _disconnect_with_error(self, message: str) -> None:
         """Helper to terminate connection on protocol error and notify callers."""

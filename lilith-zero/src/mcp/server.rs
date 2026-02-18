@@ -65,10 +65,11 @@ impl McpMiddleware {
         upstream_cmd: String,
         upstream_args: Vec<String>,
         config: Arc<Config>,
+        audit_log_path: Option<std::path::PathBuf>,
     ) -> Result<Self> {
         let signer =
             CryptoSigner::try_new().map_err(|e| anyhow::anyhow!("Crypto init failed: {}", e))?;
-        let core = SecurityCore::new(config.clone(), signer)
+        let core = SecurityCore::new(config.clone(), signer, audit_log_path)
             .map_err(|e| anyhow::anyhow!("Security Core init failed: {}", e))?;
         let session = HandshakeManager::negotiate(&config.mcp_version);
 
@@ -138,7 +139,16 @@ impl McpMiddleware {
                         }
                         Some(DownstreamEvent::Error(e)) => {
                             warn!("Downstream transport error: {}", e);
-                            // Optionally send error back if possible?
+                            if e.contains("exceeds max limit") {
+                                // Emit rigorous security audit for attempted DoS
+                                use serde_json::json;
+                                self.core.log_audit("TRANSPORT_ERROR", json!({
+                                    "error": e,
+                                    "reason": "Payload too large (DoS attempt)",
+                                    "action": "BLOCK_CONNECTION"
+                                }));
+                            }
+                            // Connection triggers Disconnect next, which shuts down cleanly
                         }
                         None => break, // Channel closed
                     }

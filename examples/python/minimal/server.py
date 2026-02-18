@@ -79,17 +79,25 @@ def main():
             line = sys.stdin.readline()
             if not line: break
             
-            # Simple JSON-RPC over Stdio (loose line-based for simplicity in this demo)
-            # A real server should handle headers, but Lilith speaks line-based or header-based.
-            # We'll support loose JSON for simplicity here.
-            if not line.strip(): continue
-            
-            # Attempt to parse
-            try:
-                req = json.loads(line)
-            except json.JSONDecodeError:
-                # Might be a header line "Content-Length: ...", skip it
-                continue
+            # Check for Content-Length header
+            if line.lower().startswith("content-length:"):
+                try:
+                    length = int(line.split(":")[1].strip())
+                    # Skip the empty line (\r\n) after header
+                    sys.stdin.readline()
+                    # Read the body
+                    body = sys.stdin.read(length)
+                    req = json.loads(body)
+                except Exception as e:
+                    logger.error(f"Failed to read/parse body: {e}")
+                    continue
+            else:
+                # Loose JSON parsing (fallback)
+                if not line.strip(): continue
+                try:
+                    req = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
 
             resp = handle_request(req)
             if resp:

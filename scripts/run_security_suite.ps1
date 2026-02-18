@@ -109,5 +109,27 @@ if ($IsLinux) {
     }
 }
 
+# --------------------------------------------------------------------------
+# 5. Miri (Undefined Behavior)
+# --------------------------------------------------------------------------
+Print-Header "PHASE 5: Miri (Undefined Behavior)"
+Set-Location "$PSScriptRoot/../lilith-zero"
+
+# Try to run miri if available, or install nightly if needed
+try {
+    if (Get-Command "cargo-miri" -ErrorAction SilentlyContinue) {
+        Write-Host "Running Miri..." -ForegroundColor Yellow
+        Run-Command "cargo" "miri", "test"
+    } else {
+        Write-Host "cargo-miri not found. Attempting install via rustup..." -ForegroundColor DarkGray
+        # This might fail if rustup is not in path or network issues, hence try/catch
+        Run-Command "rustup" "toolchain", "install", "nightly", "--component", "miri"
+        Run-Command "cargo" "+nightly", "miri", "test"
+    }
+} catch {
+    Write-Host "Miri execution failed or not available. Skipping." -ForegroundColor Red
+    if ($env:CI) { exit 1 }
+}
+
 Print-Header "SECURITY SUITE COMPLETED SUCCESSFULLY"
 exit 0
