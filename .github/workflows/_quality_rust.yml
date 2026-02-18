@@ -22,7 +22,7 @@ jobs:
           components: rustfmt, clippy
 
       - name: Rust Cache
-        uses: Swatinem/rust-cache@23bce251a8cd2ffc3c1075eaa863b2310029516d # v2.7.3
+        uses: Swatinem/rust-cache@400e7407cfd7a091e5fbb6afec01ec146c432b7c # v2.7.3
         with:
           workspaces: lilith-zero -> target
 
@@ -36,7 +36,7 @@ jobs:
         working-directory: lilith-zero
 
       - name: Dependency Scan (Deny)
-        uses: EmbarkStudios/cargo-deny-action@3f4a782664881cf5725d0c31c93f714420451f2d # v1.6.3
+        uses: EmbarkStudios/cargo-deny-action@98d3f2050a7b742ed72f1d1910caebb38a92e65e # v1.6.3
         with:
           command: check
           arguments: --all-features
