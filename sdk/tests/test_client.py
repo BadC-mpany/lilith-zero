@@ -1,10 +1,15 @@
 import asyncio
-import json
+from unittest.mock import ANY, AsyncMock, MagicMock, patch
+
 import pytest
-import os
-from unittest.mock import MagicMock, AsyncMock, patch, ANY
+
 from lilith_zero.client import Lilith
-from lilith_zero.exceptions import LilithConfigError, LilithConnectionError, PolicyViolationError, LilithProcessError
+from lilith_zero.exceptions import (
+    LilithConfigError,
+    LilithConnectionError,
+    LilithProcessError,
+    PolicyViolationError,
+)
 
 # --- Fixtures ---
 
@@ -23,9 +28,13 @@ def mock_subprocess():
 @pytest.fixture
 def mock_env(mock_subprocess):
     """Sets up common mocks for Lilith environment."""
-    with patch("asyncio.create_subprocess_exec", return_value=mock_subprocess) as mock_exec, \
-         patch("lilith_zero.client._find_binary", return_value="/bin/lilith"), \
-         patch("os.path.exists", return_value=True):
+    with patch(
+        "asyncio.create_subprocess_exec", return_value=mock_subprocess
+    ) as mock_exec, patch(
+        "lilith_zero.client._find_binary", return_value="/bin/lilith"
+    ), patch(
+        "os.path.exists", return_value=True
+    ):
         yield mock_exec
 
 # --- Configuration Tests ---
@@ -36,7 +45,10 @@ async def test_config_validation():
     with pytest.raises(LilithConfigError, match="Upstream command is required"):
         Lilith(upstream="")
 
-    with patch("lilith_zero.client._find_binary", side_effect=LilithConfigError("Binary not found")):
+    with patch(
+        "lilith_zero.client._find_binary",
+        side_effect=LilithConfigError("Binary not found"),
+    ):
         with pytest.raises(LilithConfigError, match="Binary not found"):
             Lilith(upstream="echo tools")
 
@@ -46,13 +58,22 @@ async def test_config_validation():
 async def test_lifecycle_success(mock_subprocess, mock_env):
     """Verify successful connection setup, handshake, and teardown."""
     # Mock Handshake Logic
-    with patch.object(Lilith, "_send_request", new_callable=AsyncMock) as mock_req, \
-         patch.object(Lilith, "_send_notification", new_callable=AsyncMock) as mock_notify:
+    with patch.object(
+        Lilith, "_send_request", new_callable=AsyncMock
+    ) as mock_req, patch.object(
+        Lilith, "_send_notification", new_callable=AsyncMock
+    ) as mock_notify:
         
         # 1. Stderr provides session ID
-        mock_subprocess.stderr.readline.side_effect = [b"LILITH_ZERO_SESSION_ID=valid-sess-id\n", b""]
+        # 1. Stderr provides session ID
+        mock_subprocess.stderr.readline.side_effect = [
+            b"LILITH_ZERO_SESSION_ID=valid-sess-id\n",
+            b"",
+        ]
         # 2. Stdout active
-        mock_subprocess.stdout.readline.side_effect = [b""] # EOF immediately for unit test
+        mock_subprocess.stdout.readline.side_effect = [
+            b""
+        ]  # EOF immediately for unit test
 
         async with Lilith("python server.py") as client:
             assert client.session_id == "valid-sess-id"
@@ -71,8 +92,11 @@ async def test_connection_failure_immediate_exit(mock_subprocess, mock_env):
     mock_subprocess.stderr.read.return_value = b"Process failed to start"
     mock_subprocess.stderr.readline.side_effect = [b""] 
     
-    with pytest.raises((LilithConnectionError, LilithProcessError), match=r"Lilith process exited early"):
-        async with Lilith("echo") as client:
+    with pytest.raises(
+        (LilithConnectionError, LilithProcessError),
+        match=r"Lilith process exited early",
+    ):
+        async with Lilith("echo"):
             pass
 
 @pytest.mark.asyncio
@@ -81,10 +105,14 @@ async def test_connection_failure_timeout(mock_subprocess, mock_env):
     # Mock wait_for to raise TimeoutError
     with patch("asyncio.wait_for", side_effect=asyncio.TimeoutError):
         # Stderr provides ID (so we pass the first check)
-        mock_subprocess.stderr.readline.side_effect = [b"LILITH_ZERO_SESSION_ID=sess\n", b""]
+        # Stderr provides ID (so we pass the first check)
+        mock_subprocess.stderr.readline.side_effect = [
+            b"LILITH_ZERO_SESSION_ID=sess\n",
+            b"",
+        ]
         
         with pytest.raises(LilithConnectionError, match="Handshake timeout"):
-            async with Lilith("echo") as client:
+            async with Lilith("echo"):
                 pass
 
 # --- Protocol & Policy Tests ---
@@ -123,8 +151,8 @@ async def test_policy_violation_parsing(mock_subprocess, mock_env):
         "error": {
             "code": -32000,
             "message": "Policy Violation: Blocked by rule",
-            "data": {"reason": "lethal trifecta"}
-        }
+            "data": {"reason": "lethal trifecta"},
+        },
     }
     
     client._dispatch_response(error_response)
@@ -143,7 +171,7 @@ async def test_large_payload_handling(mock_subprocess, mock_env):
     
     # 5MB Payload
     huge_str = "A" * (5 * 1024 * 1024)
-    future = asyncio.Future()
+    asyncio.Future()
     
     # Mock send_request to ensure it actually tries to write to stdin
     # We can't use the real _send_request unless we mock stdin.write
@@ -162,7 +190,9 @@ async def test_large_payload_handling(mock_subprocess, mock_env):
         
         # Verify it was passed to send_request
         args, _ = mock_send.call_args
-        # call_tool(name, args) calls _send_request("tools/call", {"name": name, "arguments": args})
+        # call_tool(name, args) calls _send_request(
+        #     "tools/call", {"name": name, "arguments": args}
+        # )
         assert args[0] == "tools/call"
         
         params = args[1]
@@ -211,9 +241,14 @@ async def test_runtime_health_check(mock_subprocess, mock_env):
         await client.list_tools()
 
     # 2. Process dies -> Failure
-    mock_subprocess.returncode = -9 # Killed
+    mock_subprocess.returncode = -9  # Killed
     
-    # We do NOT mock _send_request here, so it runs the real logic which checks returncode
+    # We do NOT mock _send_request here, so it runs the real logic which checks
+    # returncode
+    # The SDK itself does NOT parse/strip them (that's user's job or verifying they 
+    # exist).
+    # This test verifies that if middleware sends them, SDK passes them through 
+    # correctly.
     with pytest.raises(LilithConnectionError, match=r"Lilith process is not running"):
         await client.list_tools()
 
@@ -224,10 +259,14 @@ async def test_spotlighting_delimiters(mock_subprocess, mock_env):
     client._session_id = "sess"
     
     # Mock response containing spotlight delimiters
-    # The SDK itself does NOT parse/strip them (that's user's job or verifying they exist).
-    # This test verifies that if middleware sends them, SDK passes them through correctly.
+    # The SDK itself does NOT parse/strip them (that's user's job or verifying they
+    # exist).
+    # This test verifies that if middleware sends them, SDK passes them through
+    # correctly.
     
-    response_text = "<<<LILITH_ZERO_DATA_START:123>>>secret<<<LILITH_ZERO_DATA_END:123>>>"
+    response_text = (
+        "<<<LILITH_ZERO_DATA_START:123>>>secret<<<LILITH_ZERO_DATA_END:123>>>"
+    )
     
     with patch.object(client, "_send_request", new_callable=AsyncMock) as mock_send:
         mock_send.return_value = {"content": [{"text": response_text}]}

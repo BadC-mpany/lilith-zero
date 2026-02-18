@@ -382,7 +382,7 @@ mod proptests {
 
     // --- Complex AST Fuzzing ---
 
-    use proptest::strategy::{Strategy, BoxedStrategy};
+    use proptest::strategy::{BoxedStrategy, Strategy};
 
     fn arb_logic_value() -> BoxedStrategy<LogicValue> {
         prop_oneof![
@@ -391,7 +391,8 @@ mod proptests {
             any::<f64>().prop_map(LogicValue::Num),
             ".*".prop_map(LogicValue::Str),
             "[a-z]+".prop_map(|var| LogicValue::Var { var }),
-        ].boxed()
+        ]
+        .boxed()
     }
 
     fn arb_logic_condition() -> impl Strategy<Value = LogicCondition> {
@@ -407,16 +408,17 @@ mod proptests {
             prop::collection::vec(val.clone(), 2..3).prop_map(LogicCondition::Lt),
         ];
 
-
         leaf.prop_recursive(
-            4,    // 4 levels deep
-            64,   // max size
-            10,   // items per collection
-            |inner: proptest::strategy::BoxedStrategy<LogicCondition>| prop_oneof![
-                prop::collection::vec(inner.clone(), 0..3).prop_map(LogicCondition::And),
-                prop::collection::vec(inner.clone(), 0..3).prop_map(LogicCondition::Or),
-                inner.prop_map(|c| LogicCondition::Not(Box::new(c))),
-            ]
+            4,  // 4 levels deep
+            64, // max size
+            10, // items per collection
+            |inner: proptest::strategy::BoxedStrategy<LogicCondition>| {
+                prop_oneof![
+                    prop::collection::vec(inner.clone(), 0..3).prop_map(LogicCondition::And),
+                    prop::collection::vec(inner.clone(), 0..3).prop_map(LogicCondition::Or),
+                    inner.prop_map(|c| LogicCondition::Not(Box::new(c))),
+                ]
+            },
         )
     }
 

@@ -30,18 +30,16 @@ jobs:
       - name: Install Dependencies
         working-directory: sdk
         run: |
-          uv pip install --system ruff mypy
-          uv pip install --system .[dev]
+          uv pip install --system -e .[dev]
 
       - name: Lint (Ruff)
         working-directory: sdk
-        run: ruff check src/lilith_zero tests
+        run: uv run ruff check src/lilith_zero tests
 
       - name: Format Check (Ruff)
         working-directory: sdk
-        run: ruff format --check src/lilith_zero tests
+        run: uv run ruff format --check src/lilith_zero tests
 
       - name: Type Check (Mypy)
         working-directory: sdk
-        # Strict mode enforced
-        run: mypy src/lilith_zero --strict --ignore-missing-imports
+        run: uv run mypy src/lilith_zero tests --strict --ignore-missing-imports

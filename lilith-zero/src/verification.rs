@@ -33,7 +33,10 @@ mod verification {
         let static_deny = true;
         // evaluator.rs:45: early return on DENY — taint rules unreachable
         let taint_rules_run = !static_deny;
-        kani::assert(!taint_rules_run, "CRITICAL: Static DENY short-circuits before taint eval");
+        kani::assert(
+            !taint_rules_run,
+            "CRITICAL: Static DENY short-circuits before taint eval",
+        );
     }
 
     // =========================================================================
@@ -59,8 +62,8 @@ mod verification {
     fn prove_taint_removal_is_explicit() {
         // All 3 tags initially present
         let t0 = false; // ACCESS_PRIVATE: explicitly removed
-        let t1 = true;  // UNTRUSTED_SOURCE: untouched
-        let t2 = true;  // SECRET: untouched
+        let t1 = true; // UNTRUSTED_SOURCE: untouched
+        let t2 = true; // SECRET: untouched
         kani::assert(!t0, "Explicitly removed taint must be absent");
         kani::assert(t1, "CRITICAL: Non-removed taint must persist");
         kani::assert(t2, "CRITICAL: Non-removed taint must persist");
@@ -82,9 +85,18 @@ mod verification {
         let t2 = pre2 || kani::any::<bool>();
 
         // INVARIANT: anything true before is still true after
-        kani::assert(!pre0 || t0, "CRITICAL: Tag 0 must not vanish without remove");
-        kani::assert(!pre1 || t1, "CRITICAL: Tag 1 must not vanish without remove");
-        kani::assert(!pre2 || t2, "CRITICAL: Tag 2 must not vanish without remove");
+        kani::assert(
+            !pre0 || t0,
+            "CRITICAL: Tag 0 must not vanish without remove",
+        );
+        kani::assert(
+            !pre1 || t1,
+            "CRITICAL: Tag 1 must not vanish without remove",
+        );
+        kani::assert(
+            !pre2 || t2,
+            "CRITICAL: Tag 2 must not vanish without remove",
+        );
     }
 
     // =========================================================================
@@ -94,7 +106,10 @@ mod verification {
     fn prove_lethal_trifecta_blocks() {
         let has_ap = true;
         let has_us = true;
-        kani::assert(has_ap && has_us, "CRITICAL: Trifecta must fire when both present");
+        kani::assert(
+            has_ap && has_us,
+            "CRITICAL: Trifecta must fire when both present",
+        );
     }
 
     // =========================================================================
@@ -116,7 +131,10 @@ mod verification {
         let us: bool = kani::any();
         let blocks = ap && us;
         // Blocks IFF both present — no more, no less
-        kani::assert(blocks == (ap && us), "Trifecta fires IFF both taints present");
+        kani::assert(
+            blocks == (ap && us),
+            "Trifecta fires IFF both taints present",
+        );
     }
 
     // =========================================================================
@@ -126,7 +144,10 @@ mod verification {
     fn prove_forbidden_tags_or_semantics() {
         let has_secret = true;
         let has_pii = false;
-        kani::assert(has_secret || has_pii, "CRITICAL: ANY forbidden tag must block");
+        kani::assert(
+            has_secret || has_pii,
+            "CRITICAL: ANY forbidden tag must block",
+        );
     }
 
     // =========================================================================
@@ -137,8 +158,12 @@ mod verification {
         let a: bool = kani::any();
         let b: bool = kani::any();
         let blocks = a || b;
-        if !a && !b { kani::assert(!blocks, "No forbidden → no block"); }
-        if a || b   { kani::assert(blocks, "Any forbidden → block"); }
+        if !a && !b {
+            kani::assert(!blocks, "No forbidden → no block");
+        }
+        if a || b {
+            kani::assert(blocks, "Any forbidden → block");
+        }
     }
 
     // =========================================================================
@@ -232,7 +257,10 @@ mod tests {
         use crate::engine::pattern_matcher::PatternMatcher;
         assert!(PatternMatcher::wildcard_match("**", "anything"));
         assert!(PatternMatcher::wildcard_match("**", ""));
-        assert!(PatternMatcher::wildcard_match("file://**/secret", "file:///home/secret"));
+        assert!(PatternMatcher::wildcard_match(
+            "file://**/secret",
+            "file:///home/secret"
+        ));
         assert!(PatternMatcher::wildcard_match("exact", "exact"));
         assert!(!PatternMatcher::wildcard_match("exact", "exactt"));
         assert!(!PatternMatcher::wildcard_match("exact", "exac"));

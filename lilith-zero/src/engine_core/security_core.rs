@@ -56,10 +56,7 @@ impl SecurityCore {
         let session_id = signer.generate_session_id()?;
 
         let file_writer = if let Some(path) = audit_log_path {
-            let file = OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(&path)?;
+            let file = OpenOptions::new().create(true).append(true).open(&path)?;
             Some(Arc::new(Mutex::new(file)))
         } else {
             None
@@ -527,8 +524,12 @@ mod tests {
             ..Config::default()
         };
 
-        let mut audit_core =
-            SecurityCore::new(Arc::new(audit_config), CryptoSigner::try_new().unwrap(), None).unwrap();
+        let mut audit_core = SecurityCore::new(
+            Arc::new(audit_config),
+            CryptoSigner::try_new().unwrap(),
+            None,
+        )
+        .unwrap();
         let valid_token_audit = audit_core.session_id.clone();
         let tool_event_audit = SecurityEvent::ToolRequest {
             request_id: serde_json::Value::String("3".to_string()),

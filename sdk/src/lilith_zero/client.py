@@ -32,8 +32,8 @@ import json
 import logging
 import os
 import shutil
-import uuid
 import tempfile
+import uuid
 from asyncio import Future
 from typing import Any, TypedDict, cast
 
@@ -136,7 +136,11 @@ def _find_binary() -> str:
         # sdk/src/lilith_zero/client.py -> sdk/src/lilith_zero -> sdk/src -> sdk -> repo
         repo_root = os.path.dirname(os.path.dirname(os.path.dirname(current_dir)))
         dev_binary = os.path.join(
-            repo_root, "lilith-zero", "target", "release", _BINARY_NAME
+            repo_root,
+            "lilith-zero",
+            "target",
+            "release",
+            _BINARY_NAME,
         )
         if os.path.exists(dev_binary):
             _logger.debug(f"Found dev binary at {dev_binary}")
@@ -302,9 +306,11 @@ class Lilith:
 
     async def _connect(self) -> None:
         # Create secure temp file for audit logs
-        # We manually manage deletion to ensure we can read it after process exit if needed,
-        # but defaulting to cleanup in _disconnect.
-        tf = tempfile.NamedTemporaryFile(delete=False, prefix="lilith_audit_", suffix=".jsonl")
+        # We manually manage deletion to ensure we can read it after process 
+        # exit if needed, but defaulting to cleanup in _disconnect.
+        tf = tempfile.NamedTemporaryFile(
+            delete=False, prefix="lilith_audit_", suffix=".jsonl"
+        )
         self._audit_file_path = tf.name
         tf.close()
 
@@ -446,7 +452,6 @@ class Lilith:
                         self._session_id = parts[1].strip()
                         self._session_event.set()
                         _logger.debug("Captured session ID: %s", self._session_id)
-                        _logger.debug("Captured session ID: %s", self._session_id)
                 else:
                     _logger.debug("[stderr] %s", text)
         except asyncio.CancelledError:
@@ -530,9 +535,6 @@ class Lilith:
         except Exception as e:
             _logger.exception("Uncaught error in reader loop: %s", e)
             await self._disconnect_with_error(str(e))
-        except Exception as e:
-            _logger.exception("Uncaught error in reader loop: %s", e)
-            await self._disconnect_with_error(str(e))
         finally:
             self._cleanup_pending_requests("Lilith process terminated unexpectedly")
 
@@ -551,13 +553,17 @@ class Lilith:
                     if line:
                         try:
                             # JSONL: {"signature": "...", "payload": {...}}
-                            # But wait, audit.rs writes nested payload as OBJECT in the json wrapper?
-                            # serde_json::json!({ "signature": signature, "payload": entry });
+                            # But wait, audit.rs writes nested payload as OBJECT in the 
+                            # json wrapper?
+                            # serde_json::json!({ 
+                            #     "signature": signature, "payload": entry 
+                            # });
                             # entry is AuditEntry struct, which is an object.
                             
                             data = json.loads(line)
                             signature = data.get("signature")
-                            payload = data.get("payload") # This is the full AuditEntry object
+                            # This is the full AuditEntry object
+                            payload = data.get("payload")
                             
                             if signature and payload:
                                 entry: AuditEntry = {
@@ -577,22 +583,34 @@ class Lilith:
                              remaining = f.read()
                              if remaining:
                                  # Split lines
-                                 for l in remaining.split('\n'):
-                                     if l.strip():
-                                         # Process last bits (copy-paste logic, refactor ideally)
+                                 for log_line in remaining.split('\n'):
+                                     if log_line.strip():
+                                         # Process last bits (copy-paste logic, 
+                                         # refactor ideally)
                                           try:
-                                              data = json.loads(l)
+                                              data = json.loads(log_line)
                                               # ... (same logic, simple checks)
-                                              if "signature" in data and "payload" in data:
+                                              if (
+                                                  "signature" in data and 
+                                                  "payload" in data
+                                              ):
                                                   p = data["payload"]
                                                   self._audit_logs.append({
-                                                      "session_id": p.get("session_id", ""),
-                                                      "timestamp": p.get("timestamp", 0.0),
-                                                      "event_type": p.get("event_type", "UNKNOWN"),
-                                                      "details": p.get("details", {}),
+                                                      "session_id": p.get(
+                                                          "session_id", ""
+                                                      ),
+                                                      "timestamp": p.get(
+                                                          "timestamp", 0.0
+                                                      ),
+                                                      "event_type": p.get(
+                                                          "event_type", "UNKNOWN"
+                                                      ),
+                                                      "details": p.get(
+                                                          "details", {}
+                                                      ),
                                                       "signature": data["signature"]
                                                   })
-                                          except:
+                                          except Exception:
                                               pass
                              break
                         await asyncio.sleep(0.1)
@@ -724,11 +742,16 @@ class Lilith:
             
             # Diagnostic: check if process is actually still alive
             if self._process and self._process.returncode is not None:
-                # We can't easily read stderr here without potentially blocking or 
-                # competing with the background reader, but we can report the exit code.
+                # We can't easily read stderr here without potentially 
+                # blocking or competing with the background reader, but 
+                # we can report the exit code.
                 raise LilithProcessError(
-                    f"Request '{method}' failed because Lilith process exited with code {self._process.returncode}",
+                    f"Request '{method}' failed because Lilith process exited "
+                    f"with code {self._process.returncode}",
                     exit_code=self._process.returncode
                 ) from e
                 
-            raise LilithError(f"Request '{method}' timed out after 30s. Ensure upstream tool is responsive.") from e
+            raise LilithError(
+                f"Request '{method}' timed out after 30s. Ensure upstream tool "
+                "is responsive."
+            ) from e

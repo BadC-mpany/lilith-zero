@@ -20,25 +20,31 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        language: [ 'python' ]
-        # Rust is supported in beta, adding it for rigorous check.
-        # If it causes instability, it can be commented out.
+        language: [ 'python', 'rust', 'actions' ]
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+      with:
+        persist-credentials: false
 
     - name: Initialize CodeQL
-      uses: github/codeql-action/init@v3
+      uses: github/codeql-action/init@17573ee2cc18f10a3000965e550424563810f69d # v3.24.4
       with:
         languages: ${{ matrix.language }}
-        # Rigorous configuration
         queries: security-extended,security-and-quality
 
+    # Manual build step for Rust to ensure it builds correctly for CodeQL
+    - name: Build Rust components (if Rust)
+      if: matrix.language == 'rust'
+      run: |
+        cargo build --all-targets --all-features
+
     - name: Autobuild
-      uses: github/codeql-action/autobuild@v3
+      if: matrix.language != 'rust'
+      uses: github/codeql-action/autobuild@17573ee2cc18f10a3000965e550424563810f69d # v3.24.4
 
     - name: Perform CodeQL Analysis
-      uses: github/codeql-action/analyze@v3
+      uses: github/codeql-action/analyze@17573ee2cc18f10a3000965e550424563810f69d # v3.24.4
       with:
         category: "/language:${{ matrix.language }}"

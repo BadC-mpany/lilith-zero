@@ -37,5 +37,25 @@ classifiers = [
 ]
 dependencies = []
 
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.1.0",
+    "mypy>=1.0.0",
+    "pytest>=7.0.0",
+    "types-setuptools",
+]
+
+[tool.ruff]
+line-length = 88
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B"]
+ignore = []
+
+[tool.mypy]
+strict = true
+ignore_missing_imports = true
+
 [project.urls]
 Homepage = "https://github.com/BadC-mpany/lilith-zero"

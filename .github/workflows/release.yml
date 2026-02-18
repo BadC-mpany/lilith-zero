@@ -7,6 +7,8 @@ on:
 
 
 
+permissions: {}
+
 jobs:
   quality-rust:
     uses: ./.github/workflows/_quality_rust.yml
@@ -30,13 +32,22 @@ jobs:
     name: Create GitHub Release
     needs: [build-release]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@6d24a3e0f49f3e9a58d13a6f3260408422329883
+      - name: Checkout Repository
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+        with:
+          persist-credentials: false
+
+      - name: Download Artifacts
+        uses: actions/download-artifact@6d24a3e0f49f3e9a58d13a6f3260408422329883 # v4.1.1
         with:
           path: dist
           merge-multiple: true
-      - uses: softprops/action-gh-release@c95fe1489396fe8a9eb87c0abf8aa5b2ef267fda
+
+      - name: Create Release
+        uses: softprops/action-gh-release@c95fe1489396fe8a9eb87c0abf8aa5b2ef267fda # v1
         with:
           files: dist/*
           generate_release_notes: true
