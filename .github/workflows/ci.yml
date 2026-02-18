@@ -17,9 +17,7 @@ jobs:
     uses: ./.github/workflows/_quality_python.yml
 
   docs-check:
-    uses: ./.github/workflows/_docs.yml
-    with:
-      deploy: false
+    uses: ./.github/workflows/_docs_build.yml
 
   test-matrix:
     needs: [quality-rust, quality-python]

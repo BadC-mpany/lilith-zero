@@ -44,11 +44,13 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  deploy-docs:
+  build-docs:
     needs: [test-matrix]
-    uses: ./.github/workflows/_docs.yml
-    with:
-      deploy: true
+    uses: ./.github/workflows/_docs_build.yml
+
+  deploy-docs:
+    needs: [build-docs]
+    uses: ./.github/workflows/_docs_deploy.yml
 
   publish-pypi:
     needs: [test-matrix]
