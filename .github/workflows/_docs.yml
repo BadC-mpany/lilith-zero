@@ -8,15 +8,12 @@ on:
         type: boolean
         default: false
 
-permissions:
-  contents: read
-  pages: write
-  id-token: write
-
 jobs:
   build-docs:
     name: Build Documentation
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Checkout Repository
         uses: actions/checkout@b4ffde65f4633668828d0b93fc2f58342292f163 # v4.1.1
@@ -53,6 +50,10 @@ jobs:
     needs: build-docs
     name: Deploy to GitHub Pages
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
