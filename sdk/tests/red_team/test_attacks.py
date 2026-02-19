@@ -40,9 +40,7 @@ from lilith_zero.exceptions import (  # noqa: E402
 )
 
 # Test configuration
-POLICY_PATH = os.path.join(
-    repo_root, "sdk", "tests", "resources", "v0_1_0_policy.yaml"
-)
+POLICY_PATH = os.path.join(repo_root, "sdk", "tests", "resources", "v0_1_0_policy.yaml")
 MOCK_SERVER = (
     f"python {os.path.join(repo_root, 'examples', 'python', 'minimal', 'server.py')}"
 )
@@ -58,17 +56,17 @@ async def test_slowloris_attack() -> None:
     This tests the timeout and framing robustness of the Rust middleware.
     """
     cmd = (
-        'python -c "import time, sys; sys.stdout.write(\'Content-Length: 10'
-        '\\r\\n\\r\\n\'); sys.stdout.flush(); time.sleep(5)"'
+        "python -c \"import time, sys; sys.stdout.write('Content-Length: 10"
+        "\\r\\n\\r\\n'); sys.stdout.flush(); time.sleep(5)\""
     )
-    
+
     start_time = time.time()
     try:
         async with Lilith(cmd, policy=POLICY_PATH) as s:
             await asyncio.wait_for(s.list_tools(), timeout=3.0)
     except (asyncio.TimeoutError, LilithError):
         pass  # Expected: timeout or connection failure
-    
+
     duration = time.time() - start_time
     assert duration < 40.0, "Middleware took too long to handle slow drip"
 
@@ -82,7 +80,7 @@ async def test_huge_payload() -> None:
     Send a massive payload to test memory limits and buffer safety.
     """
     huge_data = "A" * (10 * 1024 * 1024)  # 10MB
-    
+
     try:
         async with Lilith(MOCK_SERVER, policy=POLICY_PATH) as s:
             await s.call_tool("echo", {"text": huge_data})
@@ -101,14 +99,14 @@ async def test_huge_payload() -> None:
 async def test_unicode_homoglyph_bypass() -> None:
     """
     Attempt to bypass policy rules using Unicode homoglyphs.
-    
+
     Attack: If policy blocks "dangerous_op", try "dаngerous_op" where 'а' is
     Cyrillic. The tool names should be normalized or the attack should be blocked.
     """
     # Cyrillic 'а' (U+0430) looks identical to Latin 'a' (U+0061)
     cyrillic_a = "\u0430"
     homoglyph_tool = f"d{cyrillic_a}ngerous_op"
-    
+
     try:
         async with Lilith(MOCK_SERVER, policy=POLICY_PATH) as s:
             await s.call_tool(homoglyph_tool, {})
@@ -119,9 +117,7 @@ async def test_unicode_homoglyph_bypass() -> None:
     except LilithError as e:
         # Also acceptable: upstream error (method not found)
         # As long as it wasn't a PolicyViolationError bypass
-        assert (
-            "dangerous" not in str(e).lower() or "denied" in str(e).lower()
-        )
+        assert "dangerous" not in str(e).lower() or "denied" in str(e).lower()
 
 
 # =============================================================================
@@ -131,7 +127,7 @@ async def test_unicode_homoglyph_bypass() -> None:
 async def test_deeply_nested_json_dos() -> None:
     """
     Send deeply nested JSON to trigger stack overflow in parser.
-    
+
     Attack vector: serde_json has a default recursion limit, but we verify
     Lilith handles this gracefully without crashing.
     """
@@ -142,7 +138,7 @@ async def test_deeply_nested_json_dos() -> None:
     for i in range(1, depth):
         current["nested"] = {"level": i}
         current = current["nested"]
-    
+
     try:
         async with Lilith(MOCK_SERVER, policy=POLICY_PATH) as s:
             # The tool call itself should be handled or rejected gracefully
@@ -151,7 +147,7 @@ async def test_deeply_nested_json_dos() -> None:
         # Any error is acceptable as long as it doesn't crash the process
         # We just want to verify the middleware survives
         pass
-    
+
     # If we get here, the middleware survived the attack
     assert True
 
@@ -163,7 +159,7 @@ async def test_deeply_nested_json_dos() -> None:
 async def test_prompt_injection_delimiter_escape() -> None:
     """
     Attempt prompt injection by including delimiter-like sequences in arguments.
-    
+
     Attack: Lilith uses spotlighting with random delimiters. We try known patterns.
     """
     injection_payloads = [
@@ -173,7 +169,7 @@ async def test_prompt_injection_delimiter_escape() -> None:
         "\x00\x00\x00",  # Null bytes
         'Content-Length: 9999\r\n\r\n{"evil": true}',
     ]
-    
+
     for payload in injection_payloads:
         try:
             async with Lilith(MOCK_SERVER, policy=POLICY_PATH) as s:
@@ -193,18 +189,18 @@ async def test_prompt_injection_delimiter_escape() -> None:
 async def test_timing_side_channel() -> None:
     """
     Measure timing variance in policy evaluation.
-    
+
     If policy evaluation takes significantly different times for different
     tool names, timing analysis could leak information about internal state.
     """
     measurements = []
     tool_names = [
-        "public_info",     # Allowed
-        "dangerous_op",    # Denied
+        "public_info",  # Allowed
+        "dangerous_op",  # Denied
         "xxxxxxxxxxxxxx",  # Unknown
-        "a" * 1000,        # Very long name
+        "a" * 1000,  # Very long name
     ]
-    
+
     try:
         async with Lilith(MOCK_SERVER, policy=POLICY_PATH) as s:
             for tool in tool_names:
@@ -217,12 +213,12 @@ async def test_timing_side_channel() -> None:
                 measurements.append((tool[:20], elapsed))
     except Exception:
         pytest.skip("Could not establish connection for timing test")
-    
+
     if len(measurements) >= 2:
         times = [m[1] for m in measurements]
         max_time = max(times)
         min_time = min(times)
-        
+
         # Timing variance should not be extreme (> 100x)
         # This detects potential early-exit timing leaks in policy evaluation.
         if min_time > 0:
@@ -230,7 +226,7 @@ async def test_timing_side_channel() -> None:
             # Log for manual inspection
             print(f"\nTiming measurements: {measurements}")
             print(f"Max/Min ratio: {ratio:.2f}")
-            
+
             # ASSERT: Timing variance must not exceed 100x threshold
             # This is a security gate, not just informational logging.
             assert ratio < 100.0, (
@@ -247,7 +243,7 @@ async def test_timing_side_channel() -> None:
 async def test_content_length_overflow() -> None:
     """
     Send a Content-Length header with value near u64::MAX.
-    
+
     Attack: If the middleware doesn't validate Content-Length properly,
     this could cause integer overflow or allocation failure.
     """
@@ -260,7 +256,7 @@ sys.stdout.flush()
 import time
 time.sleep(2)
 "'''
-    
+
     start_time = time.time()
     try:
         async with Lilith(overflow_cmd, policy=POLICY_PATH) as s:
@@ -268,13 +264,10 @@ time.sleep(2)
     except (asyncio.TimeoutError, LilithError, ValueError):
         # Expected: should reject oversized Content-Length
         pass
-    
+
     duration = time.time() - start_time
     # Should fail fast, not try to allocate 18EB of memory
-    assert (
-        duration < 35.0
-    ), "Middleware should reject invalid Content-Length quickly"
-
+    assert duration < 35.0, "Middleware should reject invalid Content-Length quickly"
 
 
 # =============================================================================
@@ -284,12 +277,12 @@ time.sleep(2)
 async def test_session_replay() -> None:
     """
     Attempt to reuse a session ID from a previous connection.
-    
+
     Attack: If session IDs are predictable or not properly validated,
     an attacker could hijack sessions.
     """
     captured_session_id = None
-    
+
     # First connection: capture session ID
     try:
         async with Lilith(MOCK_SERVER, policy=POLICY_PATH) as s1:
@@ -297,22 +290,24 @@ async def test_session_replay() -> None:
             await s1.call_tool("public_info", {})
     except Exception:
         pytest.skip("Could not establish first connection")
-    
+
     if not captured_session_id:
         pytest.skip("No session ID captured")
-    
+
     # Second connection: new session should have different ID
     try:
         async with Lilith(MOCK_SERVER, policy=POLICY_PATH) as s2:
             new_session_id = s2.session_id
-            
+
             # Session IDs must be unique per connection
-            assert new_session_id != captured_session_id, \
+            assert new_session_id != captured_session_id, (
                 "Security Vulnerability: Session ID reuse detected!"
-            
+            )
+
             # Session IDs should be long enough (UUID + HMAC)
-            assert len(new_session_id) > 50, \
+            assert len(new_session_id) > 50, (
                 f"Session ID too short for security: {len(new_session_id)} chars"
+            )
     except Exception as e:
         pytest.fail(f"Second connection failed unexpectedly: {e}")
 
@@ -324,7 +319,7 @@ async def test_session_replay() -> None:
 async def test_null_byte_injection() -> None:
     """
     Attempt to inject null bytes in tool names and arguments.
-    
+
     Attack: Null bytes can truncate strings in C-based code, potentially
     bypassing security checks.
     """
@@ -333,7 +328,7 @@ async def test_null_byte_injection() -> None:
         ("echo", {"text": "safe\x00<script>evil</script>"}),
         ("echo\x00", {"text": "data"}),
     ]
-    
+
     for tool, args in null_payloads:
         try:
             async with Lilith(MOCK_SERVER, policy=POLICY_PATH) as s:
@@ -351,7 +346,7 @@ async def test_null_byte_injection() -> None:
 async def test_resource_path_traversal() -> None:
     """
     Attempt path traversal in resource URIs.
-    
+
     Attack: Access restricted resources via ../../../etc/passwd style paths.
     """
     traversal_uris = [
@@ -360,7 +355,7 @@ async def test_resource_path_traversal() -> None:
         "file://%2e%2e%2f%2e%2e%2fetc/passwd",
         "resource://internal/../../../secrets",
     ]
-    
+
     for uri in traversal_uris:
         try:
             async with Lilith(MOCK_SERVER, policy=POLICY_PATH) as s:
