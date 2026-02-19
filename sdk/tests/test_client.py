@@ -19,7 +19,8 @@ from lilith_zero.exceptions import (
 def mock_subprocess() -> AsyncMock:
     """Provides a fully mocked asyncio subprocess."""
     process = AsyncMock()
-    process.stdin = AsyncMock()
+    process.stdin = MagicMock()  # write() is not a coroutine
+    process.stdin.drain = AsyncMock()
     process.stdout = AsyncMock()
     process.stderr = AsyncMock()
     process.terminate = MagicMock()
@@ -116,10 +117,13 @@ async def test_connection_failure_immediate_exit(
 async def test_connection_failure_timeout(
     mock_subprocess: AsyncMock, mock_env: MagicMock
 ) -> None:
-    """Verify LilithConnectionError on handshake timeout."""
+    async def mock_wait_for_timeout(coro: Any, timeout: float | None = None) -> Any:
+        if hasattr(coro, "close"):
+            coro.close()
+        raise asyncio.TimeoutError()
+
     # Mock wait_for to raise TimeoutError
-    with patch("asyncio.wait_for", side_effect=asyncio.TimeoutError):
-        # Stderr provides ID (so we pass the first check)
+    with patch("asyncio.wait_for", side_effect=mock_wait_for_timeout):
         # Stderr provides ID (so we pass the first check)
         mock_subprocess.stderr.readline.side_effect = [
             b"LILITH_ZERO_SESSION_ID=sess\n",

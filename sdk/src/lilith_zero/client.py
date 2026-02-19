@@ -87,8 +87,8 @@ _SESSION_ID_MARKER = "LILITH_ZERO_SESSION_ID="
 _ENV_BINARY_PATH = "LILITH_ZERO_BINARY_PATH"
 
 # Safety limits for transport
+_MAX_PAYLOAD_SIZE = 10 * 1024 * 1024  # 10MB payload limit (rigorous protection)
 _MAX_HEADER_LINE_LENGTH = 1024  # 1KB per header line max
-_MAX_PAYLOAD_SIZE = 128 * 1024 * 1024  # 128MB payload limit (rigorous protection)
 
 # Auto-detect binary name based on OS
 _BINARY_NAME = "lilith-zero.exe" if os.name == "nt" else "lilith-zero"
@@ -532,11 +532,17 @@ class Lilith:
 
         except asyncio.CancelledError:
             pass
+        except asyncio.IncompleteReadError:
+            _logger.error("Incomplete read from Lilith stdout (process died?)")
+            await self._disconnect_with_error("Protocol error: Incomplete message read")
         except Exception as e:
             _logger.exception("Uncaught error in reader loop: %s", e)
             await self._disconnect_with_error(str(e))
         finally:
-            self._cleanup_pending_requests("Lilith process terminated unexpectedly")
+            # If we were in the middle of a request, provide a more descriptive error than 'terminated unexpectedly'
+            self._cleanup_pending_requests(
+                "Lilith connection broken: process terminated or closed pipe"
+            )
 
     async def _tail_audit_loop(self) -> None:
         """Tail the audit log file for new entries."""
@@ -721,6 +727,12 @@ class Lilith:
         self._pending_requests[req_id] = future
 
         body = json.dumps(request).encode("utf-8")
+        if len(body) > _MAX_PAYLOAD_SIZE:
+            self._pending_requests.pop(req_id, None)
+            raise LilithError(
+                f"Payload size ({len(body)}) exceeds limit ({_MAX_PAYLOAD_SIZE})"
+            )
+
         header = f"Content-Length: {len(body)}\r\n\r\n".encode("ascii")
 
         async with self._lock:

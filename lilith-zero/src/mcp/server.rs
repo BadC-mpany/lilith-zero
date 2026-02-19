@@ -139,6 +139,14 @@ impl McpMiddleware {
                         }
                         Some(DownstreamEvent::Error(e)) => {
                             warn!("Downstream transport error: {}", e);
+                            // Notify client of protocol error before connection terminates
+                            let _ = self.write_error(
+                                &mut downstream_writer,
+                                serde_json::Value::Null,
+                                jsonrpc::ERROR_PARSE,
+                                &e,
+                            ).await;
+
                             if e.contains("exceeds max limit") {
                                 // Emit rigorous security audit for attempted DoS
                                 use serde_json::json;
@@ -148,7 +156,6 @@ impl McpMiddleware {
                                     "action": "BLOCK_CONNECTION"
                                 }));
                             }
-                            // Connection triggers Disconnect next, which shuts down cleanly
                         }
                         None => break, // Channel closed
                     }
