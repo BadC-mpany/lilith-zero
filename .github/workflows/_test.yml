@@ -54,8 +54,9 @@ jobs:
           persist-credentials: false
 
       - name: Install Miri Toolchain
-        uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # nightly
+        uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7
         with:
+          toolchain: nightly
           components: miri
 
       - name: Rust Cache
