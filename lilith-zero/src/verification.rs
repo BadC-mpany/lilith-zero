@@ -268,7 +268,7 @@ mod tests {
 
     #[test]
     fn test_lethal_trifecta_detection() {
-        let required = vec!["ACCESS_PRIVATE", "UNTRUSTED_SOURCE"];
+        let required = ["ACCESS_PRIVATE", "UNTRUSTED_SOURCE"];
         let mut partial: HashSet<String> = HashSet::new();
         partial.insert("ACCESS_PRIVATE".to_string());
         assert!(!required.iter().all(|t| partial.contains(*t)));
