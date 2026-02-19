@@ -1,34 +1,56 @@
-id: "langchain-policy"
-customerId: "demo-user"
-name: "LangChain Security Policy"
+# LILITH-ZERO SECURITY POLICY
+# Defines runtime constraints for AI agents
+
+id: "policy-demo-001"
+name: "LangChain Demo Policy"
 version: 1
+customerId: "demo-user"
 
+# Static Rules: Simple allow/deny lists
 staticRules:
-  calculator: "ALLOW"
-  read_customer_data: "ALLOW"
-  export_analytics: "ALLOW"
-  system_maintenance: "ALLOW"
+  read_data: "ALLOW"
+  read_sql_db: "ALLOW"
+  write_data: "DENY"
+  delete_db: "DENY"
+  web_search: "ALLOW"  # Allowed but will require human auth via taint check
 
+# Resource Rules: Control access to resources (files, etc)
+resourceRules:
+  - uriPattern: "file:///confidential_data.txt"
+    action: "ALLOW"
+    taintsToAdd: ["DATA_READ"]
+  - uriPattern: "file:///logs/system.log"
+    action: "ALLOW"
+
+# Dynamic Taint Rules: Advanced flow control
 taintRules:
-  # 1. Source: Reading PII adds SENSITIVE taint
-  - tool: "read_customer_data"
+  # Mark session as having read data
+  - tool: "read_data"
     action: "ADD_TAINT"
-    tag: "SENSITIVE"
-    
-  # 2. Sink: Export blocked if SENSITIVE
-  - tool: "export_analytics"
-    action: "CHECK_TAINT"
-    forbiddenTags: ["SENSITIVE"]
-    error: "SECURITY BLOCK: Cannot export data containing customer PII."
+    tag: "DATA_READ"
 
-  # 3. Logic: Maintenance only allowed in specific region
-  - tool: "system_maintenance"
+  # Mark session as having read from database
+  - tool: "read_sql_db"
+    action: "ADD_TAINT"
+    tag: "DATA_READ"
+
+  # Block write_data explicitly
+  - tool: "write_data"
     action: "BLOCK"
-    exceptions:
-      - when:
-          tool_args_match:
-             region: "eu-west-1"
-        reason: "Only eu-west-1 is authorized for maintenance."
+    error: "SECURITY VIOLATION: write_data is forbidden by policy"
 
-resourceRules: []
-protectLethalTrifecta: true
+  # Block delete_db explicitly
+  - tool: "delete_db"
+    action: "BLOCK"
+    error: "SECURITY VIOLATION: delete_db is forbidden by policy"
+
+  # CONDITIONAL RULE: Block web_search if data has been read (information flow control)
+  - tool: "web_search"
+    action: "CHECK_TAINT"
+    forbiddenTags: ["DATA_READ"]
+    error: "SECURITY VIOLATION: web_search is forbidden after reading data (information leakage prevention)"
+
+  # Add authorization taint (this would be called by a separate auth tool)
+  - tool: "authorize_web_search"
+    action: "ADD_TAINT"
+    tag: "WEB_SEARCH_APPROVED"
