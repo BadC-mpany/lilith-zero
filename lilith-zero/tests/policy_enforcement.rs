@@ -19,7 +19,7 @@ use std::sync::Arc;
 fn create_core_with_defaults() -> SecurityCore {
     let config = Arc::new(Config::default());
     let signer = CryptoSigner::try_new().expect("Failed to create signer");
-    SecurityCore::new(config, signer).expect("Failed to init core")
+    SecurityCore::new(config, signer, None).expect("Failed to init core")
 }
 
 fn create_security_event(tool: &str, session_token: &str) -> SecurityEvent {
@@ -115,7 +115,7 @@ async fn test_audit_only_allow() {
     };
 
     let signer = CryptoSigner::try_new().unwrap();
-    let mut core = SecurityCore::new(Arc::new(config), signer).unwrap();
+    let mut core = SecurityCore::new(Arc::new(config), signer, None).unwrap();
     let token = core.session_id.clone();
 
     // 1. Attempt Tool Call with AuditOnly + No Policy
@@ -344,7 +344,7 @@ async fn test_spotlighting_enabled() {
     // BlockParams -> Spotlighting ON.
 
     let signer = CryptoSigner::try_new().unwrap();
-    let mut core = SecurityCore::new(Arc::new(config), signer).unwrap();
+    let mut core = SecurityCore::new(Arc::new(config), signer, None).unwrap();
     core.set_policy(create_test_policy(false));
     let token = core.session_id.clone();
 
