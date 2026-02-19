@@ -73,7 +73,7 @@ class ManualMCPServer:
                 logger.error(f"JSON Error: {e}")
                 continue
 
-    def _handle_request(self, req: Dict[str, Any]):
+    def _handle_request(self, req: Dict[str, Any]) -> None:
         method = req.get("method")
         msg_id = req.get("id")
         params = req.get("params", {})
