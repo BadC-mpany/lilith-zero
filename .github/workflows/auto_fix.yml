@@ -1,0 +1,52 @@
+name: Auto Fix Quality
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  auto-fix:
+    name: Auto-fix Quality Issues
+    runs-on: ubuntu-latest
+    if: github.event_name != 'push' # Avoid infinite loops on tags/pushes
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - name: Install Python
+        uses: actions/setup-python@0a5c61591373683505ea898e09a3ea4f39ef2b9c # v5.0.0
+        with:
+          python-version: "3.11"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@4db96194c378173c656ce18a155ffc14a9fc4355 # v5.1.0
+
+      - name: Fix Python (Ruff)
+        working-directory: sdk
+        run: |
+          uv pip install --system ruff
+          # Fix linting and formatting
+          ruff check src/lilith_zero tests --fix || true
+          ruff format src/lilith_zero tests
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
+        with:
+          components: rustfmt
+
+      - name: Fix Rust (Fmt)
+        working-directory: lilith-zero
+        run: cargo fmt --all
+
+      - name: Commit and Push Fixes
+        uses: stefanzweifel/git-auto-commit-action@e348103e9026cc0eee72ae06630dbe30c8bf7a79 # v5.0.0
+        with:
+          commit_message: "chore: auto-fix quality issues (ruff/rustfmt)"
+          branch: ${{ github.head_ref }}
