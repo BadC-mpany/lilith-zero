@@ -305,6 +305,7 @@ async def test_session_replay() -> None:
             )
 
             # Session IDs should be long enough (UUID + HMAC)
+            assert new_session_id is not None
             assert len(new_session_id) > 50, (
                 f"Session ID too short for security: {len(new_session_id)} chars"
             )

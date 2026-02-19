@@ -15,10 +15,11 @@ if not LILITH_ZERO_BIN:
 
 MANUAL_SERVER = os.path.join(BASE_DIR, "manual_server.py")
 
-def run_test():
+def run_test() -> None:
     print(f"Launching {LILITH_ZERO_BIN}...")
     
     # Start Lilith
+    assert LILITH_ZERO_BIN is not None
     proc = subprocess.Popen(
         [LILITH_ZERO_BIN, "--upstream-cmd", "python", "--", MANUAL_SERVER],
         stdin=subprocess.PIPE,
@@ -45,8 +46,9 @@ def run_test():
     payload = header + body
     
     print(f"Sending {len(payload)} bytes...")
-    proc.stdin.write(payload)
-    proc.stdin.flush()
+    if proc.stdin:
+        proc.stdin.write(payload)
+        proc.stdin.flush()
     
     print("Waiting for response...")
     
@@ -56,6 +58,8 @@ def run_test():
     content_length = 0
     
     while True:
+        if not proc.stdout:
+            break
         chunk = proc.stdout.read(1)
         if not chunk:
             print("EOF reading header")
@@ -69,7 +73,7 @@ def run_test():
                     content_length = int(line.split(":")[1].strip())
             break
             
-    if content_length > 0:
+    if content_length > 0 and proc.stdout:
         print(f"Reading body ({content_length} bytes)...")
         body_bytes = proc.stdout.read(content_length)
         print("Response Body:", body_bytes.decode("utf-8"))

@@ -1,4 +1,5 @@
 import asyncio
+from typing import Any, Generator
 from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 import pytest
@@ -15,7 +16,7 @@ from lilith_zero.exceptions import (
 
 
 @pytest.fixture
-def mock_subprocess():
+def mock_subprocess() -> AsyncMock:
     """Provides a fully mocked asyncio subprocess."""
     process = AsyncMock()
     process.stdin = AsyncMock()
@@ -28,7 +29,7 @@ def mock_subprocess():
 
 
 @pytest.fixture
-def mock_env(mock_subprocess):
+def mock_env(mock_subprocess: AsyncMock) -> Generator[MagicMock, None, None]:
     """Sets up common mocks for Lilith environment."""
     with (
         patch(
@@ -44,7 +45,7 @@ def mock_env(mock_subprocess):
 
 
 @pytest.mark.asyncio
-async def test_config_validation():
+async def test_config_validation() -> None:
     """Verify strictly required configuration parameters."""
     with pytest.raises(LilithConfigError, match="Upstream command is required"):
         Lilith(upstream="")
@@ -61,7 +62,7 @@ async def test_config_validation():
 
 
 @pytest.mark.asyncio
-async def test_lifecycle_success(mock_subprocess, mock_env):
+async def test_lifecycle_success(mock_subprocess: AsyncMock, mock_env: MagicMock) -> None:
     """Verify successful connection setup, handshake, and teardown."""
     # Mock Handshake Logic
     with (
@@ -90,7 +91,9 @@ async def test_lifecycle_success(mock_subprocess, mock_env):
 
 
 @pytest.mark.asyncio
-async def test_connection_failure_immediate_exit(mock_subprocess, mock_env):
+async def test_connection_failure_immediate_exit(
+    mock_subprocess: AsyncMock, mock_env: MagicMock
+) -> None:
     """Verify LilithProcessError/ConnectionError when process exits immediately."""
     # Process exits with error code before session ID is captured
     mock_subprocess.returncode = 1
@@ -108,7 +111,9 @@ async def test_connection_failure_immediate_exit(mock_subprocess, mock_env):
 
 
 @pytest.mark.asyncio
-async def test_connection_failure_timeout(mock_subprocess, mock_env):
+async def test_connection_failure_timeout(
+    mock_subprocess: AsyncMock, mock_env: MagicMock
+) -> None:
     """Verify LilithConnectionError on handshake timeout."""
     # Mock wait_for to raise TimeoutError
     with patch("asyncio.wait_for", side_effect=asyncio.TimeoutError):
@@ -128,7 +133,9 @@ async def test_connection_failure_timeout(mock_subprocess, mock_env):
 
 
 @pytest.mark.asyncio
-async def test_tool_call_dispatch(mock_subprocess, mock_env):
+async def test_tool_call_dispatch(
+    mock_subprocess: AsyncMock, mock_env: MagicMock
+) -> None:
     """Verify correct dispatch of JSON-RPC responses."""
     client = Lilith("echo")
     client._session_id = "sess"  # Bypass connect
@@ -140,7 +147,7 @@ async def test_tool_call_dispatch(mock_subprocess, mock_env):
     }
 
     with patch("uuid.uuid4", return_value="fixed-id"):
-        future = asyncio.Future()
+        future: asyncio.Future[Any] = asyncio.Future()
         client._pending_requests["fixed-id"] = future
 
         client._dispatch_response(response)
@@ -150,10 +157,12 @@ async def test_tool_call_dispatch(mock_subprocess, mock_env):
 
 
 @pytest.mark.asyncio
-async def test_policy_violation_parsing(mock_subprocess, mock_env):
+async def test_policy_violation_parsing(
+    mock_subprocess: AsyncMock, mock_env: MagicMock
+) -> None:
     """Verify mapping of protocol errors to PolicyViolationError."""
     client = Lilith("echo")
-    future = asyncio.Future()
+    future: asyncio.Future[Any] = asyncio.Future()
     client._pending_requests["1"] = future
 
     error_response = {
@@ -176,7 +185,9 @@ async def test_policy_violation_parsing(mock_subprocess, mock_env):
 
 
 @pytest.mark.asyncio
-async def test_large_payload_handling(mock_subprocess, mock_env):
+async def test_large_payload_handling(
+    mock_subprocess: AsyncMock, mock_env: MagicMock
+) -> None:
     """Verify SDK can serialize and dispatch large payloads."""
     client = Lilith("echo")
     client._session_id = "sess"
@@ -213,14 +224,16 @@ async def test_large_payload_handling(mock_subprocess, mock_env):
 
 
 @pytest.mark.asyncio
-async def test_concurrent_requests(mock_subprocess, mock_env):
+async def test_concurrent_requests(
+    mock_subprocess: AsyncMock, mock_env: MagicMock
+) -> None:
     """Verify handling of multiple concurrent requests."""
     client = Lilith("echo")
     # Bypass connect to manipulate state directly
     client._session_id = "sess"
     client._process = mock_subprocess
 
-    async def mock_send(method, params):
+    async def mock_send(method: str, params: dict[str, Any]) -> dict[str, Any]:
         # Simulate network delay to allow overlap
         await asyncio.sleep(0.01)
         # params structure is {'name': 'echo', 'arguments': {'i': ...}}
@@ -242,7 +255,9 @@ async def test_concurrent_requests(mock_subprocess, mock_env):
 
 
 @pytest.mark.asyncio
-async def test_runtime_health_check(mock_subprocess, mock_env):
+async def test_runtime_health_check(
+    mock_subprocess: AsyncMock, mock_env: MagicMock
+) -> None:
     """Verify detection of process death during runtime."""
     client = Lilith("echo")
     client._session_id = "sess"
@@ -268,7 +283,9 @@ async def test_runtime_health_check(mock_subprocess, mock_env):
 
 
 @pytest.mark.asyncio
-async def test_spotlighting_delimiters(mock_subprocess, mock_env):
+async def test_spotlighting_delimiters(
+    mock_subprocess: AsyncMock, mock_env: MagicMock
+) -> None:
     """Verify detection and handling of spotlighting delimiters."""
     client = Lilith("echo")
     client._session_id = "sess"

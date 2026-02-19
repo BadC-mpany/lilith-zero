@@ -6,13 +6,13 @@ mcp = FastMCP("LilithEnterpriseDemo")
 
 # --- SCENARIO 1: Safe Tools ---
 
-@mcp.tool()
+@mcp.tool()  # type: ignore[untyped-decorator]
 def get_current_time() -> str:
     """Returns the current system time."""
     now = datetime.datetime.now()
     return f"Current time is: {now.strftime('%Y-%m-%d %H:%M:%S')}"
 
-@mcp.tool()
+@mcp.tool()  # type: ignore[untyped-decorator]
 def calculate(expression: str) -> str:
     """Performs a mathematical calculation."""
     try:
@@ -25,7 +25,7 @@ def calculate(expression: str) -> str:
 
 # --- SCENARIO 2: PII Sources ---
 
-@mcp.tool()
+@mcp.tool()  # type: ignore[untyped-decorator]
 def get_user_profile(user_id: str) -> str:
     """Returns sensitive user profile data (PII)."""
     # This tool is marked as a TAINT SOURCE in the policy.
@@ -38,13 +38,13 @@ def get_user_profile(user_id: str) -> str:
 
 # --- SCENARIO 3: External Sinks ---
 
-@mcp.tool()
+@mcp.tool()  # type: ignore[untyped-decorator]
 def send_email(to: str, subject: str, body: str) -> str:
     """Sends an email to an external recipient."""
     # This tool is marked as a TAINT SINK in the policy.
     return f"Email sent to {to} with subject: {subject}"
 
-@mcp.tool()
+@mcp.tool()  # type: ignore[untyped-decorator]
 def post_to_slack(channel: str, message: str) -> str:
     """Posts a message to a Slack channel."""
     # This tool is also a TAINT SINK.
@@ -52,13 +52,13 @@ def post_to_slack(channel: str, message: str) -> str:
 
 # --- SCENARIO 4: Administrative/Denied Tools ---
 
-@mcp.tool()
+@mcp.tool()  # type: ignore[untyped-decorator]
 def execute_shell(command: str) -> str:
     """Executes a shell command (Extremely Dangerous)."""
     # This tool is BLOCKED by static policy.
     return "This should NEVER be executed!"
 
-@mcp.tool()
+@mcp.tool()  # type: ignore[untyped-decorator]
 def delete_records(table: str, condition: str) -> str:
     """Deletes records from a database table."""
     # This tool is also BLOCKED by static policy.

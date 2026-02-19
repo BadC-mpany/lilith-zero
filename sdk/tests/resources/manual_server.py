@@ -11,10 +11,10 @@ logger = logging.getLogger(__name__)
 class ManualMCPServer:
     """Minimalistic MCP Server implementation with LSP-style framing."""
     
-    def __init__(self):
-        self._tools: Dict[str, Callable] = {}
+    def __init__(self) -> None:
+        self._tools: Dict[str, Callable[..., Any]] = {}
 
-    def tool(self, func: Callable):
+    def tool(self, func: Callable[..., Any]) -> Callable[..., Any]:
         """Decorator to register a function as an MCP tool."""
         self._tools[func.__name__] = func
         return func
@@ -36,7 +36,7 @@ class ManualMCPServer:
             for name, func in self._tools.items()
         ]
 
-    def run(self):
+    def run(self) -> None:
         """Main JSON-RPC loop."""
         logger.info("Server started (Stdio Transport)")
         while True:
