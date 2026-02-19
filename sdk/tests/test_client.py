@@ -62,7 +62,9 @@ async def test_config_validation() -> None:
 
 
 @pytest.mark.asyncio
-async def test_lifecycle_success(mock_subprocess: AsyncMock, mock_env: MagicMock) -> None:
+async def test_lifecycle_success(
+    mock_subprocess: AsyncMock, mock_env: MagicMock
+) -> None:
     """Verify successful connection setup, handshake, and teardown."""
     # Mock Handshake Logic
     with (
