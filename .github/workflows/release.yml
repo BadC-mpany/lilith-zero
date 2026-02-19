@@ -62,8 +62,15 @@ jobs:
 
   deploy-docs:
     needs: [build-docs]
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
     uses: ./.github/workflows/_docs_deploy.yml
 
   publish-pypi:
     needs: [test-matrix]
+    permissions:
+      contents: read
+      id-token: write
     uses: ./.github/workflows/_publish_pypi.yml
