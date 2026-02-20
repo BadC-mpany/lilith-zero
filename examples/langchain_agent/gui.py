@@ -12,6 +12,19 @@ from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 
 st.set_page_config(layout="wide", page_title="Lilith-Zero Dashboard")
 
+# Reset Button
+with st.sidebar:
+    st.title("Controls")
+    if st.button("Reset Agent (Clear History & Taint)", type="primary"):
+        st.cache_resource.clear()
+        if "messages" in st.session_state:
+            del st.session_state.messages
+        if "logs" in st.session_state:
+            del st.session_state.logs
+        if "lc_history" in st.session_state:
+            del st.session_state.lc_history
+        st.rerun()
+
 # Initialize Session State
 if "messages" not in st.session_state:
     st.session_state.messages = []
