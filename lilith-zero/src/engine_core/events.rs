@@ -24,6 +24,7 @@ use serde_json::Value;
 
 /// Protocol-agnostic security events derived from wire protocol messages
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub enum SecurityEvent {
     /// Session initialization (e.g. MCP "initialize")
     Handshake {
@@ -63,6 +64,7 @@ pub enum SecurityEvent {
 
 /// The authoritative decision from the Security Core
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
 pub enum SecurityDecision {
     /// Proceed with the operation as-is
     Allow,
@@ -83,6 +85,7 @@ pub enum SecurityDecision {
 
 /// Instructions for transforming the upstream response
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
 pub enum OutputTransform {
     /// Apply spotlighting (randomized XML tags) to specific JSON paths
     Spotlight {

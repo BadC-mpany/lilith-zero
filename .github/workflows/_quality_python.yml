@@ -34,12 +34,12 @@ jobs:
 
       - name: Lint (Ruff)
         working-directory: sdk
-        run: uv run ruff check src/lilith_zero tests
+        run: ruff check src/lilith_zero tests
 
       - name: Format Check (Ruff)
         working-directory: sdk
-        run: uv run ruff format --check src/lilith_zero tests
+        run: ruff format --check src/lilith_zero tests
 
       - name: Type Check (Mypy)
         working-directory: sdk
-        run: uv run mypy src/lilith_zero tests --strict --ignore-missing-imports
+        run: mypy src/lilith_zero tests --strict --ignore-missing-imports

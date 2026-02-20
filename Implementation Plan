@@ -1,0 +1,287 @@
+# Lilith-Zero: Full Repository Analysis & Remediation Plan
+
+Comprehensive security-engineer audit of the lilith-zero repository against its own skill files (`rust-skills`, `rust-bulletproof`, `google_oss_management`) and stated practices (uv, ruff, mypy, clippy, single venv, Google OSS standards).
+
+---
+
+## Summary of Overall Architecture
+
+```mermaid
+graph TD
+    Client[Python SDK<br>client.py] -->|stdio JSON-RPC| Middleware[Rust Middleware<br>lilith-zero]
+    Middleware -->|stdio JSON-RPC| Upstream[Upstream MCP Server]
+    Middleware --> SecurityCore[Security Engine<br>security_core.rs]
+    SecurityCore --> Evaluator[evaluator.rs]
+    SecurityCore --> PatternMatcher[pattern_matcher.rs]
+    SecurityCore --> TaintTracker[taint.rs]
+    SecurityCore --> CryptoSigner[crypto.rs]
+    Middleware --> ProcessSupervisor[process.rs<br>Zombie Protection]
+```
+
+> [!IMPORTANT]
+> The codebase is **well-architected** overall — taint tracking via type system, formal Kani proofs, constant-time HMAC validation, proper error hierarchy. The issues below are **hardening** items, not fundamental design flaws.
+
+---
+
+## Findings by Category
+
+### 1. 🔴 Version Drift (CRITICAL — Supply Chain)
+
+| Location | Version |
+|----------|---------|
+| [Cargo.toml](file:///home/peter/Documents/proj/bad/lilith-zero/lilith-zero/Cargo.toml) | `0.1.2` |
+| [pyproject.toml](file:///home/peter/Documents/proj/bad/lilith-zero/sdk/pyproject.toml) | `0.1.2` |
+| [__init__.py](file:///home/peter/Documents/proj/bad/lilith-zero/sdk/src/lilith_zero/__init__.py) `__version__` | `0.1.2` |
+| [client.py](file:///home/peter/Documents/proj/bad/lilith-zero/sdk/src/lilith_zero/client.py) `_SDK_VERSION` | **`0.1.1` ⚠️** |
+
+**Finding**: `_SDK_VERSION` in `client.py:83` is `"0.1.1"` but should be `"0.1.2"`. This is sent in the MCP `initialize` handshake — the Rust middleware receives a stale version identifier, breaking audit traceability.
+
+**Fix**: Set `_SDK_VERSION = "0.1.2"` in `client.py`.
+
+---
+
+### 2. 🟡 Rust Code vs rust-skills Compliance
+
+#### 2a. Missing Clippy Lint Attributes in `lib.rs`
+
+Per [`lint-deny-correctness`](file:///home/peter/Documents/proj/bad/lilith-zero/.agent/skills/rust-skills/SKILL.md), `lib.rs` should have:
+
+```rust
+#![deny(clippy::correctness)]
+#![warn(clippy::suspicious, clippy::style, clippy::complexity, clippy::perf)]
+#![warn(missing_docs)]
+#![warn(clippy::undocumented_unsafe_blocks)]
+```
+
+**Current**: [lib.rs](file:///home/peter/Documents/proj/bad/lilith-zero/lilith-zero/src/lib.rs) has **zero lint attributes**. Clippy correctness lints are only enforced in CI via `--all-targets -- -D warnings` (default level), not via source-level declarations.
+
+**Fix**: Add lint attributes to `lib.rs`.
+
+#### 2b. `#[must_use]` Missing on Key Types
+
+Per [`api-must-use`](file:///home/peter/Documents/proj/bad/lilith-zero/.agent/skills/rust-skills/SKILL.md):
+- `CryptoSigner::try_new()` → returns `Result` — should have `#[must_use]`
+- `SecurityCore::evaluate()` → returns `SecurityDecision` — should have `#[must_use]`
+- `McpCodec::new()` → returns `Self` — should have `#[must_use]`
+- `PatternMatcher::wildcard_match()` → returns `bool` — should have `#[must_use]`
+
+#### 2c. `#[non_exhaustive]` Missing on Public Enums
+
+Per [`api-non-exhaustive`](file:///home/peter/Documents/proj/bad/lilith-zero/.agent/skills/rust-skills/SKILL.md):
+- `InterceptorError` (public enum, 13 variants) — should be `#[non_exhaustive]`
+- `CryptoError` (public enum) — should be `#[non_exhaustive]`
+- `Decision` (public enum) — should be `#[non_exhaustive]`
+- `SecurityLevel` in `config.rs` — should be `#[non_exhaustive]`
+- `LogicCondition` — should be `#[non_exhaustive]`
+
+#### 2d. `unsafe` Blocks — Assessment (GOOD ✅)
+
+Found 7 `unsafe` blocks in `process.rs` and `supervisor.rs`:
+- All have `// SAFETY:` comments ✅
+- `process.rs:101`: `pre_exec` setting `PR_SET_PDEATHSIG` — correct usage ✅
+- `supervisor.rs:113-166`: `kqueue`/`kevent`/`close` calls — correct with error handling ✅
+
+> [!NOTE]
+> The `unsafe` usage is minimal, platform-isolated (`#[cfg]`), and documented. Passes the `rust-bulletproof` skill review.
+
+#### 2e. `unwrap()` in Production Code
+
+All found `unwrap()` calls are in test code (`#[cfg(test)]` modules) — **compliant** ✅. The one `expect()` in `crypto.rs:52` documents why: `"HMAC should accept secret of correct length"` — this is a programming invariant, not a user input issue ✅.
+
+#### 2f. Missing `Cargo.toml` Release Profile
+
+Per [`opt-lto-release`](file:///home/peter/Documents/proj/bad/lilith-zero/.agent/skills/rust-skills/SKILL.md), `Cargo.toml` should have optimized release profile:
+
+```toml
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true
+```
+
+**Current**: [Cargo.toml](file:///home/peter/Documents/proj/bad/lilith-zero/lilith-zero/Cargo.toml) has **no `[profile.release]` section at all**.
+
+#### 2g. Missing `deny.toml` for `cargo-deny`
+
+The `_quality_rust.yml` workflow runs `cargo-deny check` but there's **no `deny.toml` config file**. It's using default settings which may miss:
+- License deny-lists
+- Advisory DB checks
+- Duplicate crate detection
+
+---
+
+### 3. 🟡 Python SDK Quality
+
+#### 3a. Duplicated Audit Log Parsing
+
+In [client.py:548-625](file:///home/peter/Documents/proj/bad/lilith-zero/sdk/src/lilith_zero/client.py#L548-L625), the `_tail_audit_loop` has **identical audit JSON parsing logic duplicated** between the line-by-line read (L570-583) and the drain-remaining path (L596-621). Code comment even acknowledges it: `"copy-paste logic, refactor ideally"`.
+
+**Fix**: Extract `_parse_audit_line(line: str) -> AuditEntry | None` helper.
+
+#### 3b. `__init__.py` Exports Private Symbol
+
+[`__init__.py:24`](file:///home/peter/Documents/proj/bad/lilith-zero/sdk/src/lilith_zero/__init__.py#L24) exports `_MCP_PROTOCOL_VERSION` (underscore-prefixed = private convention) in `__all__`. This breaks the Pythonic convention for public API surface.
+
+#### 3c. `_find_binary` Path Traversal Heuristic
+
+[`client.py:133-147`](file:///home/peter/Documents/proj/bad/lilith-zero/sdk/src/lilith_zero/client.py#L133-L147): The fallback dev binary path uses `os.path.dirname()` chaining 3 levels up from `__file__`. This is fragile and if the package is installed via pip, it could resolve to unexpected locations. The `try/except Exception: pass` is a broad catch that silences real issues.
+
+---
+
+### 4. 🔴 Workflow Gaps (CI/CD Hardening)
+
+#### 4a. `auto_fix.yml` — Incomplete Auto-Fix
+
+| Tool | Check (CI) | Fix (auto_fix) | Gap |
+|------|-----------|-----------------|-----|
+| ruff check | ✅ `_quality_python.yml` | ✅ `auto_fix.yml` | — |
+| ruff format | ✅ `_quality_python.yml` | ✅ `auto_fix.yml` | — |
+| mypy | ✅ `_quality_python.yml` | ❌ **Missing** | mypy errors won't auto-fix |
+| cargo fmt | ✅ `_quality_rust.yml` | ✅ `auto_fix.yml` | — |
+| cargo clippy | ✅ `_quality_rust.yml` | ❌ **Missing** | clippy auto-fixable lints not applied |
+
+**Fix**: Add `cargo clippy --fix --allow-dirty --allow-staged -- -D warnings` step to `auto_fix.yml`.
+
+#### 4b. `_quality_python.yml` — `uv run` With `--system` Install
+
+Line 33 installs deps with `uv pip install --system -e .[dev]` but then runs tools via `uv run ruff ...` (L37, 41, 45). Using `uv run` after `--system` install is inconsistent — `uv run` creates a temporary environment. Should consistently use either `ruff check ...` directly or install into a uv-managed venv.
+
+#### 4c. `_test.yml` SDK Tests — Missing `pytest-asyncio`
+
+Line 106: `uv pip install --system .[dev] ruff mypy pytest pytest-asyncio pyjwt` — this install **ruff and mypy** as test deps even though they're already in `[dev]` optional deps. The redundancy is minor but indicates potential confusion about what's in `pyproject.toml` vs ad-hoc.
+
+#### 4d. `release.yml` — Missing `permissions` on `_publish_pypi` Call
+
+The release workflow calls `_publish_pypi.yml` with `id-token: write` permission (L75), but the **top-level** permission at L11 is only `contents: read`. Jobs that call reusable workflows with broader permissions need explicit permission grants. This is a potential **release failure mode** from `id-token` not being properly inherited.
+
+#### 4e. `codeql.yml` — `rust` + `actions` Language Matrix
+
+Line 23: `matrix: language: ['python', 'rust', 'actions']`. CodeQL's Rust support is **extractor-based** and may not work with GitHub's standard CodeQL. The `'actions'` language is also non-standard — CodeQL uses `javascript-typescript` for Actions analysis. This matrix may silently fail for 2 of 3 entries.
+
+#### 4f. `_build.yml` — Missing `--locked` Flag Only on Build
+
+Line 57 uses `--locked` (correct for reproducible builds), but none of the quality or test workflows use `--locked`. This means CI could succeed with a stale `Cargo.lock` locally but fail in release builds.
+
+---
+
+### 5. 🟡 Skill File Staleness
+
+#### 5a. `google_oss_management/SKILL.md` References `sentinel\`
+
+[SKILL.md Line 9](file:///home/peter/Documents/proj/bad/lilith-zero/.agent/skills/google_oss_management/SKILL.md#L9) references `C:\Users\Peter\Documents\proj\active\bad\sentinel\` — an old Windows path. The rest of the file mixes `sentinel\` and `lilith-zero\` references. Multiple powershell commands reference `cd sentinel;`.
+
+#### 5b. `rust-bulletproof/SKILL.md` References `sentinel\src`
+
+[SKILL.md Line 9](file:///home/peter/Documents/proj/bad/lilith-zero/.agent/skills/rust-bulletproof/SKILL.md#L9): `sentinel\src`. All commands reference `cd sentinel;`. Should be `cd lilith-zero;`.
+
+---
+
+### 6. 🟢 What's Done Well (Security Strengths)
+
+| Feature | Assessment |
+|---------|-----------|
+| Taint tracking via type system (`Tainted<T>` / `Clean<T>`) | Excellent — compile-time enforcement |
+| Constant-time HMAC validation (`crypto.rs:117`) | Correct — `verify_slice()` |
+| Formal verification (13 Kani proofs) | Excellent — covers deny-by-default, taint monotonicity, lethal trifecta |
+| Property-based testing (proptest in `pattern_matcher.rs`) | Excellent — AST fuzzing of logic conditions |
+| Zombie protection (Linux: `PR_SET_PDEATHSIG`, macOS: kqueue, Windows: Job Objects) | Comprehensive cross-platform |
+| Pinned action SHAs in all workflows | Best practice ✅ |
+| `cargo-deny` in CI for dependency auditing | ✅ |
+| Miri UB checks in test matrix | ✅ |
+| `persist-credentials: false` on all checkouts | Good supply chain hygiene ✅ |
+| Error hierarchy with `thiserror` + secure user messages | Proper information hiding ✅ |
+| Content-Length limit checks (both Rust codec + Python SDK) | DoS protection ✅ |
+| `#[cfg(test)] mod tests` pattern consistent throughout | ✅ |
+
+---
+
+### 7. 🟡 `requirements.txt` Not Pinned
+
+[requirements.txt](file:///home/peter/Documents/proj/bad/lilith-zero/requirements.txt) has **zero version pins** (e.g., `pytest`, `mkdocs-material`, `langchain`). Per user practice #1 (uv), this should either:
+- Be a `uv.lock`-managed lockfile
+- Or have pinned versions for reproducibility
+
+---
+
+## Proposed Changes
+
+### Component 1: Version & Metadata Fixes
+
+#### [MODIFY] [client.py](file:///home/peter/Documents/proj/bad/lilith-zero/sdk/src/lilith_zero/client.py)
+- Fix `_SDK_VERSION = "0.1.1"` → `"0.1.2"`
+
+#### [MODIFY] [__init__.py](file:///home/peter/Documents/proj/bad/lilith-zero/sdk/src/lilith_zero/__init__.py)
+- Remove `_MCP_PROTOCOL_VERSION` from `__all__` (private symbol)
+
+---
+
+### Component 2: Rust Quality (rust-skills Compliance)
+
+#### [MODIFY] [lib.rs](file:///home/peter/Documents/proj/bad/lilith-zero/lilith-zero/src/lib.rs)
+- Add clippy lint attributes per rust-skills
+
+#### [MODIFY] [Cargo.toml](file:///home/peter/Documents/proj/bad/lilith-zero/lilith-zero/Cargo.toml)
+- Add `[profile.release]` section per rust-skills recommendations
+
+#### [MODIFY] [errors.rs](file:///home/peter/Documents/proj/bad/lilith-zero/lilith-zero/src/engine_core/errors.rs)
+- Add `#[non_exhaustive]` to `InterceptorError` and `CryptoError`
+
+#### [MODIFY] [models.rs](file:///home/peter/Documents/proj/bad/lilith-zero/lilith-zero/src/engine_core/models.rs)
+- Add `#[non_exhaustive]` to `Decision`, `LogicCondition`
+
+#### [MODIFY] [config.rs](file:///home/peter/Documents/proj/bad/lilith-zero/lilith-zero/src/config.rs)
+- Add `#[non_exhaustive]` to `SecurityLevel`
+
+#### [NEW] [deny.toml](file:///home/peter/Documents/proj/bad/lilith-zero/lilith-zero/deny.toml)
+- Configure license deny-list, advisory DB, duplicate detection
+
+---
+
+### Component 3: Workflow Hardening
+
+#### [MODIFY] [auto_fix.yml](file:///home/peter/Documents/proj/bad/lilith-zero/.github/workflows/auto_fix.yml)
+- Add `cargo clippy --fix` step after `cargo fmt`
+- Ensure consistent tool installation patterns
+
+#### [MODIFY] [_quality_python.yml](file:///home/peter/Documents/proj/bad/lilith-zero/.github/workflows/_quality_python.yml)
+- Fix `uv run` usage: either use `ruff` directly after `--system` install, or use a proper uv-managed environment
+
+---
+
+### Component 4: Skill File Updates
+
+#### [MODIFY] [google_oss_management/SKILL.md](file:///home/peter/Documents/proj/bad/lilith-zero/.agent/skills/google_oss_management/SKILL.md)
+- Replace all `sentinel\`, `sentinel/` references with `lilith-zero`
+- Update Windows path to Linux/universal
+
+#### [MODIFY] [rust-bulletproof/SKILL.md](file:///home/peter/Documents/proj/bad/lilith-zero/.agent/skills/rust-bulletproof/SKILL.md)
+- Replace all `sentinel` references with `lilith-zero`
+
+---
+
+### Component 5: Python SDK Refactor
+
+#### [MODIFY] [client.py](file:///home/peter/Documents/proj/bad/lilith-zero/sdk/src/lilith_zero/client.py)
+- Extract `_parse_audit_entry()` helper to eliminate duplicated audit parsing logic
+
+---
+
+## Verification Plan
+
+### Automated Tests
+
+1. **Rust build + clippy**: `cd lilith-zero && cargo clippy --all-targets --all-features -- -D warnings`
+2. **Rust tests**: `cd lilith-zero && cargo test --all-features`
+3. **Rust fmt check**: `cd lilith-zero && cargo fmt --all -- --check`
+4. **Python lint**: `cd sdk && ruff check src/lilith_zero tests`
+5. **Python format**: `cd sdk && ruff format --check src/lilith_zero tests`
+6. **Python type check**: `cd sdk && mypy src/lilith_zero tests --strict --ignore-missing-imports`
+7. **Python tests**: `cd sdk && pytest -v`
+8. **Verify version consistency**: `grep -r "0\\.1\\." sdk/src/lilith_zero/client.py sdk/pyproject.toml sdk/src/lilith_zero/__init__.py lilith-zero/Cargo.toml`
+
+### Manual Verification
+
+1. Review diff of all changed files for unintended side effects
+2. User confirms updated skill files reflect correct project paths

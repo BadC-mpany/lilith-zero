@@ -38,7 +38,7 @@ jobs:
 
       - name: Unit Tests
         working-directory: lilith-zero
-        run: cargo test --all-features --${{ inputs.cargo_profile }}
+        run: cargo test --locked --all-features --${{ inputs.cargo_profile }}
 
   # --------------------------------------------------------------------------
   # Miri Undefined Behavior Check (Nightly)
@@ -69,7 +69,7 @@ jobs:
         env:
           # Allow IO for time/randomness, disabling strict isolation where safe
           MIRIFLAGS: "-Zmiri-disable-isolation"
-        run: cargo miri test
+        run: cargo miri test --locked
 
   # --------------------------------------------------------------------------
   # Python SDK Integration Tests (Matrix)
@@ -103,7 +103,7 @@ jobs:
       - name: Install SDK & Tests
         working-directory: sdk
         run: |
-          uv pip install --system .[dev] ruff mypy pytest pytest-asyncio pyjwt
+          uv pip install --system .[dev] pytest pytest-asyncio pyjwt
 
       - name: Run SDK Tests
         working-directory: sdk

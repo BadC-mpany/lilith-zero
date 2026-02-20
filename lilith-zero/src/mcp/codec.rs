@@ -38,6 +38,7 @@ pub struct McpCodec {
 }
 
 impl McpCodec {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             state: DecodeState::Head,

@@ -20,7 +20,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        language: [ 'python', 'rust', 'actions' ]
+        language: [ 'python' ]
+        # Note: CodeQL's Rust support requires experimental extractors not included
+        # in standard setup. Use cargo-deny + cargo-audit for Rust vulnerability scanning.
 
     steps:
     - name: Checkout repository

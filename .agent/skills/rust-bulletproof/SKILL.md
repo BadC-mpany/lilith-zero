@@ -6,7 +6,7 @@ version: 1.0.0
 
 # Rust Bulletproof: Advanced Verification Strategy
 
-This skill goes beyond standard unit testing to ensure the mathematical correctness and memory safety of Lilith's critical Rust path (`sentinel\src`). It employs fuzzing, property-based testing, and interpreter-based verification.
+This skill goes beyond standard unit testing to ensure the mathematical correctness and memory safety of Lilith's critical Rust path (`lilith-zero/src`). It employs fuzzing, property-based testing, and interpreter-based verification.
 
 ## When to use this skill
 - **Critical Logic Changes:** Modifications to `policy_validator.rs`, `pattern_matcher.rs`, or `security.rs`.
@@ -22,7 +22,7 @@ Use `proptest` to mathematically assert that functions never panic and propertie
 **Command:**
 ```powershell
 # Run property tests specifically (usually marked with #[test])
-cd sentinel; cargo test --package sentinel --test properties
+cd lilith-zero; cargo test --package sentinel --test properties
 ```
 *Note: If `tests\properties.rs` does not exist, ask the user to create a property test for the new feature.*
 
@@ -34,7 +34,7 @@ If the code uses `unsafe` or does complex pointer arithmetic, you MUST run Miri.
 # Install Miri if missing
 rustup component add miri
 # Run tests under Miri
-cd sentinel; cargo miri test
+cd lilith-zero; cargo miri test
 ```
 
 ### 3. Fuzzing Campaign
@@ -46,7 +46,7 @@ For parsers and security boundaries, run a short fuzzing campaign to find edge c
 cargo install cargo-fuzz
 # Initialize if needed: cargo fuzz init
 # Run the relevant target (e.g., policy_parser)
-cd sentinel; cargo fuzz run policy_parser -- -max_total_time=300 # 5 minutes
+cd lilith-zero; cargo fuzz run policy_parser -- -max_total_time=300 # 5 minutes
 ```
 
 ### 4. Mutation Testing (The "Test the Tests" Rule)
@@ -57,7 +57,7 @@ Verify that your tests are actually checking the code by introducing random bugs
 # Install cargo-mutants
 cargo install cargo-mutants
 # Run mutation tests
-cd sentinel; cargo mutants
+cd lilith-zero; cargo mutants
 ```
 
 ## Workflow Example
@@ -66,10 +66,10 @@ cd sentinel; cargo mutants
 **Agent Response:**
 "Since you modified `PolicyMatcher` with `unsafe` code:
 1. **Miri Check (CRITICAL):**
-   `cd sentinel; cargo miri test` - *Must pass without UB.*
+   `cd lilith-zero; cargo miri test` - *Must pass without UB.*
 2. **Property Test:**
-   `cd sentinel; cargo test test_policy_matcher_properties` - *Verify invariants hold.*
+   `cd lilith-zero; cargo test test_policy_matcher_properties` - *Verify invariants hold.*
 3. **Fuzzing:**
-   `cd sentinel; cargo fuzz run matcher_fuzz` - *Run for 5 minutes.*
+   `cd lilith-zero; cargo fuzz run matcher_fuzz` - *Run for 5 minutes.*
 
 *Would you like me to construct a property test scaffold for this optimization?*"

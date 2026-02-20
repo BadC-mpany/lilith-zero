@@ -49,7 +49,7 @@ MOCK_SERVER = (
 # =============================================================================
 # Attack 1: Slowloris (Resource Exhaustion)
 # =============================================================================
-@pytest.mark.asyncio
+@pytest.mark.asyncio  # type: ignore[untyped-decorator]
 async def test_slowloris_attack() -> None:
     """
     Simulate a Slowloris-style attack by dripping bytes slowly into the codec.
@@ -74,7 +74,7 @@ async def test_slowloris_attack() -> None:
 # =============================================================================
 # Attack 2: Huge Payload (Memory Exhaustion)
 # =============================================================================
-@pytest.mark.asyncio
+@pytest.mark.asyncio  # type: ignore[untyped-decorator]
 async def test_huge_payload() -> None:
     """
     Send a massive payload to test memory limits and buffer safety.
@@ -95,7 +95,7 @@ async def test_huge_payload() -> None:
 # =============================================================================
 # Attack 3: Unicode Homoglyph (Policy Bypass)
 # =============================================================================
-@pytest.mark.asyncio
+@pytest.mark.asyncio  # type: ignore[untyped-decorator]
 async def test_unicode_homoglyph_bypass() -> None:
     """
     Attempt to bypass policy rules using Unicode homoglyphs.
@@ -123,7 +123,7 @@ async def test_unicode_homoglyph_bypass() -> None:
 # =============================================================================
 # Attack 4: Deeply Nested JSON (Stack Overflow DoS)
 # =============================================================================
-@pytest.mark.asyncio
+@pytest.mark.asyncio  # type: ignore[untyped-decorator]
 async def test_deeply_nested_json_dos() -> None:
     """
     Send deeply nested JSON to trigger stack overflow in parser.
@@ -155,7 +155,7 @@ async def test_deeply_nested_json_dos() -> None:
 # =============================================================================
 # Attack 5: Prompt Injection (Delimiter Escape)
 # =============================================================================
-@pytest.mark.asyncio
+@pytest.mark.asyncio  # type: ignore[untyped-decorator]
 async def test_prompt_injection_delimiter_escape() -> None:
     """
     Attempt prompt injection by including delimiter-like sequences in arguments.
@@ -185,7 +185,7 @@ async def test_prompt_injection_delimiter_escape() -> None:
 # =============================================================================
 # Attack 6: Timing Side-Channel
 # =============================================================================
-@pytest.mark.asyncio
+@pytest.mark.asyncio  # type: ignore[untyped-decorator]
 async def test_timing_side_channel() -> None:
     """
     Measure timing variance in policy evaluation.
@@ -239,7 +239,7 @@ async def test_timing_side_channel() -> None:
 # =============================================================================
 # Attack 7: Integer Overflow (Content-Length)
 # =============================================================================
-@pytest.mark.asyncio
+@pytest.mark.asyncio  # type: ignore[untyped-decorator]
 async def test_content_length_overflow() -> None:
     """
     Send a Content-Length header with value near u64::MAX.
@@ -273,7 +273,7 @@ time.sleep(2)
 # =============================================================================
 # Attack 8: Session Replay
 # =============================================================================
-@pytest.mark.asyncio
+@pytest.mark.asyncio  # type: ignore[untyped-decorator]
 async def test_session_replay() -> None:
     """
     Attempt to reuse a session ID from a previous connection.
@@ -316,7 +316,7 @@ async def test_session_replay() -> None:
 # =============================================================================
 # Attack 9: Null Byte Injection
 # =============================================================================
-@pytest.mark.asyncio
+@pytest.mark.asyncio  # type: ignore[untyped-decorator]
 async def test_null_byte_injection() -> None:
     """
     Attempt to inject null bytes in tool names and arguments.
@@ -343,7 +343,7 @@ async def test_null_byte_injection() -> None:
 # =============================================================================
 # Attack 10: Resource Discovery Bypass
 # =============================================================================
-@pytest.mark.asyncio
+@pytest.mark.asyncio  # type: ignore[untyped-decorator]
 async def test_resource_path_traversal() -> None:
     """
     Attempt path traversal in resource URIs.
@@ -371,7 +371,7 @@ async def test_resource_path_traversal() -> None:
 # =============================================================================
 # Attack 11: Environment Injection (Config Override)
 # =============================================================================
-@pytest.mark.asyncio
+@pytest.mark.asyncio  # type: ignore[untyped-decorator]
 async def test_environment_injection() -> None:
     """
     Attempt to override critical configuration via environment variables.

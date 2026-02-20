@@ -26,6 +26,7 @@ pub struct PatternMatcher;
 
 impl PatternMatcher {
     /// Evaluate a logic condition or sequence pattern
+    #[must_use]
     pub async fn evaluate_pattern_with_args(
         pattern: &LogicCondition,
         history: &[HistoryEntry],
@@ -48,6 +49,7 @@ impl PatternMatcher {
 
     /// Evaluate a complex condition against context.
     // NOTE: Made synchronous to avoid async recursion complexity. Logic evaluation is CPU-bound.
+    #[must_use]
     pub fn evaluate_condition_with_args(
         condition: &LogicCondition,
         _history: &[HistoryEntry],
@@ -181,6 +183,7 @@ impl PatternMatcher {
     }
 
     /// Simple matching with '*' support (Optimized: Zero Allocation)
+    #[must_use]
     pub(crate) fn wildcard_match(pattern: &str, text: &str) -> bool {
         let mut parts = pattern.split('*');
 

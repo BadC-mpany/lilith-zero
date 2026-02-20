@@ -38,6 +38,7 @@ use crate::engine_core::errors::{CryptoError, InterceptorError};
 
 impl CryptoSigner {
     /// Create a new signer with a secure random ephemeral key
+    #[must_use = "crypto initialization result must be checked"]
     pub fn try_new() -> Result<Self, InterceptorError> {
         let rng = SystemRandom::new();
         let mut secret = [0u8; crypto::SECRET_KEY_LENGTH];
@@ -80,6 +81,7 @@ impl CryptoSigner {
     }
 
     /// Validate a Session ID's integrity using constant-time comparison
+    #[must_use = "session validation result must be checked"]
     pub fn validate_session_id(&self, session_id: &str) -> bool {
         let parts: Vec<&str> = session_id.split('.').collect();
         if parts.len() != 3 {

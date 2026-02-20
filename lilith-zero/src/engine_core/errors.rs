@@ -18,6 +18,7 @@ use thiserror::Error;
 
 /// Main error type for the interceptor
 #[derive(Error, Debug)]
+#[non_exhaustive]
 pub enum InterceptorError {
     /// Invalid API key (HTTP 401)
     #[error("Invalid API Key")]
@@ -76,6 +77,7 @@ pub enum InterceptorError {
 
 /// Cryptographic operation errors
 #[derive(Error, Debug)]
+#[non_exhaustive]
 pub enum CryptoError {
     /// Failed to load private key
     #[error("Failed to load private key: {0}")]

@@ -21,11 +21,10 @@ Provides security controls for Model Context Protocol tool servers including:
 - Process isolation
 """
 
-from .client import _MCP_PROTOCOL_VERSION, Lilith
+from .client import Lilith
 
-__version__ = "0.1.2"
+__version__ = "0.1.3"
 __all__ = [
-    "_MCP_PROTOCOL_VERSION",
     "Lilith",
     "__version__",
 ]

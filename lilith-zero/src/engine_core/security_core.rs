@@ -102,6 +102,7 @@ impl SecurityCore {
     }
 
     /// Primary entry point for all security decisions.
+    #[must_use]
     pub async fn evaluate(&mut self, event: SecurityEvent) -> SecurityDecision {
         match event {
             SecurityEvent::Handshake {

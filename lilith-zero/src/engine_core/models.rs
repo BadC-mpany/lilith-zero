@@ -92,6 +92,7 @@ pub struct ProxyRequest {
 
 /// Policy evaluation decision result
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub enum Decision {
     /// Request is allowed
     Allowed,
@@ -108,6 +109,7 @@ pub enum Decision {
 /// Replaces raw serde_json::Value with a strict enum for maintaining correctness.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 // Note: standard JsonLogic often uses standard names. We support: "and", "or", "not", "==", ">", etc.
 pub enum LogicCondition {
     // Logic Ops
@@ -137,6 +139,7 @@ pub enum LogicCondition {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(untagged)]
+#[non_exhaustive]
 pub enum LogicValue {
     /// {"var": "path"}
     Var {

@@ -18,6 +18,7 @@ use std::env;
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
 pub enum SecurityLevel {
     AuditOnly,
     BlockParams,

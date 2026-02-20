@@ -80,7 +80,7 @@ class AuditEntry(TypedDict):
 # Module-level constants
 _MCP_PROTOCOL_VERSION = "2024-11-05"
 _SDK_NAME = "lilith-zero"
-_SDK_VERSION = "0.1.1"
+_SDK_VERSION = "0.1.3"
 _SESSION_TIMEOUT_SEC = 5.0
 _SESSION_POLL_INTERVAL_SEC = 0.1
 _SESSION_ID_MARKER = "LILITH_ZERO_SESSION_ID="
@@ -127,26 +127,44 @@ def _find_binary() -> str:
         return os.path.abspath(user_bin)
 
     # 4. Standard Dev/Cargo Location (Fallback for ease of dev)
-    # Assumes we are in sdk_root/src/lilith_zero,
-    # binary in repo_root/lilith-zero/target/release
-    # This is a heuristic for local development convenience.
+    # Search upwards for repo root marker to avoid fragile dirname chaining
     try:
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        # Go up to repo root:
-        # sdk/src/lilith_zero/client.py -> sdk/src/lilith_zero -> sdk/src -> sdk -> repo
-        repo_root = os.path.dirname(os.path.dirname(os.path.dirname(current_dir)))
-        dev_binary = os.path.join(
-            repo_root,
-            "lilith-zero",
-            "target",
-            "release",
-            _BINARY_NAME,
-        )
-        if os.path.exists(dev_binary):
-            _logger.debug(f"Found dev binary at {dev_binary}")
-            return dev_binary
-    except Exception:
-        pass
+        current_path = os.path.abspath(__file__)
+        repo_root = None
+        # Check up to 5 levels
+        check_path = current_path
+        for _ in range(5):
+            check_path = os.path.dirname(check_path)
+            # If we find the Rust core manifest, we found the developer root
+            if os.path.exists(os.path.join(check_path, "lilith-zero", "Cargo.toml")):
+                repo_root = check_path
+                break
+
+        if repo_root:
+            dev_binary = os.path.join(
+                repo_root,
+                "lilith-zero",
+                "target",
+                "release",
+                _BINARY_NAME,
+            )
+            if os.path.exists(dev_binary):
+                _logger.debug(f"Found dev binary at {dev_binary}")
+                return dev_binary
+
+            # Also check debug if release isn't built
+            dev_binary_debug = os.path.join(
+                repo_root,
+                "lilith-zero",
+                "target",
+                "debug",
+                _BINARY_NAME,
+            )
+            if os.path.exists(dev_binary_debug):
+                _logger.debug(f"Found debug dev binary at {dev_binary_debug}")
+                return dev_binary_debug
+    except Exception as e:
+        _logger.debug(f"Dev binary heuristic failed: {e}")
 
     # If we get here, we can't find it. Ask installer to guide user.
     return install_lilith(interactive=False)
@@ -539,7 +557,8 @@ class Lilith:
             _logger.exception("Uncaught error in reader loop: %s", e)
             await self._disconnect_with_error(str(e))
         finally:
-            # If we were in the middle of a request, provide a more descriptive error than 'terminated unexpectedly'
+            # If we were in the middle of a request, provide a more descriptive
+            # error than 'terminated unexpectedly'
             self._cleanup_pending_requests(
                 "Lilith connection broken: process terminated or closed pipe"
             )
@@ -557,73 +576,41 @@ class Lilith:
                 while True:
                     line = f.readline()
                     if line:
-                        try:
-                            # JSONL: {"signature": "...", "payload": {...}}
-                            # But wait, audit.rs writes nested payload as OBJECT in the
-                            # json wrapper?
-                            # serde_json::json!({
-                            #     "signature": signature, "payload": entry
-                            # });
-                            # entry is AuditEntry struct, which is an object.
-
-                            data = json.loads(line)
-                            signature = data.get("signature")
-                            # This is the full AuditEntry object
-                            payload = data.get("payload")
-
-                            if signature and payload:
-                                entry: AuditEntry = {
-                                    "session_id": payload.get("session_id", ""),
-                                    "timestamp": payload.get("timestamp", 0.0),
-                                    "event_type": payload.get("event_type", "UNKNOWN"),
-                                    "details": payload.get("details", {}),
-                                    "signature": signature,
-                                }
-                                self._audit_logs.append(entry)
-                        except json.JSONDecodeError:
-                            pass
+                        self._parse_audit_line(line)
                     else:
                         # EOF
                         if not self._process or self._process.returncode is not None:
                             # Drain remaining
                             remaining = f.read()
                             if remaining:
-                                # Split lines
                                 for log_line in remaining.split("\n"):
                                     if log_line.strip():
-                                        # Process last bits (copy-paste logic,
-                                        # refactor ideally)
-                                        try:
-                                            data = json.loads(log_line)
-                                            # ... (same logic, simple checks)
-                                            if (
-                                                "signature" in data
-                                                and "payload" in data
-                                            ):
-                                                p = data["payload"]
-                                                self._audit_logs.append(
-                                                    {
-                                                        "session_id": p.get(
-                                                            "session_id", ""
-                                                        ),
-                                                        "timestamp": p.get(
-                                                            "timestamp", 0.0
-                                                        ),
-                                                        "event_type": p.get(
-                                                            "event_type", "UNKNOWN"
-                                                        ),
-                                                        "details": p.get("details", {}),
-                                                        "signature": data["signature"],
-                                                    }
-                                                )
-                                        except Exception:
-                                            pass
+                                        self._parse_audit_line(log_line)
                             break
                         await asyncio.sleep(0.1)
         except (asyncio.CancelledError, FileNotFoundError):
             pass
         except Exception as e:
             _logger.warning("Audit tail error: %s", e)
+
+    def _parse_audit_line(self, line: str) -> None:
+        """Parse a single JSONL audit log line and append to audit logs."""
+        try:
+            data = json.loads(line)
+            signature = data.get("signature")
+            payload = data.get("payload")
+
+            if signature and payload:
+                entry: AuditEntry = {
+                    "session_id": payload.get("session_id", ""),
+                    "timestamp": payload.get("timestamp", 0.0),
+                    "event_type": payload.get("event_type", "UNKNOWN"),
+                    "details": payload.get("details", {}),
+                    "signature": signature,
+                }
+                self._audit_logs.append(entry)
+        except (json.JSONDecodeError, Exception):
+            pass
 
     async def _disconnect_with_error(self, message: str) -> None:
         """Helper to terminate connection on protocol error and notify callers."""

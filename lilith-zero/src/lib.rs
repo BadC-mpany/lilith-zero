@@ -18,6 +18,15 @@
 //! which enforces data-at-rest and data-in-transit security policies
 //! for Model Context Protocol (MCP) servers.
 
+// Lint configuration per rust-skills guidelines
+#![deny(clippy::correctness)]
+#![warn(clippy::suspicious)]
+#![warn(clippy::style)]
+#![warn(clippy::complexity)]
+#![warn(clippy::perf)]
+#![warn(missing_docs)]
+#![warn(clippy::undocumented_unsafe_blocks)]
+
 pub mod config;
 pub mod engine;
 pub mod engine_core;
