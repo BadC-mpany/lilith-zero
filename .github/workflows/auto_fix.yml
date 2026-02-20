@@ -38,16 +38,25 @@ jobs:
           uv pip install --system ruff
           # Fix linting and formatting
           ruff check src/lilith_zero tests --fix || true
-          ruff format src/lilith_zero tests
+          ruff format src/lilith_zero tests || true
+
+      - name: Sync Python Lockfiles
+        run: |
+          uv lock || true
+          if [ -d "sdk" ]; then cd sdk && uv lock || true; fi
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
         with:
-          components: rustfmt
+          components: rustfmt, clippy
 
       - name: Fix Rust (Fmt)
         working-directory: lilith-zero
-        run: cargo fmt --all
+        run: cargo fmt --all || true
+
+      - name: Sync Rust Lockfile
+        working-directory: lilith-zero
+        run: cargo check || true
 
       - name: Fix Rust (Clippy)
         working-directory: lilith-zero
@@ -56,4 +65,4 @@ jobs:
       - name: Commit and Push Fixes
         uses: stefanzweifel/git-auto-commit-action@e348103e9026cc0eee72ae06630dbe30c8bf7a79 # v5.0.0
         with:
-          commit_message: "chore: auto-fix quality issues (ruff/rustfmt/clippy)"
+          commit_message: "chore: auto-fix quality issues and sync lockfiles"

@@ -15,7 +15,7 @@ from lilith_zero.exceptions import (
 # --- Fixtures ---
 
 
-@pytest.fixture  # type: ignore[untyped-decorator]
+@pytest.fixture
 def mock_subprocess() -> AsyncMock:
     """Provides a fully mocked asyncio subprocess."""
     process = AsyncMock()
@@ -29,7 +29,7 @@ def mock_subprocess() -> AsyncMock:
     return process
 
 
-@pytest.fixture  # type: ignore[untyped-decorator]
+@pytest.fixture
 def mock_env(mock_subprocess: AsyncMock) -> Generator[MagicMock, None, None]:
     """Sets up common mocks for Lilith environment."""
     with (
@@ -45,7 +45,7 @@ def mock_env(mock_subprocess: AsyncMock) -> Generator[MagicMock, None, None]:
 # --- Configuration Tests ---
 
 
-@pytest.mark.asyncio  # type: ignore[untyped-decorator]
+@pytest.mark.asyncio
 async def test_config_validation() -> None:
     """Verify strictly required configuration parameters."""
     with pytest.raises(LilithConfigError, match="Upstream command is required"):
@@ -62,7 +62,7 @@ async def test_config_validation() -> None:
 # --- Lifecycle & Connection Tests ---
 
 
-@pytest.mark.asyncio  # type: ignore[untyped-decorator]
+@pytest.mark.asyncio
 async def test_lifecycle_success(
     mock_subprocess: AsyncMock, mock_env: MagicMock
 ) -> None:
@@ -93,7 +93,7 @@ async def test_lifecycle_success(
         mock_subprocess.terminate.assert_called()
 
 
-@pytest.mark.asyncio  # type: ignore[untyped-decorator]
+@pytest.mark.asyncio
 async def test_connection_failure_immediate_exit(
     mock_subprocess: AsyncMock, mock_env: MagicMock
 ) -> None:
@@ -113,7 +113,7 @@ async def test_connection_failure_immediate_exit(
             pass
 
 
-@pytest.mark.asyncio  # type: ignore[untyped-decorator]
+@pytest.mark.asyncio
 async def test_connection_failure_timeout(
     mock_subprocess: AsyncMock, mock_env: MagicMock
 ) -> None:
@@ -138,7 +138,7 @@ async def test_connection_failure_timeout(
 # --- Protocol & Policy Tests ---
 
 
-@pytest.mark.asyncio  # type: ignore[untyped-decorator]
+@pytest.mark.asyncio
 async def test_tool_call_dispatch(
     mock_subprocess: AsyncMock, mock_env: MagicMock
 ) -> None:
@@ -162,7 +162,7 @@ async def test_tool_call_dispatch(
         assert result == {"content": [{"text": "success"}]}
 
 
-@pytest.mark.asyncio  # type: ignore[untyped-decorator]
+@pytest.mark.asyncio
 async def test_policy_violation_parsing(
     mock_subprocess: AsyncMock, mock_env: MagicMock
 ) -> None:
@@ -190,7 +190,7 @@ async def test_policy_violation_parsing(
     assert exc.value.policy_details["reason"] == "lethal trifecta"
 
 
-@pytest.mark.asyncio  # type: ignore[untyped-decorator]
+@pytest.mark.asyncio
 async def test_large_payload_handling(
     mock_subprocess: AsyncMock, mock_env: MagicMock
 ) -> None:
@@ -229,7 +229,7 @@ async def test_large_payload_handling(
         assert len(params["arguments"]["data"]) == 5 * 1024 * 1024
 
 
-@pytest.mark.asyncio  # type: ignore[untyped-decorator]
+@pytest.mark.asyncio
 async def test_concurrent_requests(
     mock_subprocess: AsyncMock, mock_env: MagicMock
 ) -> None:
@@ -260,7 +260,7 @@ async def test_concurrent_requests(
         assert set(texts) == {f"echo {i}" for i in range(50)}
 
 
-@pytest.mark.asyncio  # type: ignore[untyped-decorator]
+@pytest.mark.asyncio
 async def test_runtime_health_check(
     mock_subprocess: AsyncMock, mock_env: MagicMock
 ) -> None:
@@ -288,7 +288,7 @@ async def test_runtime_health_check(
         await client.list_tools()
 
 
-@pytest.mark.asyncio  # type: ignore[untyped-decorator]
+@pytest.mark.asyncio
 async def test_spotlighting_delimiters(
     mock_subprocess: AsyncMock, mock_env: MagicMock
 ) -> None:
