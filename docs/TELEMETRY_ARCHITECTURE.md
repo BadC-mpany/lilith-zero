@@ -109,3 +109,47 @@ By streaming this structured data to a central OpenTelemetry Collector, you can 
 1. **Traces/Spans** route to Tempo/Jaeger for latency heatmaps and success rates.
 2. **Events** route to ClickHouse/Elasticsearch for heavy text searching, hash matching, and forensic audits.
 3. **Grafana** sits on top, providing a single unified dashboard connecting the speed of traces with the depth of the logs.
+
+---
+
+## 5. Telemetry Data Flow Diagram
+
+The following diagram illustrates how telemetry data flows from the intercepting middleware to the final visualization dashboards, highlighting the specific protocols used at each stage.
+
+```mermaid
+graph TD
+    %% Boundaries
+    subgraph ClientEdge [Employee Laptop or Application Server]
+        Agent[Python LangChain Agent]
+        Lilith[Lilith-Zero Middleware<br/>Rust tracing]
+    end
+
+    subgraph CorporateNetwork [Central Telemetry Cluster]
+        Collector[OpenTelemetry Collector]
+        
+        subgraph Databases [Storage Backend]
+            Tempo[(Tempo / Jaeger<br/>Traces & Spans)]
+            ClickHouse[(ClickHouse / Elastic<br/>Raw Events & Logs)]
+        end
+        
+        Dashboard[Grafana Dashboard]
+    end
+
+    %% Data Flow & Protocols
+    Agent -- "JSON-RPC (stdio)" --> Lilith
+    
+    %% OTLP Export (The core bridge)
+    Lilith -- "OTLP / gRPC<br/>(TLS or mTLS encrypted)" --> Collector
+    
+    %% Collector Routing
+    Collector -- "OTLP / gRPC" --> Tempo
+    Collector -- "OTLP / HTTP or gRPC" --> ClickHouse
+    
+    %% Visualization
+    Dashboard -. "TraceQL / PromQL" .-> Tempo
+    Dashboard -. "SQL" .-> ClickHouse
+
+    classDef default fill:#1e1e1e,stroke:#333,stroke-width:2px,color:#fff;
+    classDef highlight fill:#2952a3,stroke:#6699ff,stroke-width:2px,color:#fff;
+    class Lilith,Collector highlight;
+```
