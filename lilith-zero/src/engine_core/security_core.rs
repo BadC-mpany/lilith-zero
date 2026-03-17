@@ -141,6 +141,11 @@ impl SecurityCore {
                     json!({ "timestamp": crate::utils::time::now() }),
                 );
 
+                lilith_telemetry::telemetry_event!(
+                    lilith_telemetry::dispatcher::EventLevel::RoutineAllow,
+                    b"New MCP Session Handshake completed"
+                );
+
                 SecurityDecision::Allow
             }
 
@@ -190,6 +195,17 @@ impl SecurityCore {
                 let tool_name_str = tool_name.into_inner();
                 let classes = self.classify_tool(&tool_name_str);
 
+                // TELEMETRY: Trace the evaluation of this tool call
+                let _span = lilith_telemetry::telemetry_span!(
+                    "tool_evaluation",
+                    lilith_telemetry::SpanKind::Server
+                );
+                
+                lilith_telemetry::telemetry_event!(
+                    lilith_telemetry::dispatcher::EventLevel::RoutineAllow,
+                    format!("Evaluating tool request: {}", tool_name_str).as_bytes()
+                );
+
                 // 3. Evaluate Policy
                 let evaluator_result = if let Some(policy) = &self.policy {
                     PolicyEvaluator::evaluate_with_args(
@@ -220,10 +236,31 @@ impl SecurityCore {
 
                 match evaluator_result {
                     Ok(decision) => {
-                        self.process_evaluator_decision(&tool_name_str, &classes, decision)
+                        let sec_decision = self.process_evaluator_decision(&tool_name_str, &classes, decision);
+                        
+                        // TELEMETRY: Log outcome
+                        match &sec_decision {
+                            SecurityDecision::Deny { reason, .. } => {
+                                lilith_telemetry::telemetry_event!(
+                                    lilith_telemetry::dispatcher::EventLevel::CriticalDeny,
+                                    format!("Blocked tool {}: {}", tool_name_str, reason).as_bytes()
+                                );
+                            }
+                            _ => {
+                                lilith_telemetry::telemetry_event!(
+                                    lilith_telemetry::dispatcher::EventLevel::RoutineAllow,
+                                    format!("Allowed tool {}", tool_name_str).as_bytes()
+                                );
+                            }
+                        }
+                        sec_decision
                     }
                     Err(e) => {
                         warn!("Policy evaluation internal error: {}", e);
+                        lilith_telemetry::telemetry_event!(
+                            lilith_telemetry::dispatcher::EventLevel::CriticalDeny,
+                            format!("Policy error during evaluation: {}", e).as_bytes()
+                        );
                         SecurityDecision::Deny {
                             error_code: jsonrpc::ERROR_INTERNAL, // Internal error
                             reason: format!("Policy error: {}", e),

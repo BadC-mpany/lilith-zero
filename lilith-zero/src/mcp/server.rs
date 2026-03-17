@@ -218,6 +218,11 @@ impl McpMiddleware {
         writer: &mut tokio::io::Stdout,
         tx_upstream_events: &mpsc::Sender<UpstreamEvent>,
     ) -> Result<()> {
+        let _span = lilith_telemetry::telemetry_span!(
+            "mcp_request",
+            lilith_telemetry::SpanKind::Server
+        );
+
         // 1. Parse Protocol (Session Token extraction, etc)
         let security_event = self.session.parse_request(req);
 
@@ -279,6 +284,10 @@ impl McpMiddleware {
 
                 // Forward to Upstream
                 if self.upstream_stdin.is_some() {
+                    lilith_telemetry::telemetry_event!(
+                        lilith_telemetry::dispatcher::EventLevel::RoutineAllow,
+                        format!("Forwarding {} to upstream", req.method).as_bytes()
+                    );
                     self.session.sanitize_for_upstream(req);
                     // Blessing the request as clean because Policy Allowed it.
                     // Blessing the request as clean because Policy Allowed it.
@@ -304,6 +313,11 @@ impl McpMiddleware {
         resp: JsonRpcResponse,
         writer: &mut tokio::io::Stdout,
     ) -> Result<()> {
+        let _span = lilith_telemetry::telemetry_span!(
+            "mcp_response",
+            lilith_telemetry::SpanKind::Server
+        );
+
         // Correlate with Request
         let mut decision = SecurityDecision::Allow; // Default if unsolicited (notifications)?
 
@@ -324,6 +338,11 @@ impl McpMiddleware {
                 return Ok(());
             }
         }
+
+        lilith_telemetry::telemetry_event!(
+            lilith_telemetry::dispatcher::EventLevel::RoutineAllow,
+            b"Forwarding response to client"
+        );
 
         // Apply Transforms (Spotlighting)
         let secured_resp = self.session.apply_decision(&decision, resp);

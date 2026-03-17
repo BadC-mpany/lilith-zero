@@ -1,4 +1,4 @@
-﻿// Copyright 2026 BadCompany
+// Copyright 2026 BadCompany
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -37,6 +37,10 @@ struct Cli {
     /// Path to audit log output file (structured JSONL)
     #[arg(long)]
     audit_logs: Option<PathBuf>,
+
+    /// Flock telemetry connection string (e.g. lilith://127.0.0.1:44317?key_id=...)
+    #[arg(long)]
+    telemetry_link: Option<String>,
 
     /// Upstream tool arguments (e.g. "tools.py")
     #[arg(last = true)]
@@ -105,6 +109,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .upstream_cmd
         .ok_or_else(|| anyhow::anyhow!("Missing --upstream-cmd"))?;
     info!("Upstream: {} {:?}", upstream_cmd, cli.upstream_args);
+
+    if let Some(link_str) = cli.telemetry_link {
+        info!("Telemetry link provided, initializing FlockMember mode");
+        let link = lilith_telemetry::FlockLink::parse(&link_str)?;
+        lilith_telemetry::init(lilith_telemetry::DeploymentMode::FlockMember {
+            target_api_endpoint: format!("{}:{}", link.host, link.port),
+            auth_key: lilith_telemetry::crypto::KeyHandle(link.key_id),
+        });
+    } else {
+        info!("No telemetry link provided, running in Alone mode");
+        lilith_telemetry::init(lilith_telemetry::DeploymentMode::Alone);
+    }
 
     let mut middleware = McpMiddleware::new(
         upstream_cmd,

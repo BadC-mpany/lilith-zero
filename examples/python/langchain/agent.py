@@ -19,15 +19,21 @@ from lilith_zero import Lilith, PolicyViolationError
 
 # Configuration
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../"))
-load_dotenv(os.path.join(PROJECT_ROOT, "examples/.env"))
+load_dotenv(os.path.join(PROJECT_ROOT, ".env")) # Load from project root
 
-LILITH_BIN = shutil.which("lilith-zero") or os.environ.get("LILITH_ZERO_BINARY_PATH")
+LILITH_BIN = os.environ.get("LILITH_ZERO_BINARY_PATH") or os.path.abspath(os.path.join(PROJECT_ROOT, "lilith-zero/target/debug/lilith-zero"))
 SERVER_SCRIPT = os.path.join(os.path.dirname(__file__), "server.py")
 POLICY_PATH = os.path.join(os.path.dirname(__file__), "policy.yaml")
+
+import argparse
 
 console = Console()
 
 async def main():
+    parser = argparse.ArgumentParser(description="Lilith + LangChain Demo")
+    parser.add_argument("--telemetry-link", type=str, help="Lilith Telemetry Link (e.g. lilith://...)")
+    args = parser.parse_args()
+
     console.print(Panel.fit("[bold green]LILITH[/bold green] + LangChain Integration", border_style="green"))
     
     if not LILITH_BIN or not os.path.exists(LILITH_BIN):
@@ -37,7 +43,8 @@ async def main():
     async with Lilith(
         upstream=f"python -u {SERVER_SCRIPT}", 
         binary=LILITH_BIN, 
-        policy=POLICY_PATH
+        policy=POLICY_PATH,
+        telemetry_link=args.telemetry_link
     ) as lilith:
         
         # 1. Define LangChain Tools wrapping Lilith

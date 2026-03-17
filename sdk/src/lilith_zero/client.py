@@ -186,6 +186,7 @@ class Lilith:
         *,
         policy: str | None = None,
         binary: str | None = None,
+        telemetry_link: str | None = None,
     ) -> None:
         """Initialize Lilith middleware configuration.
 
@@ -195,6 +196,7 @@ class Lilith:
                       Currently required.
             policy: Path to policy YAML file for rule-based enforcement.
             binary: Path to Lilith binary (auto-discovered if not provided).
+            telemetry_link: Optional connection link for Lilith Telemetry Flock.
 
         Raises:
             LilithConfigError: If upstream is empty or binary not found.
@@ -243,6 +245,7 @@ class Lilith:
         self._policy_path = os.path.abspath(policy) if policy else None
 
         # Runtime state
+        self._telemetry_link = telemetry_link
         self._process: asyncio.subprocess.Process | None = None
         self._reader_task: asyncio.Task[None] | None = None
         self._stderr_task: asyncio.Task[None] | None = None
@@ -413,6 +416,9 @@ class Lilith:
 
         if self._audit_file_path:
             cmd.extend(["--audit-logs", self._audit_file_path])
+            
+        if self._telemetry_link:
+            cmd.extend(["--telemetry-link", self._telemetry_link])
 
         cmd.extend(["--upstream-cmd", self._upstream_cmd])
         if self._upstream_args:

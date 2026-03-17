@@ -91,24 +91,49 @@ def handle_request(req):
 
 def main():
     logger.info("Starting LangChain MCP Server...")
+    
+    # We use a robust reader that handles LSP-style Content-Length headers
+    stdin = sys.stdin.buffer
+
     while True:
         try:
-            line = sys.stdin.readline()
-            if not line: break
-            if not line.strip(): continue
-            
-            try:
-                req = json.loads(line)
-            except json.JSONDecodeError:
+            # 1. Read Headers
+            headers = {}
+            while True:
+                line = stdin.readline()
+                if not line:
+                    return # EOF
+                line = line.decode().strip()
+                if not line:
+                    break # End of headers
+                if ":" in line:
+                    k, v = line.split(":", 1)
+                    headers[k.lower().strip()] = v.strip()
+
+            # 2. Read Body
+            if "content-length" in headers:
+                length = int(headers["content-length"])
+                body = stdin.read(length)
+                if not body:
+                    break
+                req = json.loads(body.decode())
+                
+                resp = handle_request(req)
+                if resp:
+                    out = json.dumps(resp)
+                    # We also respond with Content-Length for the Lilith interceptor
+                    sys.stdout.write(f"Content-Length: {len(out)}\r\n\r\n{out}")
+                    sys.stdout.flush()
+            else:
+                # Fallback for plain newline-delimited JSON (if headers missing)
+                # Note: this is a bit tricky with mixed binary read, 
+                # but for the demo we assume Lilith is always sending headers now.
+                logger.warning("Received message without Content-Length header")
                 continue
 
-            resp = handle_request(req)
-            if resp:
-                out = json.dumps(resp)
-                sys.stdout.write(f"Content-Length: {len(out)}\r\n\r\n{out}")
-                sys.stdout.flush()
         except Exception as e:
             logger.error(f"Server Error: {e}")
+            break
 
 if __name__ == "__main__":
     main()
