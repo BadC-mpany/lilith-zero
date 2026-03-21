@@ -27,11 +27,31 @@ def system_maintenance(region: str) -> str:
     """Perform system maintenance operations."""
     return f"Maintenance scheduled for region: {region}"
 
+def database(query: str) -> str:
+    """Access the internal knowledge database."""
+    return f"Database results for '{query}': Found 3 sensitive records."
+
+def web_search(query: str) -> str:
+    """Search the public internet."""
+    return f"Search results for '{query}': No public information found."
+
+def delete_record(record_id: str) -> str:
+    """Delete a record from the database."""
+    return f"Record {record_id} deleted successfully."
+
+def list_files(path: str) -> str:
+    """List files in a directory."""
+    return f"Files in {path}: README.md, src/, tests/, target/"
+
 TOOLS = {
     "calculator": calculator,
     "read_customer_data": read_customer_data,
     "export_analytics": export_analytics,
     "system_maintenance": system_maintenance,
+    "database": database,
+    "web_search": web_search,
+    "delete_record": delete_record,
+    "list_files": list_files,
 }
 
 def handle_request(req):

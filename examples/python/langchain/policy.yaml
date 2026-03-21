@@ -5,19 +5,31 @@ version: 1
 
 staticRules:
   calculator: "ALLOW"
-  read_customer_data: "ALLOW"
-  system_maintenance: "DENY"
-  export_analytics: "ALLOW"
+  database: "ALLOW"
+  web_search: "ALLOW"
+  list_files: "ALLOW"
+  delete_record: "DENY"
 
 taintRules:
-  - tool: "read_customer_data"
+  - tool: "database"
     action: "ADD_TAINT"
-    tag: "PII"
+    tag: "SENSITIVE_CONTEXT"
   
-  - tool: "export_analytics"
+  - tool: "web_search"
     action: "CHECK_TAINT"
-    forbiddenTags: ["PII"]
-    error: "Cannot export analytics containing PII."
+    forbiddenTags: ["SENSITIVE_CONTEXT"]
+    error: "Security Violation: Web search is prohibited after accessing the database to prevent data exfiltration."
 
-resourceRules: []
+  - tool: "list_files"
+    action: "BLOCK"
+    error: "Access denied. Node is not authorized to list files outside the project directory."
+    pattern:
+      not:
+        tool_args_match:
+          path: "/Users/mozer/Documents/projects/lilith-zero*"
+
+resourceRules:
+  - uriPattern: "file:///Users/mozer/Documents/projects/lilith-zero/*"
+    action: "ALLOW"
+
 protectLethalTrifecta: true

@@ -218,6 +218,30 @@ impl McpMiddleware {
         writer: &mut tokio::io::Stdout,
         tx_upstream_events: &mpsc::Sender<UpstreamEvent>,
     ) -> Result<()> {
+        // --- CONTEXT PROPAGATION ---
+        // If the SDK provided a trace/span context, inject it into our baggage
+        // before creating the request span.
+        if let Some(params) = &req.params {
+            let mut baggage = lilith_telemetry::baggage::current();
+            let mut modified = false;
+
+            if let Some(hi) = params.get("_lilith_trace_id_hi").and_then(|v| v.as_u64()) {
+                if let Some(lo) = params.get("_lilith_trace_id_lo").and_then(|v| v.as_u64()) {
+                    baggage.trace_id = lilith_telemetry::TraceId(hi, lo);
+                    modified = true;
+                }
+            }
+
+            if let Some(parent_sid) = params.get("_lilith_parent_span_id").and_then(|v| v.as_u64()) {
+                baggage.span_id = lilith_telemetry::SpanId(parent_sid);
+                modified = true;
+            }
+
+            if modified {
+                lilith_telemetry::baggage::set_current(baggage);
+            }
+        }
+
         let _span = lilith_telemetry::telemetry_span!(
             "mcp_request",
             lilith_telemetry::SpanKind::Server
