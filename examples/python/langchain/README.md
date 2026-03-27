@@ -14,7 +14,7 @@ It shows off the `lilith-telemetry` system where multiple `FlockMember` (Nodes) 
 ### 1. Provision Node Keys (FlockHead Terminal)
 First, you need to generate a `flock_keys.db` registry for the server to recognize the nodes.
 ```bash
-cd lilith_telemetry
+cd lilith-telemetry
 cargo run --example provision
 ```
 *Note the keys outputted in the terminal. You will use these connection strings for the agents.*
@@ -49,6 +49,6 @@ python agent.py --telemetry-link "lilith://127.0.0.1:44317?key_id=<KEY_2>"
 A file named `node_telemetry_local.log` will be created in your working directory (`examples/python/langchain`). This allows you to witness the `BinaryEvent` logs written directly to disk at the edge without the collector.
 
 **Collector Aggregation:**
-A `telemetry.log` file is created inside the `lilith_telemetry` directory. If you inspect this file or watch the collector output, you will see events streaming in labeled by the `NODE` and `SESSION` identifiers.
+A `telemetry.log` file is created inside the `lilith-telemetry` directory. If you inspect this file or watch the collector output, you will see events streaming in labeled by the `NODE` and `SESSION` identifiers.
 
 Trigger a tool like `Compute 5 + 5` in the python Agent chat interface, and you will see a `RoutineAllow` event show up immediately in both locations!
