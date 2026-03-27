@@ -42,5 +42,6 @@ ASCII_ART = """
 """
 
 import sys
+
 sys.stdout.write(ASCII_ART + "\n")
 sys.stdout.flush()
