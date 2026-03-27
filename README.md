@@ -1,10 +1,17 @@
-# Lilith Zero
+# Lilith-Zero
 
 **Deterministic Security Middleware for MCP tool calls written in Rust.**
+
+<div align="center">
 
 [![CI](https://github.com/BadC-mpany/lilith-zero/actions/workflows/ci.yml/badge.svg)](https://github.com/BadC-mpany/lilith-zero/actions)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Version](https://img.shields.io/badge/Version-0.1.3-green.svg)](https://github.com/BadC-mpany/lilith-zero/releases)
+
+<br/>
+<img src="lilith-banner.svg" alt="Lilith Zero ASCII Art" width="800" />
+
+</div>
 
 Lilith Zero is a high-performance security runtime designed to mitigate data exfiltration and unauthorized tool invocation in LLM-based agent systems. By interposing at the transport layer, Lilith Zero enforces security invariants through deterministic policy evaluation and strictly framed execution.
 
