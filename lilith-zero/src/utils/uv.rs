@@ -1,16 +1,10 @@
 // Copyright 2026 BadCompany
-//
 // Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
 //     http://www.apache.org/licenses/LICENSE-2.0
-//
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
-// limitations under the License.
 
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
@@ -20,9 +14,8 @@ use tracing::info;
 pub struct UvManager;
 
 impl UvManager {
-    /// Ensure a hermetic Python runtime exists at the target directory.
-    /// If it doesn't exist, use `uv venv` to create it.
     pub async fn ensure_hermetic_runtime(version: &str, target_dir: &Path) -> Result<PathBuf> {
+        // Description: Executes the ensure_hermetic_runtime logic.
         let python_exe = if cfg!(windows) {
             target_dir.join("Scripts").join("python.exe")
         } else {
@@ -57,8 +50,6 @@ impl UvManager {
             }
         }
 
-        // --- Hermetic Seeding (Critical for Sandbox) ---
-        // Copy base DLLs into Scripts directory to ensure they are in the loader search path.
         if cfg!(windows) && target_dir.exists() {
             let scripts_dir = target_dir.join("Scripts");
             let cfg_path = target_dir.join("pyvenv.cfg");
@@ -90,7 +81,6 @@ impl UvManager {
                             if src.exists() && !dst.exists() {
                                 info!("Copying {} to hermetic root...", dll);
                                 let _ = std::fs::copy(&src, &dst);
-                                // Ensure everyone (including AppContainers) can read the DLL
                                 if cfg!(windows) {
                                     let _ = std::process::Command::new("icacls")
                                         .arg(&dst)

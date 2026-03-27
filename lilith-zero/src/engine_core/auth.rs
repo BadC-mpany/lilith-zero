@@ -1,21 +1,11 @@
 // Copyright 2026 BadCompany
-//
 // Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
 //     http://www.apache.org/licenses/LICENSE-2.0
-//
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
-// limitations under the License.
 
-//! Authentication utilities.
-//!
-//! Provides JWT validation for audience binding ("The client is who they say they are").
-//! Enforces strict cryptographic checks if a JWT secret/key is provided.
 
 use anyhow::{anyhow, Result};
 use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
@@ -24,24 +14,17 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Serialize, Deserialize)]
 struct Claims {
     aud: Option<serde_json::Value>, // Audience can be single string or array
-    // Standard claims
     exp: usize,
     iat: Option<usize>,
     iss: Option<String>,
 }
 
-/// Validates that the provided JWT token is:
-/// 1. Cryptographically valid (signed by our secret)
-/// 2. Has an 'aud' claim containing at least one of the expected audiences
-///
-/// Returns Ok(()) if valid, Err otherwise.
 pub fn validate_audience_claim(
     token: &str,
     expected_audiences: &[String],
     jwt_secret: Option<&str>,
 ) -> Result<()> {
-    // 1. If we have a secret, enforce signature validation.
-    // "Google-grade": If auth is required (expected_audiences exist), we MUST have a secret.
+    // Description: Executes the validate_audience_claim logic.
     let secret = jwt_secret.ok_or_else(|| anyhow!("Authentication required (audiences set) but lilith-zero_JWT_SECRET is missing. Cannot validate token."))?;
 
     let decoding_key = DecodingKey::from_secret(secret.as_bytes());
@@ -54,7 +37,6 @@ pub fn validate_audience_claim(
 
     let claims = token_data.claims;
 
-    // 2. Check Audience
     if let Some(aud_val) = claims.aud {
         let token_auds: Vec<String> = match aud_val {
             serde_json::Value::String(s) => vec![s],

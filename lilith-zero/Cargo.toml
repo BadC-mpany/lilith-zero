@@ -44,7 +44,11 @@ futures-util = "0.3"
 async-trait = "0.1"
 
 # Process Isolation
-lilith-telemetry = { path = "../../lilith_telemetry" }
+lilith-telemetry = { path = "../../lilith_telemetry", optional = true }
+
+[features]
+default = []
+telemetry = ["dep:lilith-telemetry"]
 
 [target.'cfg(windows)'.dependencies]
 win32job = "2.0"

@@ -1,20 +1,11 @@
 // Copyright 2026 BadCompany
-//
 // Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
 //     http://www.apache.org/licenses/LICENSE-2.0
-//
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
-// limitations under the License.
 
-//! MCP 2024 Protocol Adapter.
-//!
-//! Implements the 2024-11-05 version of the Model Context Protocol.
 
 use crate::engine_core::constants::session;
 use crate::engine_core::events::{OutputTransform, SecurityDecision, SecurityEvent};
@@ -31,22 +22,26 @@ pub struct Mcp2024Adapter;
 
 impl Default for Mcp2024Adapter {
     fn default() -> Self {
+        // Description: Executes the default logic.
         Self::new()
     }
 }
 
 impl Mcp2024Adapter {
     pub fn new() -> Self {
+        // Description: Executes the new logic.
         Self
     }
 }
 
 impl McpSessionHandler for Mcp2024Adapter {
     fn version(&self) -> &'static str {
+        // Description: Executes the version logic.
         "2024-11-05"
     }
 
     fn parse_request(&self, req: &JsonRpcRequest) -> SecurityEvent {
+        // Description: Executes the parse_request logic.
         match req.method.as_str() {
             "initialize" => {
                 let params = req.params.as_ref().cloned().unwrap_or(Value::Null);
@@ -124,6 +119,7 @@ impl McpSessionHandler for Mcp2024Adapter {
         decision: &SecurityDecision,
         mut response: JsonRpcResponse,
     ) -> JsonRpcResponse {
+        // Description: Executes the apply_decision logic.
         debug!("Applying decision to response (id: {:?})", response.id);
         match decision {
             SecurityDecision::AllowWithTransforms {
@@ -132,8 +128,6 @@ impl McpSessionHandler for Mcp2024Adapter {
                 if let Some(result) = response.result.as_mut() {
                     for transform in output_transforms {
                         if let OutputTransform::Spotlight { .. } = transform {
-                            // Apply spotlighting to standard 2024 content locations.
-                            // 1. tools/call response: { content: [ { type: "text", text: "..." } ] }
                             if let Some(content) =
                                 result.get_mut("content").and_then(|v| v.as_array_mut())
                             {
@@ -147,7 +141,6 @@ impl McpSessionHandler for Mcp2024Adapter {
                                 }
                             }
 
-                            // 2. resources/read response: { contents: [ { uri: "...", text: "..." } ] }
                             if let Some(contents) =
                                 result.get_mut("contents").and_then(|v| v.as_array_mut())
                             {
@@ -170,6 +163,7 @@ impl McpSessionHandler for Mcp2024Adapter {
     }
 
     fn extract_session_token(&self, req: &JsonRpcRequest) -> Option<String> {
+        // Description: Executes the extract_session_token logic.
         req.params
             .as_ref()
             .and_then(|p| p.get(session::SESSION_ID_PARAM))
@@ -178,6 +172,7 @@ impl McpSessionHandler for Mcp2024Adapter {
     }
 
     fn sanitize_for_upstream(&self, req: &mut JsonRpcRequest) {
+        // Description: Executes the sanitize_for_upstream logic.
         if let Some(params) = req.params.as_mut() {
             if let Some(obj) = params.as_object_mut() {
                 obj.remove(session::SESSION_ID_PARAM);

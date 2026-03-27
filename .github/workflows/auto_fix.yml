@@ -56,11 +56,11 @@ jobs:
 
       - name: Sync Rust Lockfile
         working-directory: lilith-zero
-        run: cargo check || true
+        run: cargo check --no-default-features || true
 
       - name: Fix Rust (Clippy)
         working-directory: lilith-zero
-        run: cargo clippy --all-targets --all-features --fix --allow-dirty --allow-staged -- -D warnings || true
+        run: cargo clippy --all-targets --no-default-features --fix --allow-dirty --allow-staged -- -D warnings || true
 
       - name: Commit and Push Fixes
         uses: stefanzweifel/git-auto-commit-action@e348103e9026cc0eee72ae06630dbe30c8bf7a79 # v5.0.0

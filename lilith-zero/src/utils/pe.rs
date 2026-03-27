@@ -1,16 +1,10 @@
 // Copyright 2026 BadCompany
-//
 // Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
 //     http://www.apache.org/licenses/LICENSE-2.0
-//
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
-// limitations under the License.
 
 use anyhow::{anyhow, Context, Result};
 use std::fs::File;
@@ -35,6 +29,7 @@ pub struct Section {
 
 impl PeFile {
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self> {
+        // Description: Executes the open logic.
         let mut file = File::open(path)?;
         let mut buffer = [0u8; 1024];
         file.read_exact(&mut buffer)
@@ -128,6 +123,7 @@ impl PeFile {
 }
 
 pub fn rva_to_offset(sections: &[Section], rva: u32) -> Option<u64> {
+    // Description: Executes the rva_to_offset logic.
     for s in sections {
         if rva >= s.virtual_address && rva < s.virtual_address + s.virtual_size {
             return Some((rva - s.virtual_address) as u64 + s.raw_data_ptr as u64);
@@ -137,15 +133,14 @@ pub fn rva_to_offset(sections: &[Section], rva: u32) -> Option<u64> {
 }
 
 pub fn get_dependencies<P: AsRef<Path>>(path: P) -> Result<Vec<String>> {
+    // Description: Executes the get_dependencies logic.
     let mut pe = PeFile::open(path)?;
     let mut deps = Vec::new();
 
-    // Import Directory (Index 1)
     if let Ok(import_deps) = extract_deps_from_dir(&mut pe.file, pe.is_64bit, &pe.sections, 1) {
         deps.extend(import_deps);
     }
 
-    // Delay Load Directory (Index 13)
     if let Ok(delay_deps) = extract_deps_from_dir(&mut pe.file, pe.is_64bit, &pe.sections, 13) {
         for d in delay_deps {
             if !deps.contains(&d) {
@@ -163,6 +158,7 @@ fn extract_deps_from_dir(
     sections: &[Section],
     dir_index: usize,
 ) -> Result<Vec<String>> {
+    // Description: Executes the extract_deps_from_dir logic.
     file.seek(SeekFrom::Start(0))?;
     let mut buffer = [0u8; 1024];
     file.read_exact(&mut buffer)?;
@@ -199,7 +195,6 @@ fn extract_deps_from_dir(
     let mut deps = Vec::new();
 
     if dir_index == 1 {
-        // Standard Import Directory
         loop {
             let mut desc = [0u8; 20];
             if file.read(&mut desc)? < 20 {
@@ -220,7 +215,6 @@ fn extract_deps_from_dir(
             file.seek(SeekFrom::Start(saved_pos))?;
         }
     } else if dir_index == 13 {
-        // Delay Load Directory
         loop {
             let mut desc = [0u8; 32];
             if file.read(&mut desc)? < 32 {
@@ -246,6 +240,7 @@ fn extract_deps_from_dir(
 }
 
 fn read_null_terminated_string(file: &mut File, offset: u64) -> Result<String> {
+    // Description: Executes the read_null_terminated_string logic.
     file.seek(SeekFrom::Start(offset))?;
     let mut bytes = Vec::new();
     let mut b = [0u8; 1];

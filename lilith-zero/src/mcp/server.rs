@@ -1,26 +1,11 @@
 // Copyright 2026 BadCompany
-//
 // Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
 //     http://www.apache.org/licenses/LICENSE-2.0
-//
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
-// limitations under the License.
 
-//! MCP Middleware implementation (Actor Model).
-//!
-//! v3 Architecture (Async Actors):
-//! - `DownstreamReader`: Reads client JSON-RPC requests.
-//! - `UpstreamReader`: Reads tool JSON-RPC responses.
-//! - `McpMiddleware` (Main Loop): Coordinator acting as the central actor.
-//!   - Maintains `pending_decisions` map for request/response correlation.
-//!   - Routes messages between Upstream and Downstream.
-//!   - Enforces Security Policies.
 
 use crate::mcp::codec::McpCodec;
 use anyhow::{Context, Result};
@@ -47,16 +32,12 @@ use crate::protocol::negotiation::HandshakeManager;
 pub struct McpMiddleware {
     upstream_cmd: String,
     upstream_args: Vec<String>,
-    // Core Security Logic
     core: SecurityCore,
-    // Active Protocol Session (Gateway)
     session: ActiveSession,
 
-    // Actor State
     upstream_stdin: Option<Box<dyn AsyncWrite + Unpin + Send>>,
     pending_decisions: HashMap<String, SecurityDecision>, // Map Request ID (String) -> Decision
 
-    // Upstream Control
     upstream_supervisor: Option<ProcessSupervisor>,
 }
 
@@ -67,6 +48,7 @@ impl McpMiddleware {
         config: Arc<Config>,
         audit_log_path: Option<std::path::PathBuf>,
     ) -> Result<Self> {
+        // Description: Executes the new logic.
         let signer =
             CryptoSigner::try_new().map_err(|e| anyhow::anyhow!("Crypto init failed: {}", e))?;
         let core = SecurityCore::new(config.clone(), signer, audit_log_path)
@@ -85,7 +67,7 @@ impl McpMiddleware {
     }
 
     pub async fn run(&mut self) -> Result<()> {
-        // Output session ID for SDK interaction (REQUIRED)
+        // Description: Executes the run logic.
         eprintln!("{}{}", session::SESSION_ID_ENV_PREFIX, self.core.session_id);
 
         info!(
@@ -98,7 +80,6 @@ impl McpMiddleware {
             self.core.session_id
         );
 
-        // Load Policies
         if let Some(ref path) = self.core.config.policies_yaml_path {
             match std::fs::read_to_string(path.as_path()) {
                 Ok(content) => match serde_yaml::from_str(&content) {
@@ -114,19 +95,15 @@ impl McpMiddleware {
             warn!("No policy loaded. lilith-zero defaults to strict DENY-ALL behavior (unless SecurityLevel::AuditOnly is set).");
         }
 
-        // Setup Channels
         let (tx_downstream_events, mut rx_downstream_events) = mpsc::channel(32);
         let (tx_upstream_events, mut rx_upstream_events) = mpsc::channel(32);
 
-        // Spawn Downstream Reader (Stdin)
         pipeline::spawn_downstream_reader(tokio::io::stdin(), tx_downstream_events);
 
-        // We use tokio::io::stdout() for writing to client directly in the main loop for now (Writer Task could be separate but simple write is okay)
         let mut downstream_writer = tokio::io::stdout();
 
         loop {
             tokio::select! {
-                // --- Handle Downstream (Client) Events ---
                 event = rx_downstream_events.recv() => {
                     match event {
                         Some(DownstreamEvent::Request(mut req)) => {
@@ -139,7 +116,6 @@ impl McpMiddleware {
                         }
                         Some(DownstreamEvent::Error(e)) => {
                             warn!("Downstream transport error: {}", e);
-                            // Notify client of protocol error before connection terminates
                             let _ = self.write_error(
                                 &mut downstream_writer,
                                 serde_json::Value::Null,
@@ -148,7 +124,6 @@ impl McpMiddleware {
                             ).await;
 
                             if e.contains("exceeds max limit") {
-                                // Emit rigorous security audit for attempted DoS
                                 use serde_json::json;
                                 self.core.log_audit("TRANSPORT_ERROR", json!({
                                     "error": e,
@@ -161,7 +136,6 @@ impl McpMiddleware {
                     }
                 }
 
-                // --- Handle Upstream (tool) Events ---
                 event = rx_upstream_events.recv() => {
                     match event {
                         Some(UpstreamEvent::Response(resp)) => {
@@ -176,11 +150,9 @@ impl McpMiddleware {
                             self.upstream_stdin = None;
                             self.upstream_supervisor = None;
 
-                            // Fail all pending requests that were waiting for this upstream
                             let ids_to_fail: Vec<String> = self.pending_decisions.keys().cloned().collect();
                             for id_str in ids_to_fail {
                                 self.pending_decisions.remove(&id_str);
-                                // Parse the ID back to a JSON Value (could be string or number)
                                 let id_val = if let Ok(n) = id_str.parse::<i64>() {
                                     serde_json::Value::Number(n.into())
                                 } else {
@@ -196,12 +168,10 @@ impl McpMiddleware {
                             }
                         }
                         None => {
-                            // Upstream channel closed (shouldn't happen unless we drop sender)
                         }
                     }
                 }
 
-                // --- Signals ---
                 _ = tokio::signal::ctrl_c() => {
                     info!("Received Ctrl+C, shutting down.");
                     break;
@@ -218,9 +188,8 @@ impl McpMiddleware {
         writer: &mut tokio::io::Stdout,
         tx_upstream_events: &mpsc::Sender<UpstreamEvent>,
     ) -> Result<()> {
-        // --- CONTEXT PROPAGATION ---
-        // If the SDK provided a trace/span context, inject it into our baggage
-        // before creating the request span.
+        // Description: Executes the handle_client_request logic.
+        #[cfg(feature = "telemetry")]
         if let Some(params) = &req.params {
             let mut baggage = lilith_telemetry::baggage::current();
             let mut modified = false;
@@ -245,13 +214,12 @@ impl McpMiddleware {
             }
         }
 
+        #[cfg(feature = "telemetry")]
         let _span =
             lilith_telemetry::telemetry_span!("mcp_request", lilith_telemetry::SpanKind::Server);
 
-        // 1. Parse Protocol (Session Token extraction, etc)
         let security_event = self.session.parse_request(req);
 
-        // 2. Evaluate Security
         let decision = self.core.evaluate(security_event.clone()).await;
 
         match decision {
@@ -263,12 +231,10 @@ impl McpMiddleware {
                 }
             }
             SecurityDecision::Allow | SecurityDecision::AllowWithTransforms { .. } => {
-                // Handle Side Effects (Infra)
                 if let SecurityEvent::Handshake {
                     protocol_version, ..
                 } = &security_event
                 {
-                    // Negotiation
                     if protocol_version != self.session.version() {
                         info!(
                             "Negotiating protocol: Client requested {}, upgrading session.",
@@ -277,7 +243,6 @@ impl McpMiddleware {
                         self.session = HandshakeManager::negotiate(protocol_version);
                     }
 
-                    // Spawn Upstream if needed
                     if self.upstream_stdin.is_none() {
                         if let Err(e) = self.spawn_upstream(tx_upstream_events.clone()).await {
                             error!("Failed to spawn upstream: {}", e);
@@ -295,9 +260,7 @@ impl McpMiddleware {
                     }
                 }
 
-                // Track Decision for Response (if request has ID)
                 if let Some(id) = &req.id {
-                    // We map the ID as string.
                     if let Some(id_str) = id.as_str() {
                         self.pending_decisions
                             .insert(id_str.to_string(), decision.clone());
@@ -307,16 +270,13 @@ impl McpMiddleware {
                     }
                 }
 
-                // Forward to Upstream
                 if self.upstream_stdin.is_some() {
+                    #[cfg(feature = "telemetry")]
                     lilith_telemetry::telemetry_event!(
                         lilith_telemetry::dispatcher::EventLevel::RoutineAllow,
                         format!("Forwarding {} to upstream", req.method).as_bytes()
                     );
                     self.session.sanitize_for_upstream(req);
-                    // Blessing the request as clean because Policy Allowed it.
-                    // Blessing the request as clean because Policy Allowed it.
-                    // New: Zero-Copy, passing reference
                     let clean_req = crate::engine_core::taint::Clean::new_unchecked(&*req);
                     self.write_upstream(clean_req).await?;
                 } else if let Some(id) = &req.id {
@@ -338,10 +298,11 @@ impl McpMiddleware {
         resp: JsonRpcResponse,
         writer: &mut tokio::io::Stdout,
     ) -> Result<()> {
+        // Description: Executes the handle_upstream_response logic.
+        #[cfg(feature = "telemetry")]
         let _span =
             lilith_telemetry::telemetry_span!("mcp_response", lilith_telemetry::SpanKind::Server);
 
-        // Correlate with Request
         let mut decision = SecurityDecision::Allow; // Default if unsolicited (notifications)?
 
         let id_key = if let Some(id_str) = resp.id.as_str() {
@@ -362,15 +323,14 @@ impl McpMiddleware {
             }
         }
 
+        #[cfg(feature = "telemetry")]
         lilith_telemetry::telemetry_event!(
             lilith_telemetry::dispatcher::EventLevel::RoutineAllow,
             b"Forwarding response to client"
         );
 
-        // Apply Transforms (Spotlighting)
         let secured_resp = self.session.apply_decision(&decision, resp);
 
-        // Write to Downstream (Standard Framing)
         let mut codec = McpCodec::new();
         let mut dst = bytes::BytesMut::new();
         codec.encode(&secured_resp, &mut dst)?;
@@ -381,6 +341,7 @@ impl McpMiddleware {
     }
 
     async fn spawn_upstream(&mut self, tx_upstream: mpsc::Sender<UpstreamEvent>) -> Result<()> {
+        // Description: Executes the spawn_upstream logic.
         info!(
             "Spawning upstream: {} {:?}",
             self.upstream_cmd, self.upstream_args
@@ -390,15 +351,12 @@ impl McpMiddleware {
             ProcessSupervisor::spawn(&self.upstream_cmd, &self.upstream_args, tx_upstream.clone())
                 .context("Failed to spawn upstream")?;
 
-        // Capture Stdin
         self.upstream_stdin = stdin;
 
-        // Capture and spawn reader for Stdout
         if let Some(stdout) = stdout {
             pipeline::spawn_upstream_reader(stdout, tx_upstream.clone());
         }
 
-        // Capture and spawn drain for Stderr
         if let Some(stderr) = stderr {
             pipeline::spawn_upstream_stderr_drain(stderr, tx_upstream.clone());
         }
@@ -411,11 +369,10 @@ impl McpMiddleware {
         &mut self,
         req: crate::engine_core::taint::Clean<&JsonRpcRequest>,
     ) -> Result<()> {
+        // Description: Executes the write_upstream logic.
         if let Some(stdin) = self.upstream_stdin.as_mut() {
             let mut codec = McpCodec::new();
             let mut dst = bytes::BytesMut::new();
-            // encode takes &JsonRpcRequest. req is Clean<&JsonRpcRequest>. Derf calls to &T.
-            // *req gives &JsonRpcRequest.
             codec.encode(*req, &mut dst)?;
             debug!("Writing {} bytes to upstream", dst.len());
             stdin.write_all(&dst).await?;
@@ -431,6 +388,7 @@ impl McpMiddleware {
         code: i32,
         message: &str,
     ) -> Result<()> {
+        // Description: Executes the write_error logic.
         let response = JsonRpcResponse {
             jsonrpc: "2.0".to_string(),
             result: None,

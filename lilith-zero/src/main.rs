@@ -1,18 +1,11 @@
 // Copyright 2026 BadCompany
-//
 // Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
 //     http://www.apache.org/licenses/LICENSE-2.0
-//
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
-// limitations under the License.
 
-// Main entry point for lilith-zero MCP Middleware
 use clap::{Parser, Subcommand};
 use lilith_zero::mcp::supervisor;
 use std::sync::Arc;
@@ -26,27 +19,21 @@ use std::path::PathBuf;
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Cli {
-    /// Upstream tool command (e.g., "python")
     #[arg(short, long)]
     upstream_cmd: Option<String>,
 
-    /// Path to policy YAML file
     #[arg(long)]
     policy: Option<PathBuf>,
 
-    /// Path to audit log output file (structured JSONL)
     #[arg(long)]
     audit_logs: Option<PathBuf>,
 
-    /// Flock telemetry connection string (e.g. lilith://127.0.0.1:44317?key_id=...)
     #[arg(long)]
     telemetry_link: Option<String>,
 
-    /// Upstream tool arguments (e.g. "tools.py")
     #[arg(last = true)]
     upstream_args: Vec<String>,
 
-    /// Hidden internal subcommand
     #[command(subcommand)]
     command: Option<Commands>,
 }
@@ -64,12 +51,11 @@ enum Commands {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Description: Executes the main logic.
     let cli = Cli::parse();
 
-    // Install panic hook
     install_panic_hook();
 
-    // Load config and init tracing
     let mut config = Config::from_env().unwrap_or_else(|e| {
         eprintln!(
             "Warning: Failed to load config from env, using defaults: {}",
@@ -78,7 +64,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Config::default()
     });
 
-    // Override policy from CLI
     if let Some(p) = &cli.policy {
         config.policies_yaml_path = Some(p.clone());
     }
@@ -87,7 +72,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         eprintln!("Failed to init tracing: {}", e);
     }
 
-    // Check for Supervisor Mode First
     if let Some(Commands::__Supervisor {
         parent_pid,
         cmd_args,
@@ -99,7 +83,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let cmd = cmd_args[0].clone();
         let args = cmd_args[1..].to_vec();
 
-        // Run Supervisor Logic
         supervisor::supervisor_main(parent_pid, cmd, args).await?;
         return Ok(());
     }
@@ -110,16 +93,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .ok_or_else(|| anyhow::anyhow!("Missing --upstream-cmd"))?;
     info!("Upstream: {} {:?}", upstream_cmd, cli.upstream_args);
 
-    if let Some(link_str) = cli.telemetry_link {
-        info!("Telemetry link provided, initializing FlockMember mode");
-        let link = lilith_telemetry::FlockLink::parse(&link_str)?;
-        lilith_telemetry::init(lilith_telemetry::DeploymentMode::FlockMember {
-            target_api_endpoint: format!("{}:{}", link.host, link.port),
-            auth_key: lilith_telemetry::crypto::KeyHandle(link.key_id),
-        });
-    } else {
-        info!("No telemetry link provided, running in Alone mode");
-        lilith_telemetry::init(lilith_telemetry::DeploymentMode::Alone);
+    #[cfg(feature = "telemetry")]
+    {
+        if let Some(link_str) = cli.telemetry_link {
+            info!("Telemetry link provided, initializing FlockMember mode");
+            let link = lilith_telemetry::FlockLink::parse(&link_str)?;
+            lilith_telemetry::init(lilith_telemetry::DeploymentMode::FlockMember {
+                target_api_endpoint: format!("{}:{}", link.host, link.port),
+                auth_key: lilith_telemetry::crypto::KeyHandle(link.key_id),
+            });
+        } else {
+            info!("No telemetry link provided, running in Alone mode");
+            lilith_telemetry::init(lilith_telemetry::DeploymentMode::Alone);
+        }
+    }
+    #[cfg(not(feature = "telemetry"))]
+    {
+        if cli.telemetry_link.is_some() {
+            tracing::warn!("Telemetry link provided but telemetry feature is disabled");
+        }
     }
 
     let mut middleware = McpMiddleware::new(
@@ -135,6 +127,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn install_panic_hook() {
+    // Description: Executes the install_panic_hook logic.
     std::panic::set_hook(Box::new(|panic_info| {
         let location = panic_info
             .location()
@@ -154,6 +147,7 @@ fn install_panic_hook() {
 }
 
 fn init_tracing(config: &Config) -> Result<(), Box<dyn std::error::Error>> {
+    // Description: Executes the init_tracing logic.
     use tracing_subscriber::fmt;
     use tracing_subscriber::EnvFilter;
 

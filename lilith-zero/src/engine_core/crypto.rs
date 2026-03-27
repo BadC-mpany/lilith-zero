@@ -1,21 +1,11 @@
 // Copyright 2026 BadCompany
-//
 // Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
 //     http://www.apache.org/licenses/LICENSE-2.0
-//
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
-// limitations under the License.
 
-//! Cryptographic utilities for session management and integrity.
-//!
-//! This module provides the `CryptoSigner` which handles HMAC-based session ID
-//! generation and validation, ensuring that session identifiers are tamper-proof.
 
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use hmac::{Hmac, Mac};
@@ -34,12 +24,11 @@ pub struct CryptoSigner {
 
 use crate::engine_core::errors::{CryptoError, InterceptorError};
 
-// ... imports remain ...
 
 impl CryptoSigner {
-    /// Create a new signer with a secure random ephemeral key
     #[must_use = "crypto initialization result must be checked"]
     pub fn try_new() -> Result<Self, InterceptorError> {
+        // Description: Executes the try_new logic.
         let rng = SystemRandom::new();
         let mut secret = [0u8; crypto::SECRET_KEY_LENGTH];
         rng.fill(&mut secret)
@@ -47,8 +36,8 @@ impl CryptoSigner {
         Ok(Self { secret })
     }
 
-    /// Sign arbitrary data with HMAC-SHA256
     pub fn sign(&self, data: &[u8]) -> String {
+        // Description: Executes the sign logic.
         let mut mac = HmacSha256::new_from_slice(&self.secret)
             .expect("HMAC should accept secret of correct length");
         mac.update(data);
@@ -56,9 +45,8 @@ impl CryptoSigner {
         URL_SAFE_NO_PAD.encode(result.into_bytes())
     }
 
-    /// Generate a cryptographically bound Session ID
-    /// Format: "{version}.{uuid_b64}.{hmac_b64}"
     pub fn generate_session_id(&self) -> Result<String, InterceptorError> {
+        // Description: Executes the generate_session_id logic.
         let uuid = Uuid::new_v4();
         let uuid_bytes = uuid.as_bytes();
 
@@ -80,15 +68,14 @@ impl CryptoSigner {
         ))
     }
 
-    /// Validate a Session ID's integrity using constant-time comparison
     #[must_use = "session validation result must be checked"]
     pub fn validate_session_id(&self, session_id: &str) -> bool {
+        // Description: Executes the validate_session_id logic.
         let parts: Vec<&str> = session_id.split('.').collect();
         if parts.len() != 3 {
             return false;
         }
 
-        // Check version
         if parts[0] != crypto::SESSION_ID_VERSION {
             return false;
         }
@@ -96,26 +83,22 @@ impl CryptoSigner {
         let uuid_b64 = parts[1];
         let sig_b64 = parts[2];
 
-        // Decode UUID
         let uuid_bytes = match URL_SAFE_NO_PAD.decode(uuid_b64) {
             Ok(b) => b,
             Err(_) => return false,
         };
 
-        // Re-compute HMAC
         let mut mac = match HmacSha256::new_from_slice(&self.secret) {
             Ok(m) => m,
             Err(_) => return false, // Should be impossible with correct key size, but fail safe
         };
         mac.update(&uuid_bytes);
 
-        // Decode provided signature
         let provided_sig = match URL_SAFE_NO_PAD.decode(sig_b64) {
             Ok(b) => b,
             Err(_) => return false,
         };
 
-        // Constant-time verify
         mac.verify_slice(&provided_sig).is_ok()
     }
 }

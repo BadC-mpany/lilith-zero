@@ -1,21 +1,11 @@
 // Copyright 2026 BadCompany
-//
 // Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
 //     http://www.apache.org/licenses/LICENSE-2.0
-//
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
-// limitations under the License.
 
-//! Pattern matching engine for dynamic rules.
-//!
-//! This module provides the `PatternMatcher` which evaluates strictly typed
-//! logic conditions against the current tool call and session history.
 
 use crate::engine_core::errors::InterceptorError;
 use crate::engine_core::models::{HistoryEntry, LogicCondition, LogicValue};
@@ -25,7 +15,6 @@ use std::collections::HashSet;
 pub struct PatternMatcher;
 
 impl PatternMatcher {
-    /// Evaluate a logic condition or sequence pattern
     #[must_use]
     pub async fn evaluate_pattern_with_args(
         pattern: &LogicCondition,
@@ -35,7 +24,7 @@ impl PatternMatcher {
         current_taints: &HashSet<String>,
         args: &Value,
     ) -> Result<bool, InterceptorError> {
-        // Wrap sync call
+        // Description: Executes the evaluate_pattern_with_args logic.
         Self::evaluate_condition_with_args(
             pattern,
             history,
@@ -47,8 +36,6 @@ impl PatternMatcher {
         )
     }
 
-    /// Evaluate a complex condition against context.
-    // NOTE: Made synchronous to avoid async recursion complexity. Logic evaluation is CPU-bound.
     #[must_use]
     pub fn evaluate_condition_with_args(
         condition: &LogicCondition,
@@ -59,6 +46,7 @@ impl PatternMatcher {
         args: &Value,
         depth: usize,
     ) -> Result<bool, InterceptorError> {
+        // Description: Executes the evaluate_condition_with_args logic.
         if depth > 50 {
             return Err(InterceptorError::PolicyViolation(
                 "Recursion depth limit exceeded".to_string(),
@@ -138,8 +126,8 @@ impl PatternMatcher {
         }
     }
 
-    /// Loose equality check (handles int vs float)
     fn loose_eq(lhs: &Value, rhs: &Value) -> bool {
+        // Description: Executes the loose_eq logic.
         if lhs == rhs {
             return true;
         }
@@ -151,8 +139,8 @@ impl PatternMatcher {
         false
     }
 
-    /// Check if tool arguments match the specification
     fn evaluate_tool_args_match(spec: &Value, args: &Value) -> Result<bool, InterceptorError> {
+        // Description: Executes the evaluate_tool_args_match logic.
         let spec_map = spec.as_object().ok_or_else(|| {
             InterceptorError::PolicyViolation("tool_args_match spec must be an object".to_string())
         })?;
@@ -170,24 +158,21 @@ impl PatternMatcher {
         Ok(true)
     }
 
-    /// Compare pattern value with argument value (supporting wildcards for strings)
     fn values_match(pattern: &Value, arg: &Value) -> bool {
+        // Description: Executes the values_match logic.
         match (pattern, arg) {
             (Value::String(p), Value::String(a)) => Self::wildcard_match(p, a),
             (Value::Number(p), Value::Number(a)) => p == a,
             (Value::Bool(p), Value::Bool(a)) => p == a,
             (Value::Null, Value::Null) => true,
-            // Deep match for objects/arrays? For now simple equality (strict)
             (p, a) => p == a,
         }
     }
 
-    /// Simple matching with '*' support (Optimized: Zero Allocation)
     #[must_use]
     pub(crate) fn wildcard_match(pattern: &str, text: &str) -> bool {
         let mut parts = pattern.split('*');
 
-        // 1. Check prefix (first part)
         let first_part = match parts.next() {
             Some(p) => p,
             None => return text.is_empty(), // pattern is empty -> exact match ""
@@ -199,10 +184,8 @@ impl PatternMatcher {
 
         let mut text_slice = &text[first_part.len()..];
 
-        // 2. Check remaining parts
         for part in parts {
             if part.is_empty() {
-                // Consecutive '*' or trailing '*'
                 continue;
             }
 
@@ -214,19 +197,7 @@ impl PatternMatcher {
             }
         }
 
-        // 3. Suffix check logic
-        // If the pattern ended with '*', we are good (loops skipped empty last part).
-        // If the pattern did NOT end with '*', the last part in the loop MUST match the END of the string.
-        // But our greedy loop just searched for the *first* occurrence.
-        // Standard "A*B" logic: StartsWith A, EndsWith B.
-        // My optimized loop finds 'B' *somewhere*.
-        // Need to be careful. The split iterator Logic is safer but tricky to get right in one pass.
-        // Let's stick to the Correct Logic but valid optimization:
-        // Use `split` but don't collect.
 
-        // Simpler correct implementation without collecting:
-        // Re-implementing parts logic from scratch is risky for bugs.
-        // Let's rely on standard iterator methods.
 
         if !pattern.contains('*') {
             return pattern == text;
@@ -248,7 +219,6 @@ impl PatternMatcher {
         }
         let mut remainder = &text[prefix.len()..text.len() - suffix.len()];
 
-        // Check inner parts
         let inner_parts = pattern[prefix.len()..pattern.len() - suffix.len()].split('*');
         for part in inner_parts {
             if part.is_empty() {
@@ -266,6 +236,7 @@ impl PatternMatcher {
         operands: &[LogicValue],
         context_args: &Value,
     ) -> Result<(Value, Value), InterceptorError> {
+        // Description: Executes the resolve_binary logic.
         if operands.len() < 2 {
             return Ok((Value::Null, Value::Null));
         }
@@ -275,11 +246,11 @@ impl PatternMatcher {
     }
 
     fn resolve_value(val: &LogicValue, context_args: &Value) -> Result<Value, InterceptorError> {
+        // Description: Executes the resolve_value logic.
         match val {
             LogicValue::Var { var } => Ok(context_args.get(var).cloned().unwrap_or(Value::Null)),
             LogicValue::Str(s) => Ok(Value::String(s.clone())),
             LogicValue::Num(n) => {
-                // n is f64, serde_json::Number can correspond to f64
                 if let Some(num) = serde_json::Number::from_f64(*n) {
                     Ok(Value::Number(num))
                 } else {
@@ -297,6 +268,7 @@ impl PatternMatcher {
     where
         F: Fn(f64, f64) -> bool,
     {
+        // Description: Executes the compare_num logic.
         match (lhs, rhs) {
             (Value::Number(a), Value::Number(b)) => {
                 if let (Some(fa), Some(fb)) = (a.as_f64(), b.as_f64()) {
@@ -317,10 +289,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_pattern_eval_typed() {
+        // Description: Executes the test_pattern_eval_typed logic.
         let args = json!({ "user_id": 123, "safe": true });
 
-        // Test: user_id == 123
-        // AST: Eq([Var("user_id"), Num(123.0)])
         let cond1 = LogicCondition::Eq(vec![
             LogicValue::Var {
                 var: "user_id".to_string(),
@@ -339,7 +310,6 @@ mod tests {
         .await
         .unwrap());
 
-        // Test: user_id > 100
         let cond2 = LogicCondition::Gt(vec![
             LogicValue::Var {
                 var: "user_id".to_string(),
@@ -368,26 +338,28 @@ mod proptests {
     proptest! {
         #[test]
         fn test_wildcard_match_properties(pattern in "\\PC*", text in "\\PC*") {
-            // Should never panic
+            // Description: Executes the test_wildcard_match_properties logic.
             let _ = PatternMatcher::wildcard_match(&pattern, &text);
         }
 
         #[test]
         fn test_wildcard_match_identity(text in "\\PC*") {
+            // Description: Executes the test_wildcard_match_identity logic.
             assert!(PatternMatcher::wildcard_match(&text, &text));
         }
 
         #[test]
         fn test_wildcard_match_star(text in "\\PC*") {
+            // Description: Executes the test_wildcard_match_star logic.
             assert!(PatternMatcher::wildcard_match("*", &text));
         }
     }
 
-    // --- Complex AST Fuzzing ---
 
     use proptest::strategy::{BoxedStrategy, Strategy};
 
     fn arb_logic_value() -> BoxedStrategy<LogicValue> {
+        // Description: Executes the arb_logic_value logic.
         prop_oneof![
             Just(LogicValue::Null),
             any::<bool>().prop_map(LogicValue::Bool),
@@ -399,12 +371,12 @@ mod proptests {
     }
 
     fn arb_logic_condition() -> impl Strategy<Value = LogicCondition> {
+        // Description: Executes the arb_logic_condition logic.
         let val = arb_logic_value();
 
         let leaf = prop_oneof![
             Just(LogicCondition::Literal(true)),
             Just(LogicCondition::Literal(false)),
-            // Comparisons
             prop::collection::vec(val.clone(), 2..3).prop_map(LogicCondition::Eq),
             prop::collection::vec(val.clone(), 2..3).prop_map(LogicCondition::Neq),
             prop::collection::vec(val.clone(), 2..3).prop_map(LogicCondition::Gt),
@@ -431,10 +403,10 @@ mod proptests {
             cond in arb_logic_condition(),
             // We need a runtime to block on async
         ) {
+            // Description: Executes the test_pattern_eval_fuzz logic.
             let rt = tokio::runtime::Runtime::new().unwrap();
             rt.block_on(async {
                 let args = serde_json::json!({});
-                // Should never panic
                 let _ = PatternMatcher::evaluate_pattern_with_args(
                     &cond, &[], "test", &[], &HashSet::new(), &args
                 ).await;
