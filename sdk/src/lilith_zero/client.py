@@ -35,6 +35,7 @@ import shutil
 import tempfile
 import uuid
 from asyncio import Future
+from contextvars import ContextVar
 from typing import Any, TypedDict, cast
 
 from .exceptions import (
@@ -170,6 +171,18 @@ def _find_binary() -> str:
     return install_lilith(interactive=False)
 
 
+# Tracing context tracking
+class SpanContext(TypedDict):
+    trace_id_hi: int
+    trace_id_lo: int
+    span_id: int
+
+
+_active_span_context: ContextVar[SpanContext | None] = ContextVar(
+    "_active_span_context", default=None
+)
+
+
 class Lilith:
     """Lilith Security Middleware for AI Agents.
 
@@ -186,6 +199,7 @@ class Lilith:
         *,
         policy: str | None = None,
         binary: str | None = None,
+        telemetry_link: str | None = None,
     ) -> None:
         """Initialize Lilith middleware configuration.
 
@@ -195,6 +209,7 @@ class Lilith:
                       Currently required.
             policy: Path to policy YAML file for rule-based enforcement.
             binary: Path to Lilith binary (auto-discovered if not provided).
+            telemetry_link: Optional connection link for Lilith Telemetry Flock.
 
         Raises:
             LilithConfigError: If upstream is empty or binary not found.
@@ -243,6 +258,7 @@ class Lilith:
         self._policy_path = os.path.abspath(policy) if policy else None
 
         # Runtime state
+        self._telemetry_link = telemetry_link
         self._process: asyncio.subprocess.Process | None = None
         self._reader_task: asyncio.Task[None] | None = None
         self._stderr_task: asyncio.Task[None] | None = None
@@ -276,6 +292,43 @@ class Lilith:
     async def __aenter__(self) -> "Lilith":
         await self._connect()
         return self
+
+    @contextlib.asynccontextmanager
+    async def span(self, name: str):
+        """
+        Create a logical grouping span for multiple operations.
+        Tool calls made within this context will be grouped together in telemetry.
+        """
+        # Generate new trace/span IDs if not already in a trace
+        current = _active_span_context.get()
+
+        if current is None:
+            # Root span: generate full 128-bit trace + 64-bit span
+            u = uuid.uuid4()
+            trace_hi = u.int >> 64
+            trace_lo = u.int & 0xFFFFFFFFFFFFFFFF
+            span_id = uuid.uuid4().int & 0xFFFFFFFFFFFFFFFF
+            new_ctx: SpanContext = {
+                "trace_id_hi": trace_hi,
+                "trace_id_lo": trace_lo,
+                "span_id": span_id,
+            }
+        else:
+            # Child span: keep same trace, generate new span ID, parent is previous span_id
+            # However, for the Lilith binary to nest correctly, we just need to pass
+            # the parent span ID as the new "span_id" in the baggage.
+            # The binary then nests ITS spans under THIS one.
+            new_ctx: SpanContext = {
+                "trace_id_hi": current["trace_id_hi"],
+                "trace_id_lo": current["trace_id_lo"],
+                "span_id": uuid.uuid4().int & 0xFFFFFFFFFFFFFFFF,
+            }
+
+        token = _active_span_context.set(new_ctx)
+        try:
+            yield new_ctx
+        finally:
+            _active_span_context.reset(token)
 
     async def __aexit__(
         self,
@@ -413,6 +466,9 @@ class Lilith:
 
         if self._audit_file_path:
             cmd.extend(["--audit-logs", self._audit_file_path])
+
+        if self._telemetry_link:
+            cmd.extend(["--telemetry-link", self._telemetry_link])
 
         cmd.extend(["--upstream-cmd", self._upstream_cmd])
         if self._upstream_args:
@@ -702,6 +758,13 @@ class Lilith:
             params = {}
         if self._session_id:
             params["_lilith_zero_session_id"] = self._session_id
+
+        # Inject tracing context if active
+        ctx = _active_span_context.get()
+        if ctx:
+            params["_lilith_trace_id_hi"] = ctx["trace_id_hi"]
+            params["_lilith_trace_id_lo"] = ctx["trace_id_lo"]
+            params["_lilith_parent_span_id"] = ctx["span_id"]
 
         request = {
             "jsonrpc": "2.0",

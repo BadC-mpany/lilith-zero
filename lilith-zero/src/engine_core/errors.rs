@@ -1,108 +1,78 @@
 // Copyright 2026 BadCompany
-//
 // Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
 //     http://www.apache.org/licenses/LICENSE-2.0
-//
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
-// limitations under the License.
-
-// Domain error types - Secure error handling with no information disclosure
 
 use thiserror::Error;
 
-/// Main error type for the interceptor
 #[derive(Error, Debug)]
 #[non_exhaustive]
 pub enum InterceptorError {
-    /// Invalid API key (HTTP 401)
     #[error("Invalid API Key")]
     InvalidApiKey,
 
-    /// Authentication error (HTTP 401)
     #[error("Authentication error: {0}")]
     AuthenticationError(String),
 
-    /// Validation error (HTTP 400)
     #[error("Validation error: {0}")]
     ValidationError(String),
 
-    /// Infrastructure error (HTTP 503)
     #[error("Infrastructure error: {0}")]
     InfrastructureError(String),
 
-    /// Policy violation (HTTP 403)
     #[error("Policy violation: {0}")]
     PolicyViolation(String),
 
-    /// Cryptographic error (HTTP 500)
     #[error("Cryptographic error: {0}")]
     CryptoError(#[from] CryptoError),
 
-    /// MCP proxy error (HTTP 502)
     #[error("MCP proxy error: {0}")]
     McpProxyError(String),
 
-    /// Configuration error (HTTP 500)
     #[error("Configuration error: {0}")]
     ConfigurationError(String),
 
-    /// State management error (HTTP 500)
     #[error("State error: {0}")]
     StateError(String),
 
-    /// Dependency failure (HTTP 503)
-    /// Used when a downstream service (Redis, DB, MCP Agent) is unavailable
     #[error("Dependency failure ({service}): {error}")]
     DependencyFailure { service: String, error: String },
 
-    /// Transient error (HTTP 503)
-    /// Used for retryable conditions like timeouts or temporary network issues
     #[error("Transient error: {0}")]
     TransientError(String),
 
-    /// I/O Error
     #[error("I/O error: {0}")]
     IoError(#[from] std::io::Error),
 
-    /// Process Management Error
     #[error("Process error: {0}")]
     ProcessError(String),
 }
 
-/// Cryptographic operation errors
 #[derive(Error, Debug)]
 #[non_exhaustive]
 pub enum CryptoError {
-    /// Failed to load private key
     #[error("Failed to load private key: {0}")]
     KeyLoadError(String),
 
-    /// Failed to sign token
     #[error("Failed to sign token: {0}")]
     SigningError(String),
 
-    /// Failed to canonicalize JSON
     #[error("Failed to canonicalize JSON: {0}")]
     CanonicalizationError(String),
 
-    /// Failed to hash parameters
     #[error("Failed to hash parameters: {0}")]
     HashingError(String),
 
-    /// Failed to generate random bytes
     #[error("Failed to generate random bytes")]
     RandomError,
 }
 
 impl InterceptorError {
-    /// Get user-friendly error message.
     pub fn user_message(&self) -> String {
+        // Description: Executes the user_message logic.
         match self {
             InterceptorError::InvalidApiKey => "Invalid API Key".to_string(),
             InterceptorError::AuthenticationError(reason) => {

@@ -22,9 +22,12 @@ Provides security controls for Model Context Protocol tool servers including:
 """
 
 from .client import Lilith
+from .exceptions import LilithError, PolicyViolationError
 
 __version__ = "0.1.3"
 __all__ = [
     "Lilith",
+    "LilithError",
+    "PolicyViolationError",
     "__version__",
 ]

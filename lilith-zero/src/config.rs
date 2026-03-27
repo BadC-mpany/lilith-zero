@@ -1,16 +1,10 @@
 // Copyright 2026 BadCompany
-//
 // Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
 //     http://www.apache.org/licenses/LICENSE-2.0
-//
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
-// limitations under the License.
 
 use crate::engine_core::errors::InterceptorError;
 use serde::{Deserialize, Serialize};
@@ -26,6 +20,7 @@ pub enum SecurityLevel {
 
 impl SecurityLevel {
     pub fn parse_safe(s: &str) -> Self {
+        // Description: Executes the parse_safe logic.
         match s.to_lowercase().as_str() {
             "audit_only" | "low" => SecurityLevel::AuditOnly,
             "full_isolation" | "high" => SecurityLevel::BlockParams,
@@ -54,6 +49,7 @@ pub struct Config {
 
 impl Config {
     pub fn from_env() -> Result<Self, InterceptorError> {
+        // Description: Executes the from_env logic.
         Ok(Self {
             policies_yaml_path: env::var(
                 crate::engine_core::constants::config::ENV_POLICIES_YAML_PATH,
@@ -85,10 +81,9 @@ impl Config {
     }
 
     pub fn security_level_config(&self) -> SecurityConfig {
+        // Description: Executes the security_level_config logic.
         match self.security_level {
             SecurityLevel::AuditOnly => SecurityConfig {
-                // Plan said: AuditOnly = Log everything, allow everything.
-                // But session ID validation is fundamental to knowing WHO it is.
                 session_validation: true,
                 spotlighting: false,
             },
@@ -102,6 +97,7 @@ impl Config {
 
 impl Default for Config {
     fn default() -> Self {
+        // Description: Executes the default logic.
         Self {
             policies_yaml_path: None,
             log_level: "info".to_string(),

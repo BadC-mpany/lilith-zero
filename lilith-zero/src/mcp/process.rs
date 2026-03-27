@@ -1,21 +1,10 @@
 // Copyright 2026 BadCompany
-//
 // Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
 //     http://www.apache.org/licenses/LICENSE-2.0
-//
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
-// limitations under the License.
-
-//! Upstream process management with Zombie Process Protection.
-//!
-//! Implements strict parent-child binding to ensure upstream tools are eliminated
-//! if the lilith-zero middleware crashes or is terminated.
 
 use crate::mcp::pipeline::UpstreamEvent;
 use std::process::Stdio;
@@ -24,16 +13,11 @@ use tokio::process::Command;
 use tokio::sync::{mpsc, oneshot};
 use tracing::debug;
 
-// Windows-specific imports
 #[cfg(windows)]
 use win32job::Job;
 
-// Linux-specific: PR_SET_PDEATHSIG is only available on Linux via libc
-
 pub struct ProcessSupervisor {
-    // Channel to trigger manual kill
     kill_tx: Option<oneshot::Sender<()>>,
-    // Keep job object alive (Windows only)
     #[cfg(windows)]
     _job: Option<Job>,
 }
@@ -51,13 +35,9 @@ impl ProcessSupervisor {
         args: &[String],
         tx_events: mpsc::Sender<UpstreamEvent>,
     ) -> Result<ProcessSpawnResult, crate::engine_core::errors::InterceptorError> {
+        // Description: Executes the spawn logic.
         debug!("ProcessSupervisor: spawning '{}' with args {:?}", cmd, args);
 
-        // ------------------------------------------------------------------
-        // MACOS: Re-Exec Supervisor Pattern
-        // ------------------------------------------------------------------
-        // To avoid unsafe pre_exec hooks, we spawn lilith-zero itself in
-        // __supervisor mode. It wraps the target command and monitors our PID.
         #[cfg(target_os = "macos")]
         let mut command = {
             let self_exe = std::env::current_exe().map_err(|e| {
@@ -77,9 +57,6 @@ impl ProcessSupervisor {
             c
         };
 
-        // ------------------------------------------------------------------
-        // OTHER OS: Direct Spawn
-        // ------------------------------------------------------------------
         #[cfg(not(target_os = "macos"))]
         let mut command = Command::new(cmd);
         #[cfg(not(target_os = "macos"))]
@@ -90,17 +67,9 @@ impl ProcessSupervisor {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
 
-        // ------------------------------------------------------------------
-        // LINUX: PR_SET_PDEATHSIG
-        // ------------------------------------------------------------------
         #[cfg(target_os = "linux")]
-        // SAFETY: We are correctly calling the C API for process control.
-        // PR_SET_PDEATHSIG with SIGKILL is a standard Linux mechanism to ensure
-        // child process termination when the parent dies. The integer constants
-        // are provided by the libc crate and are valid for this platform.
         unsafe {
             command.pre_exec(|| {
-                // Send SIGKILL to child if parent (lilith-zero) dies
                 let ret = libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL);
                 if ret != 0 {
                     return Err(std::io::Error::last_os_error());
@@ -109,11 +78,6 @@ impl ProcessSupervisor {
             });
         }
 
-        // MACOS Unsafe Block REMOVED - Replaced by Supervisor Wrapper above.
-
-        // ------------------------------------------------------------------
-        // WINDOWS: Job Objects (Part 1 - Creation)
-        // ------------------------------------------------------------------
         #[cfg(windows)]
         let job = {
             let job = Job::create().map_err(|e| {
@@ -139,13 +103,6 @@ impl ProcessSupervisor {
             Some(job)
         };
 
-        // Note: On Windows, we need to creation_flags(CREATE_SUSPENDED) if we wanted to
-        // strictly ensure assignment before execution, but Job Object assignment works
-        // on the handle immediately after spawn, which is usually sufficient for "crash protection".
-        // To be strictly atomic (preventing runaway if assignment fails), we'd use suspended.
-        // For lilith-zero v0.1 simplification, we assign immediately after.
-
-        // Spawn
         let mut child = command.spawn().map_err(|e| {
             crate::engine_core::errors::InterceptorError::ProcessError(format!(
                 "Failed to spawn upstream process: {}",
@@ -153,12 +110,8 @@ impl ProcessSupervisor {
             ))
         })?;
 
-        // ------------------------------------------------------------------
-        // WINDOWS: Job Objects (Part 2 - Assignment)
-        // ------------------------------------------------------------------
         #[cfg(windows)]
         if let Some(ref job) = job {
-            // Safety: We are using the raw handle from the standard library Child
             if let Some(handle) = child.raw_handle() {
                 job.assign_process(handle as isize).map_err(|e| {
                     crate::engine_core::errors::InterceptorError::ProcessError(format!(
@@ -216,6 +169,7 @@ impl ProcessSupervisor {
     }
 
     pub fn kill(&mut self) {
+        // Description: Executes the kill logic.
         if let Some(tx) = self.kill_tx.take() {
             let _ = tx.send(());
         }
@@ -224,8 +178,7 @@ impl ProcessSupervisor {
 
 impl Drop for ProcessSupervisor {
     fn drop(&mut self) {
+        // Description: Executes the drop logic.
         self.kill();
-        // On Windows, _job is dropped here, which triggers LIMIT_KILL_ON_JOB_CLOSE
-        // if the process is still running.
     }
 }

@@ -38,7 +38,7 @@ jobs:
 
       - name: Unit Tests
         working-directory: lilith-zero
-        run: cargo test --locked --all-features --${{ inputs.cargo_profile }}
+        run: cargo test --locked --no-default-features --${{ inputs.cargo_profile }}
 
   # --------------------------------------------------------------------------
   # Miri Undefined Behavior Check (Nightly)

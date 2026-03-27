@@ -1,60 +1,36 @@
 // Copyright 2026 BadCompany
-//
 // Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
 //     http://www.apache.org/licenses/LICENSE-2.0
-//
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
-// limitations under the License.
-
-//! Protocol-agnostic security events and decision types.
-//!
-//! This module defines the internal event stream that the Security Core operates on.
-//! It is completely decoupled from the specific MCP wire protocol version.
 
 use crate::engine_core::taint::Tainted;
 use crate::engine_core::types::TaintedString;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-/// Protocol-agnostic security events derived from wire protocol messages
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub enum SecurityEvent {
-    /// Session initialization (e.g. MCP "initialize")
     Handshake {
         protocol_version: String,
         client_info: Value,
-        /// Optional authentication token (OAuth or similar)
         audience_token: Option<String>,
-        /// Capabilities offered by the client
         capabilities: Value,
     },
-    /// A generic request to execute an action (tool call)
     ToolRequest {
-        /// Request ID for correlation (opaque)
         request_id: Value,
-        /// Name of the tool being called
         tool_name: TaintedString,
-        /// Arguments provided to the tool
         arguments: Tainted<Value>,
-        /// Session token for validation
         session_token: Option<String>,
     },
-    /// A request to read/access a resource
     ResourceRequest {
         request_id: Value,
-        /// URI of the resource
         uri: TaintedString,
         session_token: Option<String>,
     },
-    /// A generic passthrough event (notifications, pings, or method-not-found)
-    /// These are typically allowed by default but logged.
     Passthrough {
         request_id: Option<Value>,
         method: String,
@@ -62,36 +38,24 @@ pub enum SecurityEvent {
     },
 }
 
-/// The authoritative decision from the Security Core
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum SecurityDecision {
-    /// Proceed with the operation as-is
     Allow,
-    /// Proceed, but apply transformations to the result (Active Defense)
     AllowWithTransforms {
         taints_to_add: Vec<String>,
         taints_to_remove: Vec<String>,
         output_transforms: Vec<OutputTransform>,
     },
-    /// Block the operation
     Deny {
-        /// JSON-RPC compatible error code
         error_code: i32,
-        /// Human-readable reason
         reason: String,
     },
 }
 
-/// Instructions for transforming the upstream response
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum OutputTransform {
-    /// Apply spotlighting (randomized XML tags) to specific JSON paths
-    Spotlight {
-        /// JSONPaths to fields that should be spotlighted (e.g., "content[*].text")
-        json_paths: Vec<String>,
-    },
-    /// Redact specific fields (Data Loss Prevention)
+    Spotlight { json_paths: Vec<String> },
     Redact { json_paths: Vec<String> },
 }

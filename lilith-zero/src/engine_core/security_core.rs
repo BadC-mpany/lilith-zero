@@ -1,22 +1,10 @@
 // Copyright 2026 BadCompany
-//
 // Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
 //     http://www.apache.org/licenses/LICENSE-2.0
-//
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
-// limitations under the License.
-
-//! Security Core.
-//!
-//! The central brain of lilith-zero. It maintains security state (taints, history),
-//! evaluates policies, and emits audit logs. It is pure software logic and does not
-//! know about stdio, network sockets, or specific JSON-RPC versions.
 
 use serde_json::json;
 use std::collections::HashSet;
@@ -42,7 +30,6 @@ pub struct SecurityCore {
     audit: AuditLogger,
     pub session_id: String,
     pub policy: Option<PolicyDefinition>,
-    /// Set of active taint tags in the session
     taints: HashSet<String>,
     history: Vec<HistoryEntry>,
 }
@@ -53,6 +40,7 @@ impl SecurityCore {
         signer: CryptoSigner,
         audit_log_path: Option<PathBuf>,
     ) -> Result<Self, crate::engine_core::errors::InterceptorError> {
+        // Description: Executes the new logic.
         let session_id = signer.generate_session_id()?;
 
         let file_writer = if let Some(path) = audit_log_path {
@@ -75,7 +63,7 @@ impl SecurityCore {
     }
 
     pub fn set_policy(&mut self, mut policy: PolicyDefinition) {
-        // Auto-inject lethal trifecta protection rule if enabled
+        // Description: Executes the set_policy logic.
         if policy.protect_lethal_trifecta || self.config.protect_lethal_trifecta {
             info!("Lethal trifecta protection enabled - auto-injecting EXFILTRATION blocking rule");
             policy.taint_rules.push(PolicyRule {
@@ -96,22 +84,20 @@ impl SecurityCore {
         self.policy = Some(policy);
     }
 
-    /// Emit an audit log entry
     pub fn log_audit(&self, event_type: &str, details: serde_json::Value) {
+        // Description: Executes the log_audit logic.
         self.audit.log(&self.session_id, event_type, details);
     }
 
-    /// Primary entry point for all security decisions.
     #[must_use]
     pub async fn evaluate(&mut self, event: SecurityEvent) -> SecurityDecision {
+        // Description: Executes the evaluate logic.
         match event {
             SecurityEvent::Handshake {
                 client_info: _,
                 audience_token,
                 ..
             } => {
-                // ... audience validation ...
-                // 1. Validate Audience Binding (if configured)
                 if let Some(expected) = &self.config.expected_audience {
                     if let Some(token) = audience_token {
                         if let Err(e) = auth::validate_audience_claim(
@@ -134,11 +120,16 @@ impl SecurityCore {
                     }
                 }
 
-                // Log Session Start
                 self.audit.log(
                     &self.session_id,
                     "SessionStart",
                     json!({ "timestamp": crate::utils::time::now() }),
+                );
+
+                #[cfg(feature = "telemetry")]
+                lilith_telemetry::telemetry_event!(
+                    lilith_telemetry::dispatcher::EventLevel::RoutineAllow,
+                    b"New MCP Session Handshake completed"
                 );
 
                 SecurityDecision::Allow
@@ -150,12 +141,9 @@ impl SecurityCore {
                 session_token,
                 ..
             } => {
-                // ... session validation ...
-                // 1. Validate Session
                 if self.config.security_level_config().session_validation {
                     match session_token {
                         Some(token) => {
-                            // Strict check: Must match the current session ID exactly.
                             if token != self.session_id {
                                 warn!(
                                     "Session ID mismatch. Expected: {}, Got: {}",
@@ -185,12 +173,21 @@ impl SecurityCore {
                     }
                 }
 
-                // 2. Classify Tool
-                // We extract the tool name string for classification.
                 let tool_name_str = tool_name.into_inner();
                 let classes = self.classify_tool(&tool_name_str);
 
-                // 3. Evaluate Policy
+                #[cfg(feature = "telemetry")]
+                let _span = lilith_telemetry::telemetry_span!(
+                    "tool_evaluation",
+                    lilith_telemetry::SpanKind::Server
+                );
+
+                #[cfg(feature = "telemetry")]
+                lilith_telemetry::telemetry_event!(
+                    lilith_telemetry::dispatcher::EventLevel::RoutineAllow,
+                    format!("Evaluating tool request: {}", tool_name_str).as_bytes()
+                );
+
                 let evaluator_result = if let Some(policy) = &self.policy {
                     PolicyEvaluator::evaluate_with_args(
                         policy,
@@ -220,10 +217,34 @@ impl SecurityCore {
 
                 match evaluator_result {
                     Ok(decision) => {
-                        self.process_evaluator_decision(&tool_name_str, &classes, decision)
+                        let sec_decision =
+                            self.process_evaluator_decision(&tool_name_str, &classes, decision);
+
+                        #[cfg(feature = "telemetry")]
+                        match &sec_decision {
+                            SecurityDecision::Deny { reason, .. } => {
+                                lilith_telemetry::telemetry_event!(
+                                    lilith_telemetry::dispatcher::EventLevel::CriticalDeny,
+                                    format!("Blocked tool {}: {}", tool_name_str, reason)
+                                        .as_bytes()
+                                );
+                            }
+                            _ => {
+                                lilith_telemetry::telemetry_event!(
+                                    lilith_telemetry::dispatcher::EventLevel::RoutineAllow,
+                                    format!("Allowed tool {}", tool_name_str).as_bytes()
+                                );
+                            }
+                        }
+                        sec_decision
                     }
                     Err(e) => {
                         warn!("Policy evaluation internal error: {}", e);
+                        #[cfg(feature = "telemetry")]
+                        lilith_telemetry::telemetry_event!(
+                            lilith_telemetry::dispatcher::EventLevel::CriticalDeny,
+                            format!("Policy error during evaluation: {}", e).as_bytes()
+                        );
                         SecurityDecision::Deny {
                             error_code: jsonrpc::ERROR_INTERNAL, // Internal error
                             reason: format!("Policy error: {}", e),
@@ -235,8 +256,6 @@ impl SecurityCore {
             SecurityEvent::ResourceRequest {
                 uri, session_token, ..
             } => {
-                // ... resource implementation ...
-                // Similar session validation
                 if self.config.security_level_config().session_validation {
                     if let Some(token) = session_token {
                         if !self.signer.validate_session_id(&token) {
@@ -253,7 +272,6 @@ impl SecurityCore {
                     }
                 }
 
-                // Resource Policy Enforcement (Fail Closed)
                 let mut allow_access = false;
                 let mut taints_to_add = vec![];
 
@@ -271,7 +289,6 @@ impl SecurityCore {
                                 };
                             } else if rule.action == "ALLOW" {
                                 allow_access = true;
-                                // Collect taints from matching rule
                                 if let Some(ref taints) = rule.taints_to_add {
                                     taints_to_add.extend(taints.clone());
                                 }
@@ -280,7 +297,6 @@ impl SecurityCore {
                         }
                     }
                 } else {
-                    // No policy loaded = Default Deny checking mode
                     match self.config.security_level {
                         crate::config::SecurityLevel::AuditOnly => {
                             allow_access = true;
@@ -301,7 +317,6 @@ impl SecurityCore {
                     };
                 }
 
-                // Apply taints to session state
                 for t in &taints_to_add {
                     self.taints.insert(t.clone());
                 }
@@ -318,6 +333,7 @@ impl SecurityCore {
     }
 
     fn classify_tool(&self, name: &str) -> Vec<String> {
+        // Description: Executes the classify_tool logic.
         if name.starts_with("read_") || name.starts_with("get_") {
             vec!["READ".to_string()]
         } else if name.starts_with("write_") || name.starts_with("delete_") {
@@ -335,6 +351,7 @@ impl SecurityCore {
         classes: &[String],
         decision: Decision,
     ) -> SecurityDecision {
+        // Description: Executes the process_evaluator_decision logic.
         match decision {
             Decision::Allowed => {
                 self.record_history(tool_name, classes);
@@ -347,7 +364,6 @@ impl SecurityCore {
                     }),
                 );
 
-                // If spotlighting is enabled, we apply it
                 if self.config.security_level_config().spotlighting {
                     SecurityDecision::AllowWithTransforms {
                         taints_to_add: vec![],
@@ -420,6 +436,7 @@ impl SecurityCore {
     }
 
     fn record_history(&mut self, tool: &str, classes: &[String]) {
+        // Description: Executes the record_history logic.
         self.history.push(HistoryEntry {
             tool: tool.to_string(),
             classes: classes.to_vec(),
@@ -428,6 +445,7 @@ impl SecurityCore {
     }
 
     fn match_resource_pattern(&self, uri: &str, pattern: &str) -> bool {
+        // Description: Executes the match_resource_pattern logic.
         if pattern == "*" {
             return true;
         }
@@ -453,11 +471,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_security_core_flow() {
+        // Description: Executes the test_security_core_flow logic.
         let config = Arc::new(Config::default());
         let signer = CryptoSigner::try_new().unwrap();
         let mut core = SecurityCore::new(config, signer, None).unwrap();
 
-        // 1. Handshake
         let event = SecurityEvent::Handshake {
             protocol_version: "2024-11-05".to_string(),
             client_info: serde_json::Value::Null,
@@ -470,7 +488,6 @@ mod tests {
             _ => panic!("Expected Allow for handshake"),
         }
 
-        // 2. Tool Request (No Session) -> Should Fail
         let tool_event = SecurityEvent::ToolRequest {
             request_id: serde_json::Value::String("1".to_string()),
             tool_name: TaintedString::new("read_file".to_string()),
@@ -485,22 +502,6 @@ mod tests {
             _ => panic!("Expected Deny for missing session"),
         }
 
-        // 3. Tool Request (Valid Session, No Policy) -> Should Fail Closed (Default Deny)
-        // We simulate a valid session check pass by mocking or...
-        // We can't easily mock signature without key.
-        // But we can test `SecurityLevel::AuditOnly` fallback if we could inject config.
-        // Let's create a core with AuditOnly and see if it allows.
-
-        // Turn off session validation for this test to bypass signature check?
-        // No, AuditOnly logic in config.rs sets session_validation = true.
-        // So we still need a valid token.
-        // We can generate one if we have the signer.
-        // Core has a signer. Can we clone it? No, private.
-        // Tests are in `mod tests` inside `src/core/security_core.rs`?
-        // Yes, `super::*` means we are inside the file.
-        // So we CAN access private fields of `core`!
-
-        // Fix: core.session_id IS the valid token string. Check equality (which we just enforced).
         let valid_token = core.session_id.clone();
 
         let tool_event = SecurityEvent::ToolRequest {
@@ -510,7 +511,6 @@ mod tests {
             session_token: Some(valid_token),
         };
 
-        // With Default Config (BlockParams) -> Should Deny (Fail Closed)
         let decision = core.evaluate(tool_event.clone()).await;
         match decision {
             SecurityDecision::Deny { reason, .. } => {
@@ -519,7 +519,6 @@ mod tests {
             _ => panic!("Expected Deny for missing policy (Fail Closed)"),
         }
 
-        // With Audit Config -> Should Allow (Log Only)
         let audit_config = Config {
             security_level: crate::config::SecurityLevel::AuditOnly,
             ..Config::default()

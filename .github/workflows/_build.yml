@@ -54,7 +54,7 @@ jobs:
 
       - name: Build Release Binary
         working-directory: lilith-zero
-        run: cargo build --release --target ${{ matrix.target }} --locked
+        run: cargo build --release --target ${{ matrix.target }} --locked --no-default-features
 
       - name: Prepare Artifact
         shell: bash
