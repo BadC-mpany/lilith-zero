@@ -34,7 +34,6 @@ import os
 import shutil
 import tempfile
 import uuid
-import uuid
 from asyncio import Future
 from contextvars import ContextVar
 from typing import Any, TypedDict, cast
@@ -178,7 +177,11 @@ class SpanContext(TypedDict):
     trace_id_lo: int
     span_id: int
 
-_active_span_context: ContextVar[SpanContext | None] = ContextVar("_active_span_context", default=None)
+
+_active_span_context: ContextVar[SpanContext | None] = ContextVar(
+    "_active_span_context", default=None
+)
+
 
 class Lilith:
     """Lilith Security Middleware for AI Agents.
@@ -298,7 +301,7 @@ class Lilith:
         """
         # Generate new trace/span IDs if not already in a trace
         current = _active_span_context.get()
-        
+
         if current is None:
             # Root span: generate full 128-bit trace + 64-bit span
             u = uuid.uuid4()
@@ -308,7 +311,7 @@ class Lilith:
             new_ctx: SpanContext = {
                 "trace_id_hi": trace_hi,
                 "trace_id_lo": trace_lo,
-                "span_id": span_id
+                "span_id": span_id,
             }
         else:
             # Child span: keep same trace, generate new span ID, parent is previous span_id
@@ -318,9 +321,9 @@ class Lilith:
             new_ctx: SpanContext = {
                 "trace_id_hi": current["trace_id_hi"],
                 "trace_id_lo": current["trace_id_lo"],
-                "span_id": uuid.uuid4().int & 0xFFFFFFFFFFFFFFFF
+                "span_id": uuid.uuid4().int & 0xFFFFFFFFFFFFFFFF,
             }
-            
+
         token = _active_span_context.set(new_ctx)
         try:
             yield new_ctx
@@ -463,7 +466,7 @@ class Lilith:
 
         if self._audit_file_path:
             cmd.extend(["--audit-logs", self._audit_file_path])
-            
+
         if self._telemetry_link:
             cmd.extend(["--telemetry-link", self._telemetry_link])
 

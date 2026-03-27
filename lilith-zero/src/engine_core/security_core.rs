@@ -200,7 +200,7 @@ impl SecurityCore {
                     "tool_evaluation",
                     lilith_telemetry::SpanKind::Server
                 );
-                
+
                 lilith_telemetry::telemetry_event!(
                     lilith_telemetry::dispatcher::EventLevel::RoutineAllow,
                     format!("Evaluating tool request: {}", tool_name_str).as_bytes()
@@ -236,14 +236,16 @@ impl SecurityCore {
 
                 match evaluator_result {
                     Ok(decision) => {
-                        let sec_decision = self.process_evaluator_decision(&tool_name_str, &classes, decision);
-                        
+                        let sec_decision =
+                            self.process_evaluator_decision(&tool_name_str, &classes, decision);
+
                         // TELEMETRY: Log outcome
                         match &sec_decision {
                             SecurityDecision::Deny { reason, .. } => {
                                 lilith_telemetry::telemetry_event!(
                                     lilith_telemetry::dispatcher::EventLevel::CriticalDeny,
-                                    format!("Blocked tool {}: {}", tool_name_str, reason).as_bytes()
+                                    format!("Blocked tool {}: {}", tool_name_str, reason)
+                                        .as_bytes()
                                 );
                             }
                             _ => {

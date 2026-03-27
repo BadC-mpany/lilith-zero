@@ -232,7 +232,10 @@ impl McpMiddleware {
                 }
             }
 
-            if let Some(parent_sid) = params.get("_lilith_parent_span_id").and_then(|v| v.as_u64()) {
+            if let Some(parent_sid) = params
+                .get("_lilith_parent_span_id")
+                .and_then(|v| v.as_u64())
+            {
                 baggage.span_id = lilith_telemetry::SpanId(parent_sid);
                 modified = true;
             }
@@ -242,10 +245,8 @@ impl McpMiddleware {
             }
         }
 
-        let _span = lilith_telemetry::telemetry_span!(
-            "mcp_request",
-            lilith_telemetry::SpanKind::Server
-        );
+        let _span =
+            lilith_telemetry::telemetry_span!("mcp_request", lilith_telemetry::SpanKind::Server);
 
         // 1. Parse Protocol (Session Token extraction, etc)
         let security_event = self.session.parse_request(req);
@@ -337,10 +338,8 @@ impl McpMiddleware {
         resp: JsonRpcResponse,
         writer: &mut tokio::io::Stdout,
     ) -> Result<()> {
-        let _span = lilith_telemetry::telemetry_span!(
-            "mcp_response",
-            lilith_telemetry::SpanKind::Server
-        );
+        let _span =
+            lilith_telemetry::telemetry_span!("mcp_response", lilith_telemetry::SpanKind::Server);
 
         // Correlate with Request
         let mut decision = SecurityDecision::Allow; // Default if unsolicited (notifications)?
