@@ -6,8 +6,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 
-
-
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 use uuid::Uuid;
@@ -84,7 +82,9 @@ pub struct ProxyRequest {
 #[non_exhaustive]
 pub enum Decision {
     Allowed,
-    Denied { reason: String },
+    Denied {
+        reason: String,
+    },
     AllowedWithSideEffects {
         taints_to_add: Vec<String>,
         taints_to_remove: Vec<String>,
@@ -119,9 +119,7 @@ pub enum LogicCondition {
 #[serde(untagged)]
 #[non_exhaustive]
 pub enum LogicValue {
-    Var {
-        var: String,
-    },
+    Var { var: String },
     Str(String),
     Num(f64),
     Bool(bool),

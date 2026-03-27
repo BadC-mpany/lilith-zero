@@ -6,7 +6,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 
-
 use crate::engine_core::errors::InterceptorError;
 use crate::engine_core::models::{HistoryEntry, LogicCondition, LogicValue};
 use serde_json::Value; // Needed for resolving runtime arguments
@@ -197,8 +196,6 @@ impl PatternMatcher {
             }
         }
 
-
-
         if !pattern.contains('*') {
             return pattern == text;
         }
@@ -354,7 +351,6 @@ mod proptests {
             assert!(PatternMatcher::wildcard_match("*", &text));
         }
     }
-
 
     use proptest::strategy::{BoxedStrategy, Strategy};
 

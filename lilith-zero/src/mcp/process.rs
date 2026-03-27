@@ -6,7 +6,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 
-
 use crate::mcp::pipeline::UpstreamEvent;
 use std::process::Stdio;
 use tokio::io::{AsyncRead, AsyncWrite};
@@ -16,7 +15,6 @@ use tracing::debug;
 
 #[cfg(windows)]
 use win32job::Job;
-
 
 pub struct ProcessSupervisor {
     kill_tx: Option<oneshot::Sender<()>>,
@@ -80,7 +78,6 @@ impl ProcessSupervisor {
             });
         }
 
-
         #[cfg(windows)]
         let job = {
             let job = Job::create().map_err(|e| {
@@ -105,7 +102,6 @@ impl ProcessSupervisor {
             debug!("Initialized Windows Job Object for automatic cleanup");
             Some(job)
         };
-
 
         let mut child = command.spawn().map_err(|e| {
             crate::engine_core::errors::InterceptorError::ProcessError(format!(

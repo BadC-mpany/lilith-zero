@@ -69,18 +69,16 @@ where
 
         while let Some(result) = framed.next().await {
             match result {
-                Ok(val) => {
-                    match serde_json::from_value::<JsonRpcResponse>(val) {
-                        Ok(resp) => {
-                            if tx.send(UpstreamEvent::Response(resp)).await.is_err() {
-                                break;
-                            }
-                        }
-                        Err(e) => {
-                            debug!("Upstream non-JSON-RPC response: {}", e);
+                Ok(val) => match serde_json::from_value::<JsonRpcResponse>(val) {
+                    Ok(resp) => {
+                        if tx.send(UpstreamEvent::Response(resp)).await.is_err() {
+                            break;
                         }
                     }
-                }
+                    Err(e) => {
+                        debug!("Upstream non-JSON-RPC response: {}", e);
+                    }
+                },
                 Err(e) => {
                     error!("Upstream framing error: {}", e);
                     break;

@@ -1,7 +1,6 @@
 // Copyright 2026 BadCompany
 // Licensed under the Apache License, Version 2.0
 
-
 #[allow(unused_variables, unused_assignments, unused_mut)]
 #[cfg(kani)]
 mod verification {

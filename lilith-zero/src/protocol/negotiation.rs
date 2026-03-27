@@ -6,7 +6,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 
-
 use crate::engine_core::session::ActiveSession;
 use crate::protocol::{v2024_11_05, v2025_11_25};
 use tracing::info;

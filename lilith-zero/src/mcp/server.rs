@@ -6,7 +6,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 
-
 use crate::mcp::codec::McpCodec;
 use anyhow::{Context, Result};
 use serde_json::Value;

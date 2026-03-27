@@ -6,7 +6,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 
-
 use crate::engine::pattern_matcher::PatternMatcher;
 use crate::engine_core::errors::InterceptorError;
 use crate::engine_core::models::{Decision, HistoryEntry, PolicyDefinition};

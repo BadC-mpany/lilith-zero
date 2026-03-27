@@ -6,7 +6,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 
-
 use serde_json::json;
 use std::collections::HashSet;
 use std::fs::OpenOptions;
@@ -502,8 +501,6 @@ mod tests {
             }
             _ => panic!("Expected Deny for missing session"),
         }
-
-
 
         let valid_token = core.session_id.clone();
 

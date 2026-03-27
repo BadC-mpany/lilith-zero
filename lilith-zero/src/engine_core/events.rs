@@ -6,7 +6,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 
-
 use crate::engine_core::taint::Tainted;
 use crate::engine_core::types::TaintedString;
 use serde::{Deserialize, Serialize};
@@ -57,8 +56,6 @@ pub enum SecurityDecision {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum OutputTransform {
-    Spotlight {
-        json_paths: Vec<String>,
-    },
+    Spotlight { json_paths: Vec<String> },
     Redact { json_paths: Vec<String> },
 }

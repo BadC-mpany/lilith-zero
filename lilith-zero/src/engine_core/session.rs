@@ -6,7 +6,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 
-
 use crate::engine_core::events::{SecurityDecision, SecurityEvent};
 use crate::engine_core::models::{JsonRpcRequest, JsonRpcResponse};
 use crate::engine_core::traits::McpSessionHandler;

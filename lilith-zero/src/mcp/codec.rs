@@ -6,7 +6,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 
-
 use crate::engine_core::constants::limits;
 use crate::engine_core::models::{JsonRpcRequest, JsonRpcResponse};
 use anyhow::{anyhow, Context, Result};

@@ -6,7 +6,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 
-
 #[cfg(unix)]
 use std::process::Stdio;
 #[cfg(unix)]
@@ -89,7 +88,6 @@ fn monitor_parent_kqueue(
 ) -> Result<impl std::future::Future<Output = ()>, std::io::Error> {
     // Description: Executes the monitor_parent_kqueue logic.
 
-
     let kq = unsafe { libc::kqueue() };
     if kq < 0 {
         return Err(std::io::Error::last_os_error());
@@ -135,8 +133,7 @@ fn monitor_parent_kqueue(
 
             unsafe { libc::close(kq) };
 
-            if n > 0 {
-            }
+            if n > 0 {}
         })
         .await;
     })

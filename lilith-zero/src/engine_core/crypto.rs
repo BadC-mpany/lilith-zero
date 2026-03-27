@@ -6,7 +6,6 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 
-
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use hmac::{Hmac, Mac};
 use ring::rand::{SecureRandom, SystemRandom};
@@ -23,7 +22,6 @@ pub struct CryptoSigner {
 }
 
 use crate::engine_core::errors::{CryptoError, InterceptorError};
-
 
 impl CryptoSigner {
     #[must_use = "crypto initialization result must be checked"]
