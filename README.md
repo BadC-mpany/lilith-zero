@@ -1,4 +1,4 @@
-# Lilith Zero
+# Lilith-Zero
 
 **Deterministic Security Middleware for MCP tool calls written in Rust.**
 
