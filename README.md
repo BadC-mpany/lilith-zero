@@ -9,13 +9,11 @@
 [![CI](https://github.com/BadC-mpany/lilith-zero/actions/workflows/ci.yml/badge.svg)](https://github.com/BadC-mpany/lilith-zero/actions)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Version](https://img.shields.io/badge/Version-0.1.3-green.svg)](https://github.com/BadC-mpany/lilith-zero/releases)
-[![Docs.rs](https://img.shields.io/badge/docs.rs-lilith--zero-66c2a5?logo=rust&logoColor=fff)](https://docs.rs/lilith-zero)
-[![Coverage](https://img.shields.io/codecov/c/gh/BadC-mpany/lilith-zero)](https://codecov.io/gh/BadC-mpany/lilith-zero)
 
 <br/>
 
 ![Linux](https://img.shields.io/badge/Linux-FCC624?style=flat&logo=linux&logoColor=black)
-![Windows](https://img.shields.io/badge/Windows-0078D6?style=flat&logo=windows&logoColor=white)
+![Windows](https://img.shields.io/badge/Windows-0078D6?style=flat&logo=microsoft-windows&logoColor=white)
 ![macOS](https://img.shields.io/badge/macOS-FFD700?style=flat&logo=apple&logoColor=black)
 
 <br/>
