@@ -1,4 +1,3 @@
-
 //! Storage Engine (The Lilith-Store)
 //!
 //! A localized representation of an LSM (Log-Structured Merge-tree) adapted
@@ -15,19 +14,19 @@ use serde::Serialize;
 /// Wire format: [BinaryEvent header 76 bytes][payload: payload_len bytes]
 #[derive(Serialize)]
 pub struct BinaryEvent {
-    pub timestamp: u64,        // 8b  — CPU RDTSC cycle counter
-    pub session_id_hi: u64,    // 8b  — Upper 64 bits of 128-bit SessionID
-    pub session_id_lo: u64,    // 8b  — Lower 64 bits of 128-bit SessionID
-    pub trace_id_hi: u64,      // 8b  — Upper 64 bits of 128-bit TraceID
-    pub trace_id_lo: u64,      // 8b  — Lower 64 bits of 128-bit TraceID
-    pub span_id: u64,          // 8b  — Current span ID
-    pub parent_span_id: u64,   // 8b  — Parent span ID (0 = root span)
-    pub agent_id: u64,         // 8b  — Node's Key ID (from flock_keys.db)
-    pub thread_id: u32,        // 4b  — Hardware thread ID
-    pub policy_id: u32,        // 4b  — Security policy rule that triggered this event
-    pub kind: u8,              // 1b  — SpanKind (0=Internal,1=Server,2=Client,3=Producer,4=Consumer)
-    pub event_level: u8,       // 1b  — 0=CriticalDeny, 1=RoutineAllow, 255=SessionInit/System
-    pub payload_len: u16,      // 2b  — Number of bytes of payload following the header
+    pub timestamp: u64,      // 8b  — CPU RDTSC cycle counter
+    pub session_id_hi: u64,  // 8b  — Upper 64 bits of 128-bit SessionID
+    pub session_id_lo: u64,  // 8b  — Lower 64 bits of 128-bit SessionID
+    pub trace_id_hi: u64,    // 8b  — Upper 64 bits of 128-bit TraceID
+    pub trace_id_lo: u64,    // 8b  — Lower 64 bits of 128-bit TraceID
+    pub span_id: u64,        // 8b  — Current span ID
+    pub parent_span_id: u64, // 8b  — Parent span ID (0 = root span)
+    pub agent_id: u64,       // 8b  — Node's Key ID (from flock_keys.db)
+    pub thread_id: u32,      // 4b  — Hardware thread ID
+    pub policy_id: u32,      // 4b  — Security policy rule that triggered this event
+    pub kind: u8,            // 1b  — SpanKind (0=Internal,1=Server,2=Client,3=Producer,4=Consumer)
+    pub event_level: u8,     // 1b  — 0=CriticalDeny, 1=RoutineAllow, 255=SessionInit/System
+    pub payload_len: u16,    // 2b  — Number of bytes of payload following the header
 }
 
 pub const HEADER_SIZE: usize = 76;
@@ -59,19 +58,19 @@ impl BinaryEvent {
             return None;
         }
 
-        let timestamp       = u64::from_le_bytes(data[0..8].try_into().ok()?);
-        let session_id_hi   = u64::from_le_bytes(data[8..16].try_into().ok()?);
-        let session_id_lo   = u64::from_le_bytes(data[16..24].try_into().ok()?);
-        let trace_id_hi     = u64::from_le_bytes(data[24..32].try_into().ok()?);
-        let trace_id_lo     = u64::from_le_bytes(data[32..40].try_into().ok()?);
-        let span_id         = u64::from_le_bytes(data[40..48].try_into().ok()?);
-        let parent_span_id  = u64::from_le_bytes(data[48..56].try_into().ok()?);
-        let agent_id        = u64::from_le_bytes(data[56..64].try_into().ok()?);
-        let thread_id       = u32::from_le_bytes(data[64..68].try_into().ok()?);
-        let policy_id       = u32::from_le_bytes(data[68..72].try_into().ok()?);
-        let kind            = data[72];
-        let event_level     = data[73];
-        let payload_len     = u16::from_le_bytes(data[74..76].try_into().ok()?);
+        let timestamp = u64::from_le_bytes(data[0..8].try_into().ok()?);
+        let session_id_hi = u64::from_le_bytes(data[8..16].try_into().ok()?);
+        let session_id_lo = u64::from_le_bytes(data[16..24].try_into().ok()?);
+        let trace_id_hi = u64::from_le_bytes(data[24..32].try_into().ok()?);
+        let trace_id_lo = u64::from_le_bytes(data[32..40].try_into().ok()?);
+        let span_id = u64::from_le_bytes(data[40..48].try_into().ok()?);
+        let parent_span_id = u64::from_le_bytes(data[48..56].try_into().ok()?);
+        let agent_id = u64::from_le_bytes(data[56..64].try_into().ok()?);
+        let thread_id = u32::from_le_bytes(data[64..68].try_into().ok()?);
+        let policy_id = u32::from_le_bytes(data[68..72].try_into().ok()?);
+        let kind = data[72];
+        let event_level = data[73];
+        let payload_len = u16::from_le_bytes(data[74..76].try_into().ok()?);
 
         let total_expected = HEADER_SIZE + payload_len as usize;
         if data.len() < total_expected {
@@ -103,11 +102,11 @@ impl BinaryEvent {
     /// Format a human-readable one-line description of this event for logs.
     pub fn describe(&self, payload: &[u8]) -> String {
         let level_str = match self.event_level {
-            0   => "CRITICAL",
-            1   => "ROUTINE",
+            0 => "CRITICAL",
+            1 => "ROUTINE",
             254 => "GAP",
             255 => "SESSION_INIT",
-            _   => "UNKNOWN",
+            _ => "UNKNOWN",
         };
         let kind_str = match self.kind {
             0 => "Internal",
@@ -134,8 +133,8 @@ impl BinaryEvent {
     }
 }
 
-use std::io::Write;
 use std::fs::{File, OpenOptions};
+use std::io::Write;
 use std::sync::Mutex;
 
 /// Simulating MemTables through thread-local per-CPU buffers caching incoming telemetry streams.
@@ -178,7 +177,7 @@ impl LilithStore {
         }
         let event = Self::make_event(ts, &b, 0, payload);
         let packed = event.pack(payload);
-        
+
         self.append_to_local_log(&event, payload);
 
         self.write_ahead_heartbeat(ts);
@@ -193,10 +192,11 @@ impl LilithStore {
         }
         let event = Self::make_event(ts, &b, 1, payload);
         let packed = event.pack(payload);
-        
+
         self.append_to_local_log(&event, payload);
 
-        self.written_bytes.fetch_add(packed.len(), Ordering::Relaxed);
+        self.written_bytes
+            .fetch_add(packed.len(), Ordering::Relaxed);
         Ok(())
     }
 

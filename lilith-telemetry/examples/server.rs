@@ -1,4 +1,4 @@
-use lilith_telemetry::{init, DeploymentMode, KeyRegistry};
+use lilith_telemetry::{DeploymentMode, KeyRegistry, init};
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
@@ -12,7 +12,10 @@ fn main() {
     let registry = Arc::new(KeyRegistry::new(registry_path, bind_addr));
 
     let count = registry.entries.read().unwrap().len();
-    println!("Loaded {} authorized node(s) from '{}'", count, registry_path);
+    println!(
+        "Loaded {} authorized node(s) from '{}'",
+        count, registry_path
+    );
     println!("Data received from agents is stored locally by this process.");
     println!("(In production: written to the LSM-tree store on this machine's disk)");
     println!();
@@ -22,7 +25,10 @@ fn main() {
         registry,
     });
 
-    println!("Collector online at UDP {}. Press Ctrl+C to stop.\n", bind_addr);
+    println!(
+        "Collector online at UDP {}. Press Ctrl+C to stop.\n",
+        bind_addr
+    );
 
     loop {
         thread::sleep(Duration::from_secs(60));

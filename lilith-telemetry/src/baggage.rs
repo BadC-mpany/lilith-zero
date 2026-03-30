@@ -1,4 +1,3 @@
-
 //! Context Propagation - Baggage System
 //!
 //! OTEL-like cross-boundary context propagation carrying the critical metadata

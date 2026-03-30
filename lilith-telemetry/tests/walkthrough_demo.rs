@@ -1,4 +1,6 @@
-use lilith_telemetry::{init, DeploymentMode, KeyRegistry, FlockLink, telemetry_event, dispatcher::EventLevel};
+use lilith_telemetry::{
+    DeploymentMode, FlockLink, KeyRegistry, dispatcher::EventLevel, init, telemetry_event,
+};
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
@@ -20,8 +22,14 @@ fn complete_system_walkthrough() {
 
     // === STEP 2: Verify the link parses correctly ===
     let parsed = FlockLink::parse(&link_str).expect("Link must parse back correctly");
-    assert_eq!(parsed.key_id, key_handle.0, "Parsed key_id must match provisioned handle");
-    println!("Step 2: Link parsed correctly → connecting to {}:{}", parsed.host, parsed.port);
+    assert_eq!(
+        parsed.key_id, key_handle.0,
+        "Parsed key_id must match provisioned handle"
+    );
+    println!(
+        "Step 2: Link parsed correctly → connecting to {}:{}",
+        parsed.host, parsed.port
+    );
 
     // === STEP 3: Start the collector (FlockHead) ===
     init(DeploymentMode::FlockHead {

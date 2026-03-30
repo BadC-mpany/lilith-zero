@@ -1,4 +1,3 @@
-
 //! Encrypted Tunnel Layer and Ephemeral Session Key Generation
 
 use super::DeploymentMode;

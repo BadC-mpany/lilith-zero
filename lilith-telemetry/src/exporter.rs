@@ -1,9 +1,8 @@
-
 //! Exporter Egress Tunnel — Jaeger Agent equivalent.
 //! Encrypts and streams packed BinaryEvent bytes over UDP to the FlockHead Collector.
 
-use super::crypto::EphemeralSession;
 use super::DeploymentMode;
+use super::crypto::EphemeralSession;
 use std::net::UdpSocket;
 
 /// UDP proxy that streams encrypted BinaryEvent payloads to the FlockHead.
@@ -17,9 +16,12 @@ pub struct EgressExporter {
 impl EgressExporter {
     pub fn new(mode: &DeploymentMode) -> Self {
         let (socket, target_endpoint, agent_id) = match mode {
-            DeploymentMode::FlockMember { target_api_endpoint, auth_key } => {
-                let sock = UdpSocket::bind("0.0.0.0:0")
-                    .expect("Failed to bind local UDP Egress Socket");
+            DeploymentMode::FlockMember {
+                target_api_endpoint,
+                auth_key,
+            } => {
+                let sock =
+                    UdpSocket::bind("0.0.0.0:0").expect("Failed to bind local UDP Egress Socket");
                 // Non-blocking: never stall the telemetry hot-path on network I/O.
                 sock.set_nonblocking(true)
                     .expect("Failed to set Egress Socket to non-blocking");
@@ -61,19 +63,19 @@ impl EgressExporter {
             let gap_payload = b"GAP";
             let baggage = crate::baggage::current();
             let event = BinaryEvent {
-                timestamp:      crate::clock::rdtsc(),
-                session_id_hi:  baggage.session_id.0,
-                session_id_lo:  baggage.session_id.1,
-                trace_id_hi:    0,
-                trace_id_lo:    0,
-                span_id:        0,
+                timestamp: crate::clock::rdtsc(),
+                session_id_hi: baggage.session_id.0,
+                session_id_lo: baggage.session_id.1,
+                trace_id_hi: 0,
+                trace_id_lo: 0,
+                span_id: 0,
                 parent_span_id: 0,
-                agent_id:       self.agent_id,
-                thread_id:      0,
-                policy_id:      0,
-                kind:           0,
-                event_level:    254, // GAP_MARKER
-                payload_len:    gap_payload.len() as u16,
+                agent_id: self.agent_id,
+                thread_id: 0,
+                policy_id: 0,
+                kind: 0,
+                event_level: 254, // GAP_MARKER
+                payload_len: gap_payload.len() as u16,
             };
             let packed = event.pack(gap_payload);
             let encrypted = session.encrypt_blob(&packed);
