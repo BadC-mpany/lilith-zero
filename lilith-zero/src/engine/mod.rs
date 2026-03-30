@@ -1,10 +1,6 @@
-// Copyright 2026 BadCompany
-// Licensed under the Apache License, Version 2.0 (the "License");
-//     http://www.apache.org/licenses/LICENSE-2.0
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
+//! Policy evaluation engine: pattern matching and taint-rule evaluation.
 
+/// Policy rule evaluation against tool calls and session state.
 pub mod evaluator;
+/// Logic condition and wildcard pattern matching.
 pub mod pattern_matcher;

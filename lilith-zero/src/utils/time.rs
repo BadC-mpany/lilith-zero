@@ -8,8 +8,10 @@
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
+/// Return the current Unix timestamp as a floating-point number of seconds.
+///
+/// Returns `0.0` if the system clock is before the Unix epoch (should not happen in practice).
 pub fn now() -> f64 {
-    // Description: Executes the now logic.
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()

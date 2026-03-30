@@ -12,9 +12,15 @@ use crate::engine_core::models::{Decision, HistoryEntry, PolicyDefinition};
 use serde_json::Value;
 use std::collections::HashSet;
 
+/// Evaluates a tool call against a [`PolicyDefinition`] and produces a [`Decision`].
 pub struct PolicyEvaluator;
 
 impl PolicyEvaluator {
+    /// Evaluate `tool_name` (with `tool_classes`) against `policy`.
+    ///
+    /// Applies static rules first, then taint rules in order.  Returns
+    /// [`Decision::Denied`] on the first matching block rule, or [`Decision::Allowed`] /
+    /// [`Decision::AllowedWithSideEffects`] if all rules pass.
     pub async fn evaluate_with_args(
         policy: &PolicyDefinition,
         tool_name: &str,
@@ -23,7 +29,6 @@ impl PolicyEvaluator {
         current_taints: &HashSet<String>,
         tool_args: &Value,
     ) -> Result<Decision, InterceptorError> {
-        // Description: Executes the evaluate_with_args logic.
         let permission = policy
             .static_rules
             .get(tool_name)
@@ -182,7 +187,6 @@ impl PolicyEvaluator {
         current_taints: &HashSet<String>,
         tool_args: &Value,
     ) -> Result<bool, InterceptorError> {
-        // Description: Executes the check_exceptions logic.
         for exception in exceptions {
             if PatternMatcher::evaluate_condition_with_args(
                 &exception.condition,

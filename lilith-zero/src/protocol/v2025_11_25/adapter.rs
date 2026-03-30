@@ -15,31 +15,29 @@ use crate::engine_core::types::TaintedString;
 use crate::utils::security::SecurityEngine;
 use serde_json::Value;
 
+/// MCP protocol adapter for the `2025-11-25` / `2025-06-18` specification revisions.
 #[derive(Debug)]
 pub struct Mcp2025Adapter;
 
 impl Default for Mcp2025Adapter {
     fn default() -> Self {
-        // Description: Executes the default logic.
         Self::new()
     }
 }
 
 impl Mcp2025Adapter {
+    /// Create a new [`Mcp2025Adapter`].
     pub fn new() -> Self {
-        // Description: Executes the new logic.
         Self
     }
 }
 
 impl McpSessionHandler for Mcp2025Adapter {
     fn version(&self) -> &'static str {
-        // Description: Executes the version logic.
         "2025-06-18"
     }
 
     fn parse_request(&self, req: &JsonRpcRequest) -> SecurityEvent {
-        // Description: Executes the parse_request logic.
         match req.method.as_str() {
             "initialize" => {
                 let params = req.params.as_ref().cloned().unwrap_or(Value::Null);
@@ -91,7 +89,6 @@ impl McpSessionHandler for Mcp2025Adapter {
         decision: &SecurityDecision,
         mut response: JsonRpcResponse,
     ) -> JsonRpcResponse {
-        // Description: Executes the apply_decision logic.
         match decision {
             SecurityDecision::AllowWithTransforms {
                 output_transforms, ..
@@ -125,7 +122,6 @@ impl McpSessionHandler for Mcp2025Adapter {
     }
 
     fn extract_session_token(&self, req: &JsonRpcRequest) -> Option<String> {
-        // Description: Executes the extract_session_token logic.
         req.params
             .as_ref()
             .and_then(|p| p.get(session::SESSION_ID_PARAM))
@@ -134,7 +130,6 @@ impl McpSessionHandler for Mcp2025Adapter {
     }
 
     fn sanitize_for_upstream(&self, req: &mut JsonRpcRequest) {
-        // Description: Executes the sanitize_for_upstream logic.
         if let Some(params) = req.params.as_mut() {
             if let Some(obj) = params.as_object_mut() {
                 obj.remove(session::SESSION_ID_PARAM);
@@ -145,7 +140,6 @@ impl McpSessionHandler for Mcp2025Adapter {
 
 impl Mcp2025Adapter {
     fn recursive_spotlight(value: &mut Value) {
-        // Description: Executes the recursive_spotlight logic.
         match value {
             Value::String(s) => {
                 *s = SecurityEngine::spotlight(s);

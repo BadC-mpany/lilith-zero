@@ -12,17 +12,25 @@ use tracing::{debug, error};
 
 use crate::engine_core::models::{JsonRpcRequest, JsonRpcResponse};
 
+/// An event produced by the downstream (agent → middleware) reader task.
 #[derive(Debug)]
 pub enum DownstreamEvent {
+    /// A complete, parsed JSON-RPC request from the agent.
     Request(JsonRpcRequest),
+    /// The downstream connection was closed cleanly.
     Disconnect,
+    /// A framing or parse error occurred on the downstream connection.
     Error(String),
 }
 
+/// An event produced by the upstream (middleware → MCP server) reader task.
 #[derive(Debug)]
 pub enum UpstreamEvent {
+    /// A complete, parsed JSON-RPC response from the upstream server.
     Response(JsonRpcResponse),
+    /// A line of stderr output from the upstream process.
     Log(String),
+    /// The upstream process exited with an optional exit code.
     Terminated(Option<i32>),
 }
 
@@ -30,8 +38,9 @@ use crate::mcp::codec::McpCodec;
 use futures_util::StreamExt;
 use tokio_util::codec::FramedRead; // We need this for .next() on FramedRead
 
+/// Spawn a background task that reads Content-Length-framed JSON-RPC requests from `stream`
+/// and sends them as [`DownstreamEvent`]s on `tx`.
 pub fn spawn_downstream_reader(stream: tokio::io::Stdin, tx: mpsc::Sender<DownstreamEvent>) {
-    // Description: Executes the spawn_downstream_reader logic.
     tokio::spawn(async move {
         let mut framed = FramedRead::new(stream, McpCodec::new());
 
@@ -59,11 +68,12 @@ pub fn spawn_downstream_reader(stream: tokio::io::Stdin, tx: mpsc::Sender<Downst
     });
 }
 
+/// Spawn a background task that reads Content-Length-framed JSON-RPC responses from `stream`
+/// and sends them as [`UpstreamEvent::Response`]s on `tx`.
 pub fn spawn_upstream_reader<R>(stream: R, tx: mpsc::Sender<UpstreamEvent>)
 where
     R: AsyncRead + Unpin + Send + 'static,
 {
-    // Description: Executes the spawn_upstream_reader logic.
     tokio::spawn(async move {
         let mut framed = FramedRead::new(stream, McpCodec::new());
 
@@ -88,11 +98,12 @@ where
     });
 }
 
+/// Spawn a background task that drains `stream` (the upstream process's stderr) line by line
+/// and sends each line as an [`UpstreamEvent::Log`] on `tx`.
 pub fn spawn_upstream_stderr_drain<R>(stream: R, tx: mpsc::Sender<UpstreamEvent>)
 where
     R: AsyncRead + Unpin + Send + 'static,
 {
-    // Description: Executes the spawn_upstream_stderr_drain logic.
     tokio::spawn(async move {
         let mut reader = BufReader::new(stream);
         let mut line = String::new();

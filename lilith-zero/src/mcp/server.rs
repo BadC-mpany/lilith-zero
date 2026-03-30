@@ -28,6 +28,11 @@ use crate::mcp::pipeline::{self, DownstreamEvent, UpstreamEvent};
 use crate::mcp::process::ProcessSupervisor;
 use crate::protocol::negotiation::HandshakeManager;
 
+/// The main MCP security middleware.
+///
+/// Sits between the AI agent (downstream stdio) and the upstream MCP server (subprocess).
+/// Evaluates every request against the security policy before forwarding, and applies
+/// output transforms (spotlighting) to responses before returning them to the agent.
 pub struct McpMiddleware {
     upstream_cmd: String,
     upstream_args: Vec<String>,
@@ -41,13 +46,16 @@ pub struct McpMiddleware {
 }
 
 impl McpMiddleware {
+    /// Create a new [`McpMiddleware`].
+    ///
+    /// Initialises the crypto signer and security core.  The upstream process is not spawned
+    /// until the first `initialize` handshake is received.
     pub fn new(
         upstream_cmd: String,
         upstream_args: Vec<String>,
         config: Arc<Config>,
         audit_log_path: Option<std::path::PathBuf>,
     ) -> Result<Self> {
-        // Description: Executes the new logic.
         let signer =
             CryptoSigner::try_new().map_err(|e| anyhow::anyhow!("Crypto init failed: {}", e))?;
         let core = SecurityCore::new(config.clone(), signer, audit_log_path)
@@ -65,8 +73,8 @@ impl McpMiddleware {
         })
     }
 
+    /// Run the middleware event loop until the downstream agent disconnects or Ctrl-C is received.
     pub async fn run(&mut self) -> Result<()> {
-        // Description: Executes the run logic.
         eprintln!("{}{}", session::SESSION_ID_ENV_PREFIX, self.core.session_id);
 
         info!(
@@ -81,7 +89,7 @@ impl McpMiddleware {
 
         if let Some(ref path) = self.core.config.policies_yaml_path {
             match std::fs::read_to_string(path.as_path()) {
-                Ok(content) => match serde_yaml::from_str(&content) {
+                Ok(content) => match serde_yaml_ng::from_str(&content) {
                     Ok(p) => {
                         info!("Loaded policy from {}", path.display());
                         self.core.set_policy(p);
@@ -187,7 +195,6 @@ impl McpMiddleware {
         writer: &mut tokio::io::Stdout,
         tx_upstream_events: &mpsc::Sender<UpstreamEvent>,
     ) -> Result<()> {
-        // Description: Executes the handle_client_request logic.
         #[cfg(feature = "telemetry")]
         if let Some(params) = &req.params {
             let mut baggage = lilith_telemetry::baggage::current();
@@ -297,7 +304,6 @@ impl McpMiddleware {
         resp: JsonRpcResponse,
         writer: &mut tokio::io::Stdout,
     ) -> Result<()> {
-        // Description: Executes the handle_upstream_response logic.
         #[cfg(feature = "telemetry")]
         let _span =
             lilith_telemetry::telemetry_span!("mcp_response", lilith_telemetry::SpanKind::Server);
@@ -340,7 +346,6 @@ impl McpMiddleware {
     }
 
     async fn spawn_upstream(&mut self, tx_upstream: mpsc::Sender<UpstreamEvent>) -> Result<()> {
-        // Description: Executes the spawn_upstream logic.
         info!(
             "Spawning upstream: {} {:?}",
             self.upstream_cmd, self.upstream_args
@@ -368,7 +373,6 @@ impl McpMiddleware {
         &mut self,
         req: crate::engine_core::taint::Clean<&JsonRpcRequest>,
     ) -> Result<()> {
-        // Description: Executes the write_upstream logic.
         if let Some(stdin) = self.upstream_stdin.as_mut() {
             let mut codec = McpCodec::new();
             let mut dst = bytes::BytesMut::new();
@@ -387,7 +391,6 @@ impl McpMiddleware {
         code: i32,
         message: &str,
     ) -> Result<()> {
-        // Description: Executes the write_error logic.
         let response = JsonRpcResponse {
             jsonrpc: "2.0".to_string(),
             result: None,

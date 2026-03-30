@@ -18,12 +18,20 @@ struct Claims {
     iss: Option<String>,
 }
 
+/// Validate the JWT `aud` claim against the list of `expected_audiences`.
+///
+/// Returns `Ok(())` if the token is valid and contains at least one of the expected audiences.
+/// Returns an error if the token is missing, malformed, expired, or carries an unexpected audience.
+///
+/// # Errors
+/// - If `jwt_secret` is `None` and audiences are configured.
+/// - If the token cannot be decoded or its signature is invalid.
+/// - If the `aud` claim is absent or does not match any expected audience.
 pub fn validate_audience_claim(
     token: &str,
     expected_audiences: &[String],
     jwt_secret: Option<&str>,
 ) -> Result<()> {
-    // Description: Executes the validate_audience_claim logic.
     let secret = jwt_secret.ok_or_else(|| anyhow!("Authentication required (audiences set) but lilith-zero_JWT_SECRET is missing. Cannot validate token."))?;
 
     let decoding_key = DecodingKey::from_secret(secret.as_bytes());

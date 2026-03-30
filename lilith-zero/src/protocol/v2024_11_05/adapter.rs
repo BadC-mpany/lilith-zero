@@ -16,31 +16,29 @@ use crate::utils::security::SecurityEngine;
 use serde_json::Value;
 use tracing::debug;
 
+/// MCP protocol adapter for the `2024-11-05` specification revision.
 #[derive(Debug)]
 pub struct Mcp2024Adapter;
 
 impl Default for Mcp2024Adapter {
     fn default() -> Self {
-        // Description: Executes the default logic.
         Self::new()
     }
 }
 
 impl Mcp2024Adapter {
+    /// Create a new [`Mcp2024Adapter`].
     pub fn new() -> Self {
-        // Description: Executes the new logic.
         Self
     }
 }
 
 impl McpSessionHandler for Mcp2024Adapter {
     fn version(&self) -> &'static str {
-        // Description: Executes the version logic.
         "2024-11-05"
     }
 
     fn parse_request(&self, req: &JsonRpcRequest) -> SecurityEvent {
-        // Description: Executes the parse_request logic.
         match req.method.as_str() {
             "initialize" => {
                 let params = req.params.as_ref().cloned().unwrap_or(Value::Null);
@@ -118,7 +116,6 @@ impl McpSessionHandler for Mcp2024Adapter {
         decision: &SecurityDecision,
         mut response: JsonRpcResponse,
     ) -> JsonRpcResponse {
-        // Description: Executes the apply_decision logic.
         debug!("Applying decision to response (id: {:?})", response.id);
         match decision {
             SecurityDecision::AllowWithTransforms {
@@ -162,7 +159,6 @@ impl McpSessionHandler for Mcp2024Adapter {
     }
 
     fn extract_session_token(&self, req: &JsonRpcRequest) -> Option<String> {
-        // Description: Executes the extract_session_token logic.
         req.params
             .as_ref()
             .and_then(|p| p.get(session::SESSION_ID_PARAM))
@@ -171,7 +167,6 @@ impl McpSessionHandler for Mcp2024Adapter {
     }
 
     fn sanitize_for_upstream(&self, req: &mut JsonRpcRequest) {
-        // Description: Executes the sanitize_for_upstream logic.
         if let Some(params) = req.params.as_mut() {
             if let Some(obj) = params.as_object_mut() {
                 obj.remove(session::SESSION_ID_PARAM);

@@ -20,14 +20,19 @@ enum DecodeState {
     Body(usize),
 }
 
+/// LSP-style `Content-Length` framing codec for MCP stdio transport.
+///
+/// Implements [`tokio_util::codec::Decoder`] (emits `serde_json::Value`) and
+/// [`tokio_util::codec::Encoder`] for both [`JsonRpcRequest`] and [`JsonRpcResponse`].
+/// Enforces [`limits::MAX_MESSAGE_SIZE_BYTES`] to prevent DoS via oversized payloads.
 pub struct McpCodec {
     state: DecodeState,
 }
 
 impl McpCodec {
+    /// Create a new [`McpCodec`] in the initial state.
     #[must_use]
     pub fn new() -> Self {
-        // Description: Executes the new logic.
         Self {
             state: DecodeState::Head,
         }
@@ -36,7 +41,6 @@ impl McpCodec {
 
 impl Default for McpCodec {
     fn default() -> Self {
-        // Description: Executes the default logic.
         Self::new()
     }
 }
@@ -46,7 +50,6 @@ impl Decoder for McpCodec {
     type Error = anyhow::Error;
 
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>> {
-        // Description: Executes the decode logic.
         trace!("Decoder attempting to read from {} bytes buffer", src.len());
         loop {
             match self.state {
@@ -131,7 +134,6 @@ impl Decoder for McpCodec {
 impl<'a> Encoder<&'a JsonRpcRequest> for McpCodec {
     type Error = anyhow::Error;
     fn encode(&mut self, item: &'a JsonRpcRequest, dst: &mut BytesMut) -> Result<()> {
-        // Description: Executes the encode logic.
         let body = serde_json::to_vec(item)?;
         let header = format!("Content-Length: {}\r\n\r\n", body.len());
         dst.extend_from_slice(header.as_bytes());
@@ -143,7 +145,6 @@ impl<'a> Encoder<&'a JsonRpcRequest> for McpCodec {
 impl<'a> Encoder<&'a JsonRpcResponse> for McpCodec {
     type Error = anyhow::Error;
     fn encode(&mut self, item: &'a JsonRpcResponse, dst: &mut BytesMut) -> Result<()> {
-        // Description: Executes the encode logic.
         let body = serde_json::to_vec(item)?;
         let header = format!("Content-Length: {}\r\n\r\n", body.len());
         dst.extend_from_slice(header.as_bytes());

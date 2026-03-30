@@ -136,11 +136,11 @@ async fn test_lethal_trifecta_enforcement() {
     let token = core.session_id.clone();
 
     // 1. Access Private Data
-    core.evaluate(create_security_event("read_db", &token))
+    let _ = core.evaluate(create_security_event("read_db", &token))
         .await;
 
     // 2. Access Untrusted Source
-    core.evaluate(create_security_event("fetch_url", &token))
+    let _ = core.evaluate(create_security_event("fetch_url", &token))
         .await;
 
     // 3. Attempt Exfiltration (Should be BLOCKED)
@@ -163,9 +163,9 @@ async fn test_lethal_trifecta_disabled() {
     let token = core.session_id.clone();
 
     // 1. Trigger Trifecta Conditions
-    core.evaluate(create_security_event("read_db", &token))
+    let _ = core.evaluate(create_security_event("read_db", &token))
         .await;
-    core.evaluate(create_security_event("fetch_url", &token))
+    let _ = core.evaluate(create_security_event("fetch_url", &token))
         .await;
 
     // 2. Attempt Exfiltration (Should be ALLOWED)
@@ -194,7 +194,7 @@ async fn test_resource_trifecta_contribution() {
         uri: TaintedString::new("file:///private/data.txt".to_string()),
         session_token: Some(token.clone()),
     };
-    core.evaluate(res_event).await;
+    let _ = core.evaluate(res_event).await;
 
     // 2. Read Untrusted Resource
     let http_event = SecurityEvent::ResourceRequest {
@@ -202,7 +202,7 @@ async fn test_resource_trifecta_contribution() {
         uri: TaintedString::new("http://evil.com".to_string()),
         session_token: Some(token.clone()),
     };
-    core.evaluate(http_event).await;
+    let _ = core.evaluate(http_event).await;
 
     // 3. Exfiltrate (Blocked)
     let decision = core

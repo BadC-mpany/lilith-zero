@@ -10,11 +10,15 @@ use crate::engine_core::constants::spotlight;
 use rand::distr::Alphanumeric;
 use rand::Rng;
 
+/// Utility functions for output security transforms.
 pub struct SecurityEngine;
 
 impl SecurityEngine {
+    /// Wrap `content` in randomised spotlighting delimiters to prevent prompt-injection escapes.
+    ///
+    /// Each call generates a fresh 8-character random identifier, making the delimiters
+    /// unpredictable and resistant to pre-planned injection attacks.
     pub fn spotlight(content: &str) -> String {
-        // Description: Executes the spotlight logic.
         let id: String = rand::rng()
             .sample_iter(&Alphanumeric)
             .take(spotlight::RANDOM_ID_LENGTH)

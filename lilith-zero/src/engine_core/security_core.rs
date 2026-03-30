@@ -24,17 +24,24 @@ use anyhow::Result;
 
 use crate::engine_core::audit::AuditLogger;
 
+/// Per-session security state: holds the active policy, taint set, history, and crypto signer.
 pub struct SecurityCore {
+    /// Shared runtime configuration (security level, policy path, audience, etc.).
     pub config: Arc<Config>,
     signer: CryptoSigner,
     audit: AuditLogger,
+    /// HMAC-signed session identifier emitted to stderr on startup.
     pub session_id: String,
+    /// The currently loaded security policy; `None` means no policy (fail-closed by default).
     pub policy: Option<PolicyDefinition>,
     taints: HashSet<String>,
     history: Vec<HistoryEntry>,
 }
 
 impl SecurityCore {
+    /// Create a new [`SecurityCore`] for a fresh session.
+    ///
+    /// Generates a new HMAC session ID and optionally opens an append-only audit log file.
     pub fn new(
         config: Arc<Config>,
         signer: CryptoSigner,
@@ -62,6 +69,10 @@ impl SecurityCore {
         })
     }
 
+    /// Load a policy into the security core.
+    ///
+    /// If `protect_lethal_trifecta` is enabled in either the policy or the config, automatically
+    /// appends the EXFILTRATION blocking rule that implements lethal-trifecta protection.
     pub fn set_policy(&mut self, mut policy: PolicyDefinition) {
         // Description: Executes the set_policy logic.
         if policy.protect_lethal_trifecta || self.config.protect_lethal_trifecta {
@@ -84,11 +95,16 @@ impl SecurityCore {
         self.policy = Some(policy);
     }
 
+    /// Emit a signed audit log entry for the current session.
     pub fn log_audit(&self, event_type: &str, details: serde_json::Value) {
         // Description: Executes the log_audit logic.
         self.audit.log(&self.session_id, event_type, details);
     }
 
+    /// Evaluate a [`SecurityEvent`] against the loaded policy and session state.
+    ///
+    /// Returns the [`SecurityDecision`] that should be applied to the request/response.
+    /// Errors in policy evaluation produce `Deny` (fail-closed).
     #[must_use]
     pub async fn evaluate(&mut self, event: SecurityEvent) -> SecurityDecision {
         // Description: Executes the evaluate logic.

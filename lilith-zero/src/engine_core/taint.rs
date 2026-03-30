@@ -8,55 +8,70 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Metadata carried alongside a tainted value.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TaintMetadata {
+    /// Taint tags active on this value (e.g. `"ACCESS_PRIVATE"`, `"UNTRUSTED_SOURCE"`).
     pub tags: Vec<String>,
 }
 
+/// A value of type `T` annotated with taint metadata.
+///
+/// Forces explicit acknowledgement that the inner value originated from an untrusted source.
+/// Callers must call [`Tainted::into_inner`] to unwrap, which is a visible, auditable operation.
 #[derive(Debug, Clone)]
 pub struct Tainted<T> {
     inner: T,
     metadata: TaintMetadata,
 }
 
+/// A value of type `T` that has been marked as clean (safe for trust-boundary crossing).
+///
+/// Created only via [`Clean::new_unchecked`]; the name signals that the caller is responsible
+/// for ensuring the value is safe.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Clean<T> {
     inner: T,
 }
 
 impl<T> Tainted<T> {
+    /// Wrap `inner` in a `Tainted` value with the given taint `tags`.
     pub fn new(inner: T, tags: Vec<String>) -> Self {
-        // Description: Executes the new logic.
         Self {
             inner,
             metadata: TaintMetadata { tags },
         }
     }
 
+    /// Borrow the taint metadata without consuming the wrapper.
     pub fn metadata(&self) -> &TaintMetadata {
-        // Description: Executes the metadata logic.
         &self.metadata
     }
 
+    /// Consume the wrapper and return the raw inner value.
+    ///
+    /// Callers are responsible for ensuring this is safe at the call site.
     pub fn into_inner(self) -> T {
-        // Description: Executes the into_inner logic.
         self.inner
     }
 
+    /// Borrow the inner value without consuming the wrapper.
     pub fn inner(&self) -> &T {
-        // Description: Executes the inner logic.
         &self.inner
     }
 }
 
 impl<T> Clean<T> {
+    /// Wrap `inner` in a `Clean` marker without performing any sanitisation.
+    ///
+    /// # Safety (logical)
+    /// The caller asserts that `inner` is safe to cross the trust boundary.
     pub fn new_unchecked(inner: T) -> Self {
-        // Description: Executes the new_unchecked logic.
         Self { inner }
     }
 
+    /// Consume the wrapper and return the raw inner value.
     pub fn into_inner(self) -> T {
-        // Description: Executes the into_inner logic.
         self.inner
     }
 }
@@ -64,7 +79,6 @@ impl<T> Clean<T> {
 impl<T> std::ops::Deref for Clean<T> {
     type Target = T;
     fn deref(&self) -> &Self::Target {
-        // Description: Executes the deref logic.
         &self.inner
     }
 }

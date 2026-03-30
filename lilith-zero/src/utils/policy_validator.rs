@@ -11,11 +11,12 @@ use crate::engine_core::models::{LogicCondition, PolicyDefinition, PolicyRule, R
 
 use std::collections::HashSet;
 
+/// Validates [`PolicyDefinition`] structures for structural correctness before use.
 pub struct PolicyValidator;
 
 impl PolicyValidator {
+    /// Validate a slice of [`PolicyDefinition`]s, returning the first error encountered.
     pub fn validate_policies(policies: &[PolicyDefinition]) -> Result<(), InterceptorError> {
-        // Description: Executes the validate_policies logic.
         for policy in policies {
             Self::validate_policy(policy)?;
         }
@@ -23,7 +24,6 @@ impl PolicyValidator {
     }
 
     fn validate_policy(policy: &PolicyDefinition) -> Result<(), InterceptorError> {
-        // Description: Executes the validate_policy logic.
         if policy.name.is_empty() {
             return Err(InterceptorError::ConfigurationError(
                 "Policy name cannot be empty".to_string(),
@@ -43,7 +43,6 @@ impl PolicyValidator {
         static_rules: &std::collections::HashMap<String, String>,
         policy_name: &str,
     ) -> Result<(), InterceptorError> {
-        // Description: Executes the validate_static_rules logic.
         for (tool_name, permission) in static_rules {
             if tool_name.is_empty() {
                 return Err(InterceptorError::ConfigurationError(format!(
@@ -72,7 +71,6 @@ impl PolicyValidator {
         policy_name: &str,
         rule_idx: usize,
     ) -> Result<(), InterceptorError> {
-        // Description: Executes the validate_rule logic.
         let rule_context = format!("Policy '{}', rule #{}", policy_name, rule_idx + 1);
 
         match (&rule.tool, &rule.tool_class) {
@@ -117,7 +115,6 @@ impl PolicyValidator {
     }
 
     fn validate_action(action: &str, context: &str) -> Result<(), InterceptorError> {
-        // Description: Executes the validate_action logic.
         const VALID_ACTIONS: &[&str] = &[
             "ADD_TAINT",
             "CHECK_TAINT",
@@ -143,7 +140,6 @@ impl PolicyValidator {
         rule: &PolicyRule,
         context: &str,
     ) -> Result<(), InterceptorError> {
-        // Description: Executes the validate_action_requirements logic.
         match rule.action.as_str() {
             "CHECK_TAINT" => {
                 let has_forbidden = rule
@@ -181,7 +177,6 @@ impl PolicyValidator {
         condition: &LogicCondition,
         _context: &str,
     ) -> Result<(), InterceptorError> {
-        // Description: Executes the validate_condition logic.
         match condition {
             LogicCondition::And(rules) | LogicCondition::Or(rules) => {
                 for rule in rules {
@@ -206,7 +201,6 @@ impl PolicyValidator {
         rule: &PolicyRule,
         context: &str,
     ) -> Result<(), InterceptorError> {
-        // Description: Executes the validate_exceptions logic.
         for (idx, exception) in exceptions.iter().enumerate() {
             let exc_context = format!("{}, exception #{}", context, idx + 1);
 
@@ -236,7 +230,6 @@ impl PolicyValidator {
     }
 
     fn condition_contains_tool_args_match(condition: &LogicCondition) -> bool {
-        // Description: Executes the condition_contains_tool_args_match logic.
         match condition {
             LogicCondition::And(rules) | LogicCondition::Or(rules) => {
                 rules.iter().any(Self::condition_contains_tool_args_match)
@@ -247,11 +240,12 @@ impl PolicyValidator {
         }
     }
 
+    /// Cross-validate that all `tool_class` values referenced in `policies` exist in
+    /// `known_classes`, returning the first error if any unknown class is found.
     pub fn validate_tool_classes(
         policies: &[PolicyDefinition],
         known_classes: &HashSet<String>,
     ) -> Result<(), InterceptorError> {
-        // Description: Executes the validate_tool_classes logic.
         for policy in policies {
             for (idx, rule) in policy.taint_rules.iter().enumerate() {
                 if let Some(ref class) = rule.tool_class {
@@ -280,7 +274,6 @@ mod tests {
 
     #[test]
     fn test_valid_policy() {
-        // Description: Executes the test_valid_policy logic.
         let mut static_rules = HashMap::new();
         static_rules.insert("read_file".to_string(), "ALLOW".to_string());
 
@@ -311,7 +304,6 @@ mod tests {
 
     #[test]
     fn test_rule_needs_tool_or_class() {
-        // Description: Executes the test_rule_needs_tool_or_class logic.
         let policy = PolicyDefinition {
             id: "test-policy".to_string(),
             customer_id: "test-customer".to_string(),
@@ -344,7 +336,6 @@ mod tests {
 
     #[test]
     fn test_check_taint_requires_forbidden_tags() {
-        // Description: Executes the test_check_taint_requires_forbidden_tags logic.
         let policy = PolicyDefinition {
             id: "test-policy".to_string(),
             customer_id: "test-customer".to_string(),
@@ -375,7 +366,6 @@ mod tests {
 
     #[test]
     fn test_tool_args_match_not_allowed_in_class_rules() {
-        // Description: Executes the test_tool_args_match_not_allowed_in_class_rules logic.
         use crate::engine_core::models::RuleException;
 
         let policy = PolicyDefinition {
@@ -415,7 +405,6 @@ mod tests {
 
     #[test]
     fn test_tool_args_match_allowed_in_tool_rules() {
-        // Description: Executes the test_tool_args_match_allowed_in_tool_rules logic.
         use crate::engine_core::models::RuleException;
 
         let policy = PolicyDefinition {

@@ -11,10 +11,14 @@ use crate::engine_core::models::{HistoryEntry, LogicCondition, LogicValue};
 use serde_json::Value; // Needed for resolving runtime arguments
 use std::collections::HashSet;
 
+/// Evaluates [`LogicCondition`] expressions against tool arguments and session context.
 pub struct PatternMatcher;
 
 impl PatternMatcher {
-    #[must_use]
+    /// Evaluate `pattern` against the current tool call context asynchronously.
+    ///
+    /// This is the primary entry point for pattern evaluation; it delegates to
+    /// [`PatternMatcher::evaluate_condition_with_args`] with an initial recursion depth of 0.
     pub async fn evaluate_pattern_with_args(
         pattern: &LogicCondition,
         history: &[HistoryEntry],
@@ -23,7 +27,6 @@ impl PatternMatcher {
         current_taints: &HashSet<String>,
         args: &Value,
     ) -> Result<bool, InterceptorError> {
-        // Description: Executes the evaluate_pattern_with_args logic.
         Self::evaluate_condition_with_args(
             pattern,
             history,
@@ -35,7 +38,10 @@ impl PatternMatcher {
         )
     }
 
-    #[must_use]
+    /// Recursively evaluate a [`LogicCondition`] against the provided context.
+    ///
+    /// Returns an error if the recursion depth exceeds 50, preventing stack exhaustion
+    /// on maliciously crafted policies.
     pub fn evaluate_condition_with_args(
         condition: &LogicCondition,
         _history: &[HistoryEntry],
@@ -45,7 +51,6 @@ impl PatternMatcher {
         args: &Value,
         depth: usize,
     ) -> Result<bool, InterceptorError> {
-        // Description: Executes the evaluate_condition_with_args logic.
         if depth > 50 {
             return Err(InterceptorError::PolicyViolation(
                 "Recursion depth limit exceeded".to_string(),
@@ -126,7 +131,6 @@ impl PatternMatcher {
     }
 
     fn loose_eq(lhs: &Value, rhs: &Value) -> bool {
-        // Description: Executes the loose_eq logic.
         if lhs == rhs {
             return true;
         }
@@ -139,7 +143,6 @@ impl PatternMatcher {
     }
 
     fn evaluate_tool_args_match(spec: &Value, args: &Value) -> Result<bool, InterceptorError> {
-        // Description: Executes the evaluate_tool_args_match logic.
         let spec_map = spec.as_object().ok_or_else(|| {
             InterceptorError::PolicyViolation("tool_args_match spec must be an object".to_string())
         })?;
@@ -158,7 +161,6 @@ impl PatternMatcher {
     }
 
     fn values_match(pattern: &Value, arg: &Value) -> bool {
-        // Description: Executes the values_match logic.
         match (pattern, arg) {
             (Value::String(p), Value::String(a)) => Self::wildcard_match(p, a),
             (Value::Number(p), Value::Number(a)) => p == a,
@@ -168,7 +170,10 @@ impl PatternMatcher {
         }
     }
 
-    #[must_use]
+    /// Test whether `text` matches `pattern`, where `*` is a multi-character wildcard.
+    ///
+    /// Examples: `"foo*"` matches `"foobar"`, `"*bar"` matches `"foobar"`,
+    /// `"foo*bar"` matches `"fooXbar"`, `"exact"` matches only `"exact"`.
     pub(crate) fn wildcard_match(pattern: &str, text: &str) -> bool {
         let mut parts = pattern.split('*');
 
@@ -233,7 +238,6 @@ impl PatternMatcher {
         operands: &[LogicValue],
         context_args: &Value,
     ) -> Result<(Value, Value), InterceptorError> {
-        // Description: Executes the resolve_binary logic.
         if operands.len() < 2 {
             return Ok((Value::Null, Value::Null));
         }
@@ -243,7 +247,6 @@ impl PatternMatcher {
     }
 
     fn resolve_value(val: &LogicValue, context_args: &Value) -> Result<Value, InterceptorError> {
-        // Description: Executes the resolve_value logic.
         match val {
             LogicValue::Var { var } => Ok(context_args.get(var).cloned().unwrap_or(Value::Null)),
             LogicValue::Str(s) => Ok(Value::String(s.clone())),
@@ -265,7 +268,6 @@ impl PatternMatcher {
     where
         F: Fn(f64, f64) -> bool,
     {
-        // Description: Executes the compare_num logic.
         match (lhs, rhs) {
             (Value::Number(a), Value::Number(b)) => {
                 if let (Some(fa), Some(fb)) = (a.as_f64(), b.as_f64()) {
@@ -286,7 +288,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_pattern_eval_typed() {
-        // Description: Executes the test_pattern_eval_typed logic.
         let args = json!({ "user_id": 123, "safe": true });
 
         let cond1 = LogicCondition::Eq(vec![
@@ -335,19 +336,16 @@ mod proptests {
     proptest! {
         #[test]
         fn test_wildcard_match_properties(pattern in "\\PC*", text in "\\PC*") {
-            // Description: Executes the test_wildcard_match_properties logic.
             let _ = PatternMatcher::wildcard_match(&pattern, &text);
         }
 
         #[test]
         fn test_wildcard_match_identity(text in "\\PC*") {
-            // Description: Executes the test_wildcard_match_identity logic.
             assert!(PatternMatcher::wildcard_match(&text, &text));
         }
 
         #[test]
         fn test_wildcard_match_star(text in "\\PC*") {
-            // Description: Executes the test_wildcard_match_star logic.
             assert!(PatternMatcher::wildcard_match("*", &text));
         }
     }
@@ -355,7 +353,6 @@ mod proptests {
     use proptest::strategy::{BoxedStrategy, Strategy};
 
     fn arb_logic_value() -> BoxedStrategy<LogicValue> {
-        // Description: Executes the arb_logic_value logic.
         prop_oneof![
             Just(LogicValue::Null),
             any::<bool>().prop_map(LogicValue::Bool),
@@ -367,7 +364,6 @@ mod proptests {
     }
 
     fn arb_logic_condition() -> impl Strategy<Value = LogicCondition> {
-        // Description: Executes the arb_logic_condition logic.
         let val = arb_logic_value();
 
         let leaf = prop_oneof![
@@ -399,7 +395,6 @@ mod proptests {
             cond in arb_logic_condition(),
             // We need a runtime to block on async
         ) {
-            // Description: Executes the test_pattern_eval_fuzz logic.
             let rt = tokio::runtime::Runtime::new().unwrap();
             rt.block_on(async {
                 let args = serde_json::json!({});

@@ -21,22 +21,29 @@ struct AuditEntry<'a> {
     details: serde_json::Value,
 }
 
+/// HMAC-signed audit logger.
+///
+/// Each log entry is serialised to JSON, signed with the session HMAC key, and emitted to
+/// both stderr and (optionally) an append-only file. The signature enables offline
+/// tamper-detection of audit trails.
 pub struct AuditLogger {
     signer: CryptoSigner,
     file_writer: Option<Arc<Mutex<File>>>,
 }
 
 impl AuditLogger {
+    /// Create a new [`AuditLogger`].
+    ///
+    /// `file_writer` is an optional append-only file handle; `None` disables file logging.
     pub fn new(signer: CryptoSigner, file_writer: Option<Arc<Mutex<File>>>) -> Self {
-        // Description: Executes the new logic.
         Self {
             signer,
             file_writer,
         }
     }
 
+    /// Emit a signed audit log entry for `session_id` with the given `event_type` and `details`.
     pub fn log(&self, session_id: &str, event_type: &str, details: serde_json::Value) {
-        // Description: Executes the log logic.
         let timestamp = crate::utils::time::now();
         let entry = AuditEntry {
             session_id,
