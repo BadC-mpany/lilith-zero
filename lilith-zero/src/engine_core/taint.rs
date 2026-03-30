@@ -18,7 +18,8 @@ pub struct TaintMetadata {
 /// A value of type `T` annotated with taint metadata.
 ///
 /// Forces explicit acknowledgement that the inner value originated from an untrusted source.
-/// Callers must call [`Tainted::into_inner`] to unwrap, which is a visible, auditable operation.
+/// Callers must call [`Tainted::into_inner_unchecked`] to unwrap, which is a visible, auditable
+/// operation that signals intentional trust-boundary crossing.
 #[derive(Debug, Clone)]
 pub struct Tainted<T> {
     inner: T,
@@ -48,10 +49,11 @@ impl<T> Tainted<T> {
         &self.metadata
     }
 
-    /// Consume the wrapper and return the raw inner value.
+    /// Consume the wrapper and return the raw inner value, crossing the trust boundary.
     ///
-    /// Callers are responsible for ensuring this is safe at the call site.
-    pub fn into_inner(self) -> T {
+    /// The `_unchecked` suffix signals that the caller is explicitly asserting the value
+    /// is safe to use in a trusted context; this is an auditable escape hatch.
+    pub fn into_inner_unchecked(self) -> T {
         self.inner
     }
 

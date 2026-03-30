@@ -8,9 +8,8 @@
 
 use serde_json::json;
 use std::collections::HashSet;
-use std::fs::OpenOptions;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use tracing::{info, warn};
 
 use crate::config::Config;
@@ -47,17 +46,8 @@ impl SecurityCore {
         signer: CryptoSigner,
         audit_log_path: Option<PathBuf>,
     ) -> Result<Self, crate::engine_core::errors::InterceptorError> {
-        // Description: Executes the new logic.
         let session_id = signer.generate_session_id()?;
-
-        let file_writer = if let Some(path) = audit_log_path {
-            let file = OpenOptions::new().create(true).append(true).open(&path)?;
-            Some(Arc::new(Mutex::new(file)))
-        } else {
-            None
-        };
-
-        let audit = AuditLogger::new(signer.clone(), file_writer);
+        let audit = AuditLogger::new(signer.clone(), audit_log_path)?;
         Ok(Self {
             config,
             signer,
@@ -189,7 +179,7 @@ impl SecurityCore {
                     }
                 }
 
-                let tool_name_str = tool_name.into_inner();
+                let tool_name_str = tool_name.into_inner_unchecked();
                 let classes = self.classify_tool(&tool_name_str);
 
                 #[cfg(feature = "telemetry")]
@@ -293,7 +283,7 @@ impl SecurityCore {
 
                 if let Some(policy) = &self.policy {
                     for rule in &policy.resource_rules {
-                        if self.match_resource_pattern(&uri.clone().into_inner(), &rule.uri_pattern)
+                        if self.match_resource_pattern(&uri.clone().into_inner_unchecked(), &rule.uri_pattern)
                         {
                             if rule.action == "BLOCK" {
                                 return SecurityDecision::Deny {
@@ -328,7 +318,7 @@ impl SecurityCore {
                         error_code: jsonrpc::ERROR_SECURITY_BLOCK,
                         reason: format!(
                             "Access to resource denied (Default Deny): {}",
-                            uri.into_inner()
+                            uri.into_inner_unchecked()
                         ),
                     };
                 }
@@ -349,13 +339,17 @@ impl SecurityCore {
     }
 
     fn classify_tool(&self, name: &str) -> Vec<String> {
-        // Description: Executes the classify_tool logic.
         if name.starts_with("read_") || name.starts_with("get_") {
             vec!["READ".to_string()]
         } else if name.starts_with("write_") || name.starts_with("delete_") {
             vec!["WRITE".to_string()]
         } else if matches!(name, "curl" | "wget" | "fetch" | "requests" | "http") {
-            vec!["EXFILTRATION".to_string(), "NETWORK".to_string()]
+            warn!(
+                tool = %name,
+                "Tool looks like a network egress tool; add an explicit EXFILTRATION \
+                 policy rule rather than relying on heuristic classification"
+            );
+            vec!["NETWORK".to_string()]
         } else {
             vec![]
         }
@@ -403,9 +397,14 @@ impl SecurityCore {
                         }
                     }),
                 );
-                SecurityDecision::Deny {
-                    error_code: jsonrpc::ERROR_SECURITY_BLOCK,
-                    reason,
+                if self.config.security_level_config().block_on_violation {
+                    SecurityDecision::Deny {
+                        error_code: jsonrpc::ERROR_SECURITY_BLOCK,
+                        reason,
+                    }
+                } else {
+                    warn!(tool = %tool_name, %reason, "Policy violation in AuditOnly mode — allowing");
+                    SecurityDecision::Allow
                 }
             }
             Decision::AllowedWithSideEffects {

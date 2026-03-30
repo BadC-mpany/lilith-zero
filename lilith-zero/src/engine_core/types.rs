@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// The type system prevents accidental use of tainted strings as safe values;
 /// callers must either sanitise via [`TaintedString::sanitize_unchecked`] or
-/// extract the raw value via [`TaintedString::into_inner`] after explicit review.
+/// extract the raw value via [`TaintedString::into_inner_unchecked`] after explicit review.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct TaintedString(String);
 
@@ -39,8 +39,10 @@ impl TaintedString {
         SafeString(self.0)
     }
 
-    /// Consume the tainted string and return the raw inner value.
-    pub fn into_inner(self) -> String {
+    /// Consume the tainted string and return the raw inner value, crossing the trust boundary.
+    ///
+    /// The `_unchecked` suffix signals intentional trust-boundary crossing.
+    pub fn into_inner_unchecked(self) -> String {
         self.0
     }
 }

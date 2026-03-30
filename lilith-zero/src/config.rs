@@ -43,6 +43,11 @@ pub struct SecurityConfig {
     pub session_validation: bool,
     /// Whether tool-response content should be wrapped in spotlighting delimiters.
     pub spotlighting: bool,
+    /// Whether policy violations should result in a hard `Deny`.
+    ///
+    /// `false` in [`SecurityLevel::AuditOnly`] (log and allow); `true` in
+    /// [`SecurityLevel::BlockParams`] (deny, fail-closed).
+    pub block_on_violation: bool,
 }
 
 /// Top-level runtime configuration for the middleware.
@@ -114,10 +119,12 @@ impl Config {
             SecurityLevel::AuditOnly => SecurityConfig {
                 session_validation: true,
                 spotlighting: false,
+                block_on_violation: false,
             },
             SecurityLevel::BlockParams => SecurityConfig {
                 session_validation: true,
                 spotlighting: true,
+                block_on_violation: true,
             },
         }
     }

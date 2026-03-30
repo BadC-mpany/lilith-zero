@@ -8,9 +8,9 @@
 
 use crate::engine_core::crypto::CryptoSigner;
 use serde::Serialize;
-use std::fs::File;
 use std::io::Write;
-use std::sync::{Arc, Mutex};
+use std::path::PathBuf;
+use std::sync::mpsc::SyncSender;
 use tracing::{error, info};
 
 #[derive(Serialize)]
@@ -24,22 +24,44 @@ struct AuditEntry<'a> {
 /// HMAC-signed audit logger.
 ///
 /// Each log entry is serialised to JSON, signed with the session HMAC key, and emitted to
-/// both stderr and (optionally) an append-only file. The signature enables offline
-/// tamper-detection of audit trails.
+/// both stderr and (optionally) an append-only file via a non-blocking mpsc channel.
+/// The signature enables offline tamper-detection of audit trails.
 pub struct AuditLogger {
     signer: CryptoSigner,
-    file_writer: Option<Arc<Mutex<File>>>,
+    /// Non-blocking sender for file-write offload. `None` when file logging is disabled.
+    tx: Option<SyncSender<String>>,
 }
 
 impl AuditLogger {
     /// Create a new [`AuditLogger`].
     ///
-    /// `file_writer` is an optional append-only file handle; `None` disables file logging.
-    pub fn new(signer: CryptoSigner, file_writer: Option<Arc<Mutex<File>>>) -> Self {
-        Self {
-            signer,
-            file_writer,
-        }
+    /// If `audit_log_path` is `Some`, opens the file for appending and spawns a background
+    /// thread that drains the channel and writes to it; file I/O never blocks the caller.
+    ///
+    /// # Errors
+    /// Returns an error if `audit_log_path` is `Some` but the file cannot be opened.
+    pub fn new(
+        signer: CryptoSigner,
+        audit_log_path: Option<PathBuf>,
+    ) -> Result<Self, std::io::Error> {
+        let tx = if let Some(path) = audit_log_path {
+            let mut file = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&path)?;
+            let (tx, rx) = std::sync::mpsc::sync_channel::<String>(256);
+            std::thread::spawn(move || {
+                for line in rx {
+                    if let Err(e) = writeln!(file, "{}", line) {
+                        eprintln!("[AUDIT] File write error: {e}");
+                    }
+                }
+            });
+            Some(tx)
+        } else {
+            None
+        };
+        Ok(Self { signer, tx })
     }
 
     /// Emit a signed audit log entry for `session_id` with the given `event_type` and `details`.
@@ -49,26 +71,22 @@ impl AuditLogger {
             session_id,
             timestamp,
             event_type,
-            details: details.clone(),
+            details,
         };
 
         let payload_str = serde_json::to_string(&entry).unwrap_or_default();
-
         let signature = self.signer.sign(payload_str.as_bytes());
 
         eprintln!("[AUDIT] {} {}", signature, payload_str);
 
-        if let Some(writer) = &self.file_writer {
-            if let Ok(mut file) = writer.lock() {
-                let log_entry = serde_json::json!({
-                    "signature": signature,
-                    "payload": entry
-                });
-                if let Err(e) = writeln!(file, "{}", log_entry) {
-                    error!("Failed to write to audit log file: {}", e);
-                }
-            } else {
-                error!("Failed to acquire audit log file lock");
+        if let Some(tx) = &self.tx {
+            let log_line = serde_json::json!({
+                "signature": signature,
+                "payload": payload_str,
+            })
+            .to_string();
+            if tx.try_send(log_line).is_err() {
+                error!("Audit log channel full or disconnected — entry dropped");
             }
         }
 
