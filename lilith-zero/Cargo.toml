@@ -32,6 +32,7 @@ hmac = "0.12"
 rand = "0.9"
 base64 = "0.22"
 jsonwebtoken = "10.3"
+schemars = { version = "0.8", optional = true }
 tokio-util = { version = "0.7", features = ["codec"] }
 bytes = "1.11.1"
 futures = { version = "0.3", features = ["std"] }
@@ -44,6 +45,7 @@ lilith-telemetry = { git = "https://github.com/BadC-mpany/lilith-telemetry.git",
 [features]
 default = []
 telemetry = ["dep:lilith-telemetry"]
+schema = ["dep:schemars"]
 
 [target.'cfg(windows)'.dependencies]
 win32job = "2.0"

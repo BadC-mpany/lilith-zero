@@ -6,9 +6,16 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use std::str::FromStr;
 use uuid::Uuid;
+
+/// Deserialise an `action` string and normalise to ASCII uppercase.
+///
+/// Allows policy YAML to use `allow`, `ALLOW`, or `Allow` interchangeably.
+fn deserialize_action<'de, D: Deserializer<'de>>(d: D) -> Result<String, D::Error> {
+    String::deserialize(d).map(|s| s.to_ascii_uppercase())
+}
 
 /// A strongly-typed, UUID-backed session identifier.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -105,6 +112,7 @@ pub enum Decision {
 
 /// A boolean condition expression used in policy patterns and rule exceptions.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[non_exhaustive]
 pub enum LogicCondition {
@@ -139,6 +147,7 @@ pub enum LogicCondition {
 
 /// A value operand in a [`LogicCondition`] expression.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(untagged)]
 #[non_exhaustive]
 pub enum LogicValue {
@@ -163,6 +172,7 @@ pub enum LogicValue {
 
 /// A conditional exception to a taint or block rule.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct RuleException {
     /// The condition that, when true, causes the parent rule to be skipped.
     #[serde(rename = "when")]
@@ -174,25 +184,28 @@ pub struct RuleException {
 
 /// A single taint or block rule within a [`PolicyDefinition`].
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct PolicyRule {
     /// Exact tool name this rule applies to (mutually exclusive with `tool_class`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool: Option<String>,
     /// Tool class this rule applies to (mutually exclusive with `tool`).
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(alias = "tool_class", skip_serializing_if = "Option::is_none")]
     pub tool_class: Option<String>,
     /// Action to take: `ALLOW`, `BLOCK`, `ADD_TAINT`, `CHECK_TAINT`, or `REMOVE_TAINT`.
+    ///
+    /// Case-insensitive: `allow`, `ALLOW`, and `Allow` are all accepted and normalised to uppercase.
+    #[serde(deserialize_with = "deserialize_action")]
     pub action: String,
     /// Taint tag to add or remove (required for `ADD_TAINT` / `REMOVE_TAINT`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tag: Option<String>,
     /// Taint tags that, if any are present, cause a `CHECK_TAINT` rule to block.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(alias = "forbidden_tags", skip_serializing_if = "Option::is_none")]
     pub forbidden_tags: Option<Vec<String>>,
     /// Taint tags that, if ALL are present simultaneously, cause a `CHECK_TAINT` rule to block.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(alias = "required_taints")]
+    #[serde(alias = "required_taints", skip_serializing_if = "Option::is_none")]
     pub required_taints: Option<Vec<String>>,
     /// Custom error message returned to the agent when this rule fires.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -207,14 +220,22 @@ pub struct PolicyRule {
 
 /// A complete security policy, including static allow/deny rules, taint rules, and resource rules.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct PolicyDefinition {
     /// Unique identifier for this policy.
     pub id: String,
     /// Customer or tenant this policy belongs to.
+    #[serde(alias = "customer_id")]
     pub customer_id: String,
     /// Human-readable name for this policy.
     pub name: String,
+    /// Optional human-readable description of what this policy enforces.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    /// Policy file format version for schema evolution (`1` = initial release).
+    #[serde(alias = "schema_version", default, skip_serializing_if = "Option::is_none")]
+    pub schema_version: Option<u32>,
     /// Schema version number; increment on breaking changes.
     pub version: u32,
     /// Static per-tool rules mapping tool name → `"ALLOW"` or `"DENY"`.
@@ -236,11 +257,14 @@ pub struct PolicyDefinition {
 
 /// A rule governing access to MCP resources identified by URI.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct ResourceRule {
     /// Glob-style URI pattern (e.g. `"file:///tmp/*"`).
+    #[serde(alias = "uri_pattern")]
     pub uri_pattern: String,
-    /// Action to take: `"ALLOW"` or `"BLOCK"`.
+    /// Action to take: `"ALLOW"` or `"BLOCK"` (case-insensitive).
+    #[serde(deserialize_with = "deserialize_action")]
     pub action: String,
     /// Conditions under which this rule is skipped.
     #[serde(skip_serializing_if = "Option::is_none")]

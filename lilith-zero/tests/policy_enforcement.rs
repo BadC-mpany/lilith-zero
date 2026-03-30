@@ -64,6 +64,8 @@ fn create_test_policy(protect_trifecta: bool) -> PolicyDefinition {
         id: "test-policy".to_string(),
         customer_id: "test-customer".to_string(),
         name: "Test Policy".to_string(),
+        description: None,
+        schema_version: None,
         version: 1,
         static_rules,
         taint_rules,
