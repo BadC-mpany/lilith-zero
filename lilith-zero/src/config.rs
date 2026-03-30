@@ -11,6 +11,25 @@ use serde::{Deserialize, Serialize};
 use std::env;
 use std::path::PathBuf;
 
+/// Controls how tool-description pin violations are handled.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PinMode {
+    /// Log pin violations and allow the `tools/list` response through.
+    Audit,
+    /// Block the `tools/list` response and return a security error when a pin violation is detected.
+    Enforce,
+}
+
+impl PinMode {
+    /// Parse a string to a [`PinMode`], defaulting to [`PinMode::Audit`] on unrecognized input.
+    pub fn parse(s: &str) -> Self {
+        match s.to_lowercase().as_str() {
+            "enforce" | "block" => PinMode::Enforce,
+            _ => PinMode::Audit,
+        }
+    }
+}
+
 /// Controls the enforcement posture of the security middleware.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[non_exhaustive]
@@ -75,6 +94,10 @@ pub struct Config {
     pub jwt_secret: Option<String>,
     /// When `true`, auto-inject the lethal-trifecta EXFILTRATION blocking rule.
     pub protect_lethal_trifecta: bool,
+    /// Path to the tool-description pin file.  `None` = in-memory pins only (reset each session).
+    pub pin_file: Option<PathBuf>,
+    /// Whether pin violations should block the response or just be logged.
+    pub pin_mode: PinMode,
 }
 
 impl Config {
@@ -110,6 +133,13 @@ impl Config {
             protect_lethal_trifecta: env::var("LILITH_ZERO_FORCE_LETHAL_TRIFECTA")
                 .map(|v| v.to_lowercase() == "true" || v == "1")
                 .unwrap_or(false),
+            pin_file: env::var(crate::engine_core::constants::config::ENV_PIN_FILE)
+                .ok()
+                .map(PathBuf::from),
+            pin_mode: env::var(crate::engine_core::constants::config::ENV_PIN_MODE)
+                .as_deref()
+                .map(PinMode::parse)
+                .unwrap_or(PinMode::Audit),
         })
     }
 
@@ -142,6 +172,8 @@ impl Default for Config {
             mcp_version: "2024-11-05".to_string(),
             jwt_secret: None,
             protect_lethal_trifecta: false,
+            pin_file: None,
+            pin_mode: PinMode::Audit,
         }
     }
 }

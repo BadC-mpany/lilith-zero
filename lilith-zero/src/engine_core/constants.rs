@@ -78,6 +78,10 @@ pub mod config {
     pub const ENV_SECURITY_LEVEL: &str = "LILITH_ZERO_SECURITY_LEVEL";
     /// MCP protocol version to advertise.
     pub const ENV_MCP_VERSION: &str = "LILITH_ZERO_MCP_VERSION";
+    /// Path to the tool-description pin file.
+    pub const ENV_PIN_FILE: &str = "LILITH_ZERO_PIN_FILE";
+    /// Pin enforcement mode: `"audit"` (log only) or `"enforce"` (block on mismatch).
+    pub const ENV_PIN_MODE: &str = "LILITH_ZERO_PIN_MODE";
 }
 
 /// MCP JSON-RPC method name constants.

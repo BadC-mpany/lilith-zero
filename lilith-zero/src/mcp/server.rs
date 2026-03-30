@@ -24,6 +24,7 @@ use crate::engine_core::models::{JsonRpcError, JsonRpcRequest, JsonRpcResponse};
 use crate::engine_core::security_core::SecurityCore;
 use crate::engine_core::session::ActiveSession;
 use crate::engine_core::traits::McpSessionHandler;
+use crate::mcp::pin_store::PinStore;
 use crate::mcp::pipeline::{self, DownstreamEvent, UpstreamEvent};
 use crate::mcp::process::ProcessSupervisor;
 use crate::protocol::negotiation::HandshakeManager;
@@ -40,9 +41,11 @@ pub struct McpMiddleware {
     session: ActiveSession,
 
     upstream_stdin: Option<Box<dyn AsyncWrite + Unpin + Send>>,
-    pending_decisions: HashMap<String, SecurityDecision>, // Map Request ID (String) -> Decision
+    pending_decisions: HashMap<String, SecurityDecision>, // Request ID → Decision
+    pending_methods: HashMap<String, String>,             // Request ID → method name
 
     upstream_supervisor: Option<ProcessSupervisor>,
+    pin_store: PinStore,
 }
 
 impl McpMiddleware {
@@ -61,6 +64,8 @@ impl McpMiddleware {
         let core = SecurityCore::new(config.clone(), signer, audit_log_path)
             .map_err(|e| anyhow::anyhow!("Security Core init failed: {}", e))?;
         let session = HandshakeManager::negotiate(&config.mcp_version);
+        let pin_store = PinStore::new(config.pin_mode, config.pin_file.clone())
+            .map_err(|e| anyhow::anyhow!("Pin store init failed: {}", e))?;
 
         Ok(Self {
             upstream_cmd,
@@ -69,7 +74,9 @@ impl McpMiddleware {
             session,
             upstream_stdin: None,
             pending_decisions: HashMap::new(),
+            pending_methods: HashMap::new(),
             upstream_supervisor: None,
+            pin_store,
         })
     }
 
@@ -267,12 +274,14 @@ impl McpMiddleware {
                 }
 
                 if let Some(id) = &req.id {
-                    if let Some(id_str) = id.as_str() {
-                        self.pending_decisions
-                            .insert(id_str.to_string(), decision.clone());
-                    } else if let Some(id_num) = id.as_i64() {
-                        self.pending_decisions
-                            .insert(id_num.to_string(), decision.clone());
+                    let key = if let Some(id_str) = id.as_str() {
+                        Some(id_str.to_string())
+                    } else {
+                        id.as_i64().map(|n| n.to_string())
+                    };
+                    if let Some(key) = key {
+                        self.pending_decisions.insert(key.clone(), decision.clone());
+                        self.pending_methods.insert(key, req.method.clone());
                     }
                 }
 
@@ -316,6 +325,7 @@ impl McpMiddleware {
             resp.id.as_i64().map(|id_num| id_num.to_string())
         };
 
+        let mut pending_method: Option<String> = None;
         if let Some(key) = id_key {
             if let Some(d) = self.pending_decisions.remove(&key) {
                 decision = d;
@@ -325,6 +335,61 @@ impl McpMiddleware {
                     resp.id
                 );
                 return Ok(());
+            }
+            pending_method = self.pending_methods.remove(&key);
+        }
+
+        // Rug-pull protection: verify tool descriptions against stored pins on tools/list.
+        if pending_method.as_deref() == Some(crate::engine_core::constants::methods::TOOLS_LIST) {
+            if let Some(result) = &resp.result {
+                if let Some(tools_arr) = result.get("tools").and_then(|v| v.as_array()) {
+                    let pairs: Vec<(String, String)> = tools_arr
+                        .iter()
+                        .filter_map(|t| {
+                            let name = t.get("name")?.as_str()?.to_string();
+                            let desc = t
+                                .get("description")
+                                .and_then(|d| d.as_str())
+                                .unwrap_or("")
+                                .to_string();
+                            Some((name, desc))
+                        })
+                        .collect();
+
+                    let violations = self.pin_store.observe(&pairs);
+                    if !violations.is_empty() {
+                        let names: Vec<&str> =
+                            violations.iter().map(|v| v.tool_name.as_str()).collect();
+                        let msg = format!(
+                            "Tool description rug-pull detected for: {}",
+                            names.join(", ")
+                        );
+                        self.core.log_audit(
+                            "RUG_PULL_DETECTED",
+                            serde_json::json!({
+                                "tools": names,
+                                "action": if self.pin_store.mode == crate::config::PinMode::Enforce {
+                                    "BLOCK"
+                                } else {
+                                    "AUDIT"
+                                }
+                            }),
+                        );
+
+                        if self.pin_store.mode == crate::config::PinMode::Enforce {
+                            warn!("{}", msg);
+                            let _ = self
+                                .write_error(
+                                    writer,
+                                    resp.id.clone(),
+                                    crate::engine_core::constants::jsonrpc::ERROR_SECURITY_BLOCK,
+                                    &msg,
+                                )
+                                .await;
+                            return Ok(());
+                        }
+                    }
+                }
             }
         }
 

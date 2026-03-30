@@ -11,3 +11,5 @@ pub mod pipeline;
 pub mod server;
 /// macOS parent-death supervisor re-exec mode.
 pub mod supervisor;
+/// Tool-description pinning for rug-pull prevention.
+pub mod pin_store;
