@@ -1,0 +1,15 @@
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.06s
+     Running `target/debug/examples/server`
+--- Lilith Telemetry [FlockHead / Collector] ---
+Loaded 4 authorized node(s) from 'flock_keys.db'
+Data received from agents is stored locally by this process.
+(In production: written to the LSM-tree store on this machine's disk)
+
+Lilith-Telemetry [FlockHead]: Starting Collector on UDP 127.0.0.1:44317
+Lilith-Telemetry [FlockHead]: Ready. Waiting for agent traces...
+Lilith-Telemetry [FlockHead]: Authorized nodes: 4
+Collector online at UDP 127.0.0.1:44317. Press Ctrl+C to stop.
+
+[2026-03-17 11:46:20]  NODE: 0x189c5a0a5297f138  SESSION: 189d9b1dc218ab880000000000000001  TRACE: 189d9b1dc218ab880000000000000001  SPAN: 189d9b1dc218ab89  PARENT: 0000000000000000  LEVEL: SESSION_INIT KIND: Internal  MSG: SESSION_INIT
+[2026-03-17 11:49:39]  NODE: 0x189c5a0a5297f138  SESSION: 189d9b4c1be320480000000000000001  TRACE: 189d9b4c1be320480000000000000001  SPAN: 189d9b4c1be32049  PARENT: 0000000000000000  LEVEL: SESSION_INIT KIND: Internal  MSG: SESSION_INIT
+[2026-03-17 11:57:54]  NODE: 0x189c6633d1343e40  SESSION: 189d9bbf7298b6280000000000000001  TRACE: 189d9bbf7298b6280000000000000001  SPAN: 189d9bbf7298b629  PARENT: 0000000000000000  LEVEL: SESSION_INIT KIND: Internal  MSG: SESSION_INIT

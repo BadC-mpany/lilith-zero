@@ -168,6 +168,8 @@ if __name__ == "__main__":
 ```
 
 ### 5. Observability & Auditing
+
+**Audit Logs**
 Lilith Zero emits **cryptographically signed** audit logs to `stderr` (visible in agent logs).
 
 **Format**: `[AUDIT] <HMAC-SHA256 Signature> <JSON Payload>`
@@ -177,6 +179,9 @@ Lilith Zero emits **cryptographically signed** audit logs to `stderr` (visible i
 [AUDIT] 8f3...a1b {"session_id": "uuid", "event": "Decision", "decision": "DENY", "details": {...}}
 ```
 This ensures non-repudiation. Even if the log file is tampered with, the signature will fail verification against the session's ephemeral secret (or a configured shared secret).
+
+**Telemetry Grouping**
+Lilith Zero integrates directly with the `lilith-telemetry` system. When run with a Flock telemetry link (e.g., `--telemetry-link`), it enables cross-process span propagation. This allows all multi-tool interactions originating from a single LLM reasoning step to be accurately traced and grouped into unified, logical context spans within your dashboard.
 
 ### 6. Examples
 Full integration examples are available in the `examples/` directory:
