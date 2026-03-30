@@ -44,7 +44,7 @@ futures-util = "0.3"
 async-trait = "0.1"
 
 # Process Isolation
-lilith-telemetry = { git = "https://github.com/BadC-mpany/lilith-telemetry.git", rev = "5acf49ffce2119ccb8674a14ab7539f7f661fc42", optional = true }
+lilith-telemetry = { path = "../lilith-telemetry", optional = true }
 
 [features]
 default = []
