@@ -1,6 +1,6 @@
-use lilith_telemetry::{init, DeploymentMode, DISPATCHER, KeyRegistry};
-use std::sync::Arc;
+use lilith_telemetry::{DISPATCHER, DeploymentMode, KeyRegistry, init};
 use std::net::UdpSocket;
+use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
@@ -23,7 +23,10 @@ fn exhaustive_test_flock_head_mode() {
         registry,
     });
 
-    assert!(DISPATCHER.get().is_some(), "FlockHead Dispatcher must be initialized");
+    assert!(
+        DISPATCHER.get().is_some(),
+        "FlockHead Dispatcher must be initialized"
+    );
     thread::sleep(Duration::from_millis(50));
 
     // Simulate an agent sending UDP datagrams to the collector
@@ -31,7 +34,9 @@ fn exhaustive_test_flock_head_mode() {
     mock_agent.set_nonblocking(true).unwrap();
 
     let payload = b"MOCK_ENCRYPTED_TELEMETRY_DATAGRAM";
-    mock_agent.send_to(payload, &bind_address).expect("Failed to send test datagram");
+    mock_agent
+        .send_to(payload, &bind_address)
+        .expect("Failed to send test datagram");
 
     // Flood test: verify the collector doesn't deadlock or OOM under packet aggression
     for _ in 0..1000 {

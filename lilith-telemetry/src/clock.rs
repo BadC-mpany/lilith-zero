@@ -1,4 +1,3 @@
-
 //! Hardware Timestamps and Drift Recalibration
 
 use std::sync::atomic::{AtomicI64, Ordering};

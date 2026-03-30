@@ -1,5 +1,8 @@
-use lilith_telemetry::{init, DeploymentMode, FlockLink, telemetry_event, dispatcher::EventLevel, SpanKind, telemetry_span};
 use lilith_telemetry::crypto::KeyHandle;
+use lilith_telemetry::{
+    DeploymentMode, FlockLink, SpanKind, dispatcher::EventLevel, init, telemetry_event,
+    telemetry_span,
+};
 use std::io::{self, BufRead};
 use std::thread;
 
@@ -12,7 +15,7 @@ fn main() {
 
     let link_str = &args[1];
     println!("--- Lilith Telemetry Node (FlockMember) ---");
-    
+
     // 1. Parse the connection link
     let link = match FlockLink::parse(link_str) {
         Ok(l) => l,
@@ -51,7 +54,7 @@ fn main() {
 
             // 3. Simulate a multi-event Tool Trace
             let _span = telemetry_span!("agent_action", SpanKind::Client);
-            
+
             // Event 1: The Call
             telemetry_event!(
                 EventLevel::RoutineAllow,
@@ -63,7 +66,11 @@ fn main() {
             // Event 2: The Result
             telemetry_event!(
                 EventLevel::RoutineAllow,
-                format!("RESULT tool: {} -> [success: {}, items: 42]", tool_name, tool_args).as_bytes()
+                format!(
+                    "RESULT tool: {} -> [success: {}, items: 42]",
+                    tool_name, tool_args
+                )
+                .as_bytes()
             );
 
             println!("[Node] Executed tool trace: {}", tool_name);
@@ -73,13 +80,13 @@ fn main() {
         // Default: Manual standalone event
         {
             let _span = telemetry_span!("manual_trigger", SpanKind::Client);
-            
+
             telemetry_event!(
                 EventLevel::CriticalDeny,
                 input.as_bytes(),
                 ["triggered_by" => "user_shell"]
             );
-            
+
             println!("[Node] Dispatched event: '{}'", input);
         }
     }

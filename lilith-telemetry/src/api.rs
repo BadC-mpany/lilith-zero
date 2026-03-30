@@ -1,4 +1,3 @@
-
 //! Head Endpoint Unified Receiver / Authentication Substrate layer handling Flock interactions.
 //!
 //! Exposes API listeners (UDP stream ingestion) handling inbound spans directly into Central
@@ -83,10 +82,13 @@ impl KeyRegistry {
                         let mut secret = [0u8; 32];
                         secret.copy_from_slice(&secret_vec);
 
-                        data.insert(id, NodeEntry {
-                            secret,
-                            link: parts[2].to_string(),
-                        });
+                        data.insert(
+                            id,
+                            NodeEntry {
+                                secret,
+                                link: parts[2].to_string(),
+                            },
+                        );
                     }
                 }
             }
@@ -110,10 +112,13 @@ impl KeyRegistry {
         let link = FlockLink::new_from_addr(&self.collector_addr, handle.clone());
         let link_str = link.to_string();
 
-        self.entries.write().unwrap().insert(id, NodeEntry {
-            secret: new_secret,
-            link: link_str.clone(),
-        });
+        self.entries.write().unwrap().insert(
+            id,
+            NodeEntry {
+                secret: new_secret,
+                link: link_str.clone(),
+            },
+        );
 
         let _ = self.save();
         (handle, link_str)
@@ -138,12 +143,18 @@ impl KeyRegistry {
 /// Mimics Jaeger Collector: listens on UDP, validates node identity, ingests spans.
 pub fn spawn_ingester(bind_address: String, registry: Arc<KeyRegistry>) {
     thread::spawn(move || {
-        println!("Lilith-Telemetry [FlockHead]: Starting Collector on UDP {}", bind_address);
+        println!(
+            "Lilith-Telemetry [FlockHead]: Starting Collector on UDP {}",
+            bind_address
+        );
 
         let socket = match UdpSocket::bind(&bind_address) {
             Ok(sock) => sock,
             Err(e) => {
-                eprintln!("\nFATAL ERROR: Lilith-Telemetry [FlockHead] could not bind to UDP {}: {}", bind_address, e);
+                eprintln!(
+                    "\nFATAL ERROR: Lilith-Telemetry [FlockHead] could not bind to UDP {}: {}",
+                    bind_address, e
+                );
                 eprintln!("Is another collector already running? Try killing it first.");
                 std::process::exit(1);
             }
@@ -151,7 +162,10 @@ pub fn spawn_ingester(bind_address: String, registry: Arc<KeyRegistry>) {
 
         let mut buffer = [0u8; 65535];
         println!("Lilith-Telemetry [FlockHead]: Ready. Waiting for agent traces...");
-        println!("Lilith-Telemetry [FlockHead]: Authorized nodes: {}", registry.entries.read().unwrap().len());
+        println!(
+            "Lilith-Telemetry [FlockHead]: Authorized nodes: {}",
+            registry.entries.read().unwrap().len()
+        );
 
         // Open or create the telemetry log file
         let mut log_file = OpenOptions::new()
@@ -204,7 +218,10 @@ pub fn spawn_ingester(bind_address: String, registry: Arc<KeyRegistry>) {
                             }
                         }
                         None => {
-                            eprintln!("[FlockHead] Received malformed or too-small packet ({} bytes), discarding.", size);
+                            eprintln!(
+                                "[FlockHead] Received malformed or too-small packet ({} bytes), discarding.",
+                                size
+                            );
                         }
                     }
                 }

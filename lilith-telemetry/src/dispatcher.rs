@@ -1,14 +1,13 @@
-
 //! The Dispatcher (The Core)
 //!
 //! Stratified lock-free implementation utilizing a Ring Buffer layout, prioritizing
 //! Security Critical Deny executions on primary cacheline boundaries.
 
+use super::DeploymentMode;
 use super::baggage::Baggage;
 use super::exporter::EgressExporter;
 use super::sampling::should_sample;
 use super::storage::{BinaryEvent, LilithStore};
-use super::DeploymentMode;
 
 /// Denotes priority level associated directly through macros filtering.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -41,24 +40,24 @@ impl Dispatcher {
         }
 
         let event_level_byte = match level {
-            EventLevel::CriticalDeny  => 0u8,
-            EventLevel::RoutineAllow  => 1u8,
+            EventLevel::CriticalDeny => 0u8,
+            EventLevel::RoutineAllow => 1u8,
         };
 
         let event = BinaryEvent {
-            timestamp:       ts_rdtsc,
-            session_id_hi:   baggage.session_id.0,
-            session_id_lo:   baggage.session_id.1,
-            trace_id_hi:     baggage.trace_id.0,
-            trace_id_lo:     baggage.trace_id.1,
-            span_id:         baggage.span_id.0,
-            parent_span_id:  baggage.parent_span_id.map(|s| s.0).unwrap_or(0),
-            agent_id:        baggage.agent_id,
-            thread_id:       baggage.hardware_thread_id,
-            policy_id:       baggage.security_policy_id,
-            kind:            baggage.kind as u8,
-            event_level:     event_level_byte,
-            payload_len:     payload.len() as u16,
+            timestamp: ts_rdtsc,
+            session_id_hi: baggage.session_id.0,
+            session_id_lo: baggage.session_id.1,
+            trace_id_hi: baggage.trace_id.0,
+            trace_id_lo: baggage.trace_id.1,
+            span_id: baggage.span_id.0,
+            parent_span_id: baggage.parent_span_id.map(|s| s.0).unwrap_or(0),
+            agent_id: baggage.agent_id,
+            thread_id: baggage.hardware_thread_id,
+            policy_id: baggage.security_policy_id,
+            kind: baggage.kind as u8,
+            event_level: event_level_byte,
+            payload_len: payload.len() as u16,
         };
 
         // Pack into a flat byte slice (the canonical on-wire and on-disk format)
@@ -66,7 +65,11 @@ impl Dispatcher {
 
         match level {
             EventLevel::CriticalDeny => {
-                if self.store.try_push_critical(ts_rdtsc, baggage, &payload).is_err() {
+                if self
+                    .store
+                    .try_push_critical(ts_rdtsc, baggage, &payload)
+                    .is_err()
+                {
                     self.synchronous_emergency_flush();
                     let _ = self.store.try_push_critical(ts_rdtsc, baggage, &payload);
                 }
@@ -74,7 +77,11 @@ impl Dispatcher {
                 self.exporter.stream_payload(&packed);
             }
             EventLevel::RoutineAllow => {
-                if self.store.try_push_routine(ts_rdtsc, baggage, &payload).is_err() {
+                if self
+                    .store
+                    .try_push_routine(ts_rdtsc, baggage, &payload)
+                    .is_err()
+                {
                     self.exporter.emit_gap_marker();
                 } else {
                     self.exporter.stream_payload(&packed);
@@ -87,22 +94,23 @@ impl Dispatcher {
     /// This appears in the FlockHead's log as the very first entry for this node.
     pub fn dispatch_session_init(&self, ts_rdtsc: u64, baggage: Baggage, payload: Vec<u8>) {
         let event = BinaryEvent {
-            timestamp:      ts_rdtsc,
-            session_id_hi:  baggage.session_id.0,
-            session_id_lo:  baggage.session_id.1,
-            trace_id_hi:    baggage.trace_id.0,
-            trace_id_lo:    baggage.trace_id.1,
-            span_id:        baggage.span_id.0,
+            timestamp: ts_rdtsc,
+            session_id_hi: baggage.session_id.0,
+            session_id_lo: baggage.session_id.1,
+            trace_id_hi: baggage.trace_id.0,
+            trace_id_lo: baggage.trace_id.1,
+            span_id: baggage.span_id.0,
             parent_span_id: 0,
-            agent_id:       baggage.agent_id,
-            thread_id:      baggage.hardware_thread_id,
-            policy_id:      baggage.security_policy_id,
-            kind:           baggage.kind as u8,
-            event_level:    255, // SESSION_INIT marker
-            payload_len:    payload.len() as u16,
+            agent_id: baggage.agent_id,
+            thread_id: baggage.hardware_thread_id,
+            policy_id: baggage.security_policy_id,
+            kind: baggage.kind as u8,
+            event_level: 255, // SESSION_INIT marker
+            payload_len: payload.len() as u16,
         };
         let packed = event.pack(&payload);
-        self.store.write_session_init_to_local_log(ts_rdtsc, &baggage, &payload);
+        self.store
+            .write_session_init_to_local_log(ts_rdtsc, &baggage, &payload);
         self.exporter.stream_payload(&packed);
     }
 

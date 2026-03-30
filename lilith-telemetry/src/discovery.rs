@@ -1,4 +1,3 @@
-
 //! Flock Discovery and Connection Link generation logic.
 
 use super::crypto::KeyHandle;
@@ -26,7 +25,11 @@ impl FlockLink {
         let mut parts = addr.splitn(2, ':');
         let host = parts.next().unwrap_or("127.0.0.1").to_string();
         let port = parts.next().and_then(|p| p.parse().ok()).unwrap_or(44317);
-        Self { host, port, key_id: key.0 }
+        Self {
+            host,
+            port,
+            key_id: key.0,
+        }
     }
 
     /// Parses a `"lilith://"` URI into a FlockLink.
@@ -42,7 +45,10 @@ impl FlockLink {
 
         let mut addr_split = addr_part.splitn(2, ':');
         let host = addr_split.next().ok_or("Missing host")?.to_string();
-        let port = addr_split.next().and_then(|p| p.parse().ok()).unwrap_or(44317);
+        let port = addr_split
+            .next()
+            .and_then(|p| p.parse().ok())
+            .unwrap_or(44317);
 
         let mut key_id = 0u64;
         for param in query_part.split('&') {
@@ -62,6 +68,10 @@ impl FlockLink {
 
 impl fmt::Display for FlockLink {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "lilith://{}:{}?key_id=0x{:x}", self.host, self.port, self.key_id)
+        write!(
+            f,
+            "lilith://{}:{}?key_id=0x{:x}",
+            self.host, self.port, self.key_id
+        )
     }
 }
