@@ -294,7 +294,7 @@ class Lilith:
         return self
 
     @contextlib.asynccontextmanager
-    async def span(self, name: str):
+    async def span(self, name: str) -> Any:
         """
         Create a logical grouping span for multiple operations.
         Tool calls made within this context will be grouped together in telemetry.
@@ -318,11 +318,11 @@ class Lilith:
             # However, for the Lilith binary to nest correctly, we just need to pass
             # the parent span ID as the new "span_id" in the baggage.
             # The binary then nests ITS spans under THIS one.
-            new_ctx: SpanContext = {
-                "trace_id_hi": current["trace_id_hi"],
-                "trace_id_lo": current["trace_id_lo"],
-                "span_id": uuid.uuid4().int & 0xFFFFFFFFFFFFFFFF,
-            }
+            new_ctx = SpanContext(
+                trace_id_hi=current["trace_id_hi"],
+                trace_id_lo=current["trace_id_lo"],
+                span_id=uuid.uuid4().int & 0xFFFFFFFFFFFFFFFF,
+            )
 
         token = _active_span_context.set(new_ctx)
         try:

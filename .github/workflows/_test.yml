@@ -81,12 +81,24 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python: ["3.10", "3.11", "3.12"]
+        python: ["3.10", "3.11", "3.12", "3.13"]
     steps:
       - name: Checkout Repository
         uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
         with:
           persist-credentials: false
+
+      - name: Install Rust Toolchain
+        uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@400e7407cfd7a091e5fbb6afec01ec146c432b7c # v2.7.3
+        with:
+          workspaces: lilith-zero -> target
+
+      - name: Build Lilith Binary (debug)
+        working-directory: lilith-zero
+        run: cargo build --no-default-features
 
       - name: Install Python ${{ matrix.python }}
         uses: actions/setup-python@0a5c61591373683505ea898e09a3ea4f39ef2b9c # v5.0.0
@@ -102,9 +114,14 @@ jobs:
 
       - name: Install SDK & Tests
         working-directory: sdk
-        run: |
-          uv pip install --system .[dev] pytest pytest-asyncio pyjwt
+        run: uv sync --dev
 
-      - name: Run SDK Tests
+      - name: Run SDK Unit Tests
         working-directory: sdk
-        run: pytest -v
+        run: uv run pytest tests/test_client.py -v
+
+      - name: Run Red Team Tests
+        working-directory: sdk
+        env:
+          LILITH_ZERO_BINARY_PATH: ${{ github.workspace }}/lilith-zero/target/debug/lilith-zero
+        run: uv run pytest tests/red_team/ -v --timeout=60
