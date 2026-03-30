@@ -18,6 +18,7 @@ use tracing::{debug, error, info, warn};
 
 use crate::config::Config;
 use crate::engine_core::constants::{jsonrpc, session};
+use crate::utils::policy_validator::{PolicyValidator, ValidationSeverity};
 use crate::engine_core::crypto::CryptoSigner;
 use crate::engine_core::events::{SecurityDecision, SecurityEvent};
 use crate::engine_core::models::{JsonRpcError, JsonRpcRequest, JsonRpcResponse};
@@ -98,8 +99,57 @@ impl McpMiddleware {
             match std::fs::read_to_string(path.as_path()) {
                 Ok(content) => match serde_yaml_ng::from_str(&content) {
                     Ok(p) => {
-                        info!("Loaded policy from {}", path.display());
-                        self.core.set_policy(p);
+                        // Structured validation: emit all diagnostics before activating policy.
+                        let diagnostics = PolicyValidator::validate_policy_detailed(&p);
+                        let has_errors = diagnostics
+                            .iter()
+                            .any(|d| d.severity == ValidationSeverity::Error);
+
+                        for d in &diagnostics {
+                            self.core.log_audit(
+                                "POLICY_VALIDATION",
+                                serde_json::json!({
+                                    "severity": format!("{:?}", d.severity),
+                                    "field_path": d.field_path,
+                                    "rule_index": d.rule_index,
+                                    "message": d.message,
+                                    "suggestion": d.suggestion,
+                                }),
+                            );
+                            if d.severity == ValidationSeverity::Error {
+                                error!(
+                                    field = %d.field_path,
+                                    rule = ?d.rule_index,
+                                    suggestion = ?d.suggestion,
+                                    "Policy validation error: {}",
+                                    d.message
+                                );
+                            } else {
+                                warn!(
+                                    field = %d.field_path,
+                                    rule = ?d.rule_index,
+                                    suggestion = ?d.suggestion,
+                                    "Policy validation warning: {}",
+                                    d.message
+                                );
+                            }
+                        }
+
+                        if has_errors {
+                            error!(
+                                "Policy '{}' has validation errors — not loading (fail-closed). \
+                                 Fix all [Error] diagnostics above and restart.",
+                                p.name
+                            );
+                        } else {
+                            info!(
+                                policy = %p.name,
+                                warnings = diagnostics.len(),
+                                "Loaded policy from {}",
+                                path.display()
+                            );
+                            self.core.set_policy(p);
+                        }
                     }
                     Err(e) => error!("Failed to parse policy YAML: {}", e),
                 },
