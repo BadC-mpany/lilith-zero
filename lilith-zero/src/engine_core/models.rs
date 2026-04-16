@@ -234,7 +234,11 @@ pub struct PolicyDefinition {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
     /// Policy file format version for schema evolution (`1` = initial release).
-    #[serde(alias = "schema_version", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        alias = "schema_version",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub schema_version: Option<u32>,
     /// Schema version number; increment on breaking changes.
     pub version: u32,
@@ -242,7 +246,7 @@ pub struct PolicyDefinition {
     #[serde(alias = "static_rules")]
     pub static_rules: std::collections::HashMap<String, String>,
     /// Ordered list of taint/block rules evaluated for each tool call.
-    #[serde(alias = "taint_rules")]
+    #[serde(alias = "taint_rules", default)]
     pub taint_rules: Vec<PolicyRule>,
     /// ISO 8601 creation timestamp (informational).
     #[serde(alias = "created_at", default)]

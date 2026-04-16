@@ -7,12 +7,11 @@
 // See the License for the specific language governing permissions and
 
 use crate::engine_core::constants::session;
-use crate::engine_core::events::{OutputTransform, SecurityDecision, SecurityEvent};
+use crate::engine_core::events::{SecurityDecision, SecurityEvent};
 use crate::engine_core::models::{JsonRpcRequest, JsonRpcResponse};
 use crate::engine_core::taint::Tainted;
 use crate::engine_core::traits::McpSessionHandler;
 use crate::engine_core::types::TaintedString;
-use crate::utils::security::SecurityEngine;
 use serde_json::Value;
 use tracing::debug;
 
@@ -114,48 +113,13 @@ impl McpSessionHandler for Mcp2024Adapter {
     fn apply_decision(
         &self,
         decision: &SecurityDecision,
-        mut response: JsonRpcResponse,
+        response: JsonRpcResponse,
     ) -> JsonRpcResponse {
         debug!("Applying decision to response (id: {:?})", response.id);
-        match decision {
-            SecurityDecision::AllowWithTransforms {
-                output_transforms, ..
-            } => {
-                if let Some(result) = response.result.as_mut() {
-                    for transform in output_transforms {
-                        if let OutputTransform::Spotlight { .. } = transform {
-                            if let Some(content) =
-                                result.get_mut("content").and_then(|v| v.as_array_mut())
-                            {
-                                for item in content {
-                                    if let Some(text_val) = item.get_mut("text") {
-                                        if let Some(text) = text_val.as_str() {
-                                            let spotlighted = SecurityEngine::spotlight(text);
-                                            *text_val = Value::String(spotlighted);
-                                        }
-                                    }
-                                }
-                            }
-
-                            if let Some(contents) =
-                                result.get_mut("contents").and_then(|v| v.as_array_mut())
-                            {
-                                for item in contents {
-                                    if let Some(text_val) = item.get_mut("text") {
-                                        if let Some(text) = text_val.as_str() {
-                                            let spotlighted = SecurityEngine::spotlight(text);
-                                            *text_val = Value::String(spotlighted);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                response
-            }
-            _ => response,
-        }
+        // Future output transforms (e.g. Redact) are applied here.
+        // Currently no transforms are applied; the response passes through unchanged.
+        let _ = decision;
+        response
     }
 
     fn extract_session_token(&self, req: &JsonRpcRequest) -> Option<String> {

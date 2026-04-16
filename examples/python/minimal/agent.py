@@ -1,48 +1,55 @@
+"""
+Minimal Lilith reference implementation — static allow/deny.
+
+Demonstrates:
+  1. SDK initialisation (binary auto-discovery via LILITH_ZERO_BINARY_PATH or PATH)
+  2. Tool discovery (list_tools)
+  3. Calling an allowed tool
+  4. Calling a denied tool → PolicyViolationError
+  5. Session ID — HMAC-signed identifier accessible as lilith.session_id
+
+Run:
+    export LILITH_ZERO_BINARY_PATH=/path/to/lilith-zero   # or add to PATH
+    python agent.py
+"""
+
 import asyncio
 import os
-import shutil
+import sys
+
 from lilith_zero import Lilith, PolicyViolationError
 
-# Configuration
-# Resolving binary: assumes 'lilith-zero' is in PATH or typical cargo location
-LILITH_BIN = shutil.which("lilith-zero") or os.path.abspath(
-    os.path.join(os.path.dirname(__file__), "../../../../lilith-zero/target/release/lilith-zero.exe")
-)
+POLICY = os.path.join(os.path.dirname(__file__), "policy.yaml")
+SERVER = os.path.join(os.path.dirname(__file__), "server.py")
 
-SERVER_SCRIPT = os.path.join(os.path.dirname(__file__), "server.py")
-POLICY_FILE = os.path.join(os.path.dirname(__file__), "policy.yaml")
 
-async def main():
-    print("--- Lilith Minimal Demo ---")
-    
-    if not LILITH_BIN or not os.path.exists(LILITH_BIN):
-        print("Error: lilith-zero binary not found. Please build it first.")
-        return
-
-    # Initialize Lilith Middleware
+async def main() -> None:
+    # Lilith auto-discovers its binary via LILITH_ZERO_BINARY_PATH env var,
+    # PATH, or the standard user install location (~/.lilith_zero/bin).
     async with Lilith(
-        upstream=f"python -u {SERVER_SCRIPT}",
-        policy=POLICY_FILE,
-        binary=LILITH_BIN
+        upstream=f"{sys.executable} -u {SERVER}",
+        policy=POLICY,
     ) as lilith:
-        
-        print(f"Session Active: {lilith.session_id[:8]}...")
-        
-        # 1. List Tools
+        print(f"session  : {lilith.session_id}")
+
+        # --- Tool discovery ---
         tools = await lilith.list_tools()
-        print(f"Tools Discovered: {[t['name'] for t in tools]}")
+        print(f"tools    : {[t['name'] for t in tools]}")
 
-        # 2. Call Allowed Tool
-        print("\n> Calling 'ping' (Allowed)...")
-        res = await lilith.call_tool("ping", {})
-        print(f"Result: {res['content'][0]['text']}")
+        # --- Allowed calls ---
+        result = await lilith.call_tool("search_web", {"query": "Lilith Zero MCP security"})
+        print(f"search   : {result['content'][0]['text']}")
 
-        # 3. Call Denied Tool
-        print("\n> Calling 'read_db' (Denied)...")
+        result = await lilith.call_tool("get_time", {})
+        print(f"time     : {result['content'][0]['text']}")
+
+        # --- Denied call ---
         try:
-            await lilith.call_tool("read_db", {"query": "SELECT *"})
-        except PolicyViolationError as e:
-            print(f"Blocked: {e}")
+            await lilith.call_tool("query_database", {"sql": "SELECT * FROM users"})
+            print("ERROR: should have been blocked")
+        except PolicyViolationError as exc:
+            print(f"blocked  : {exc}")
+
 
 if __name__ == "__main__":
     asyncio.run(main())

@@ -1,8 +1,8 @@
 //! `lilith-zero` — MCP security middleware for AI agents.
 //!
 //! Provides taint-tracking, policy enforcement, session validation,
-//! spotlighting, and lethal-trifecta protection as a transparent
-//! stdio proxy between an AI agent and an MCP tool server.
+//! and lethal-trifecta protection as a transparent stdio proxy
+//! between an AI agent and an MCP tool server.
 
 #![deny(clippy::correctness)]
 #![warn(clippy::suspicious)]

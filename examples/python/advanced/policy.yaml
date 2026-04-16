@@ -1,50 +1,68 @@
-id: "enterprise-policy"
-customerId: "acme-corp"
-name: "Enterprise Security Policy"
+# Advanced Lilith policy — taint tracking, conditional rules, resource ACL.
+#
+# Scenario: Document intelligence agent that processes internal reports.
+# The policy prevents confidential data from leaking to external channels
+# unless it has been explicitly redacted first.
+
+id: "advanced-demo"
+customer_id: "example-corp"
+name: "Document Intelligence Agent Policy"
+description: |
+  Full-featured reference policy demonstrating:
+    - Static allow/deny (static_rules)
+    - Taint source (read_report adds CONFIDENTIAL taint)
+    - Taint sink (post_to_slack blocked when CONFIDENTIAL present)
+    - Taint cleaner (redact removes CONFIDENTIAL taint)
+    - Conditional block with exception (archive requires confirmed=true)
+    - Resource ACL with taints_to_add (confidential reports taint the session)
+    - Lethal trifecta protection (auto-blocks if both ACCESS_PRIVATE and
+      UNTRUSTED_SOURCE taints co-exist and an exfiltration tool is called)
 version: 1
 
-staticRules:
-  get_current_time: "ALLOW"
-  get_user_profile: "ALLOW"
-  upload_to_archive: "ALLOW"
-  export_to_untrusted_cloud: "ALLOW"
-  sanitize_data: "ALLOW"
-  execute_system_command: "ALLOW"
+# Every tool must be listed here or it is denied by default.
+static_rules:
+  read_report: "ALLOW"
+  summarize: "ALLOW"
+  post_to_slack: "ALLOW"
+  redact: "ALLOW"
+  archive: "ALLOW"
 
-taintRules:
-  # 1. Source: Accessing profile adds SENSITIVE taint
-  - tool: "get_user_profile"
+taint_rules:
+  # 1. SOURCE — reading any report marks the session as confidential.
+  - tool: "read_report"
     action: "ADD_TAINT"
-    tag: "SENSITIVE"
-    
-  # 2. Cleaner: Sanitize tool removes SENSITIVE taint
-  - tool: "sanitize_data"
-    action: "REMOVE_TAINT"
-    tag: "SENSITIVE"
+    tag: "CONFIDENTIAL"
 
-  # 3. Sink: Untrusted cloud blocks SENSITIVE data
-  - tool: "export_to_untrusted_cloud"
+  # 2. SINK — posting to Slack is blocked while CONFIDENTIAL taint is active.
+  - tool: "post_to_slack"
     action: "CHECK_TAINT"
-    forbiddenTags: ["SENSITIVE"]
-    error: "SECURITY VIOLATION: Export of sensitive profiles to untrusted clouds is forbidden."
+    forbidden_tags: ["CONFIDENTIAL"]
+    error: "Cannot post confidential report data to Slack. Call redact() first."
 
-  # 4. Logic: Block execute_system_command unless 'force' is 'true'
-  - tool: "execute_system_command"
+  # 3. CLEANER — redacting a document removes the CONFIDENTIAL taint.
+  - tool: "redact"
+    action: "REMOVE_TAINT"
+    tag: "CONFIDENTIAL"
+
+  # 4. CONDITIONAL — archive() is destructive; blocked unless the caller
+  #    explicitly passes confirmed=true.
+  - tool: "archive"
     action: "BLOCK"
+    error: "archive() is destructive. Pass confirmed=true to proceed."
     exceptions:
       - when:
           tool_args_match:
-             force: "true"
-        reason: "Force operations are authorized."
+            confirmed: true
+        reason: "Caller acknowledged destructive operation."
 
-resourceRules:
-  # 5. Resource Control: Allow only specific URI patterns
-  - uriPattern: "s3://public/*"
+resource_rules:
+  # Public reports are freely readable.
+  - uri_pattern: "reports://public/*"
     action: "ALLOW"
-  - uriPattern: "s3://internal/*"
-    action: "BLOCK"
-    exceptions:
-      - when: false
-        reason: "Strictly internal"
 
-protectLethalTrifecta: true
+  # Confidential reports are readable but taint the session.
+  - uri_pattern: "reports://confidential/*"
+    action: "ALLOW"
+    taints_to_add: ["CONFIDENTIAL"]
+
+protect_lethal_trifecta: true

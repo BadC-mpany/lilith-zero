@@ -39,6 +39,9 @@ futures = { version = "0.3", features = ["std"] }
 futures-util = "0.3"
 async-trait = "0.1"
 
+# HTTP upstream transport (always compiled in; transport is a runtime --transport flag)
+reqwest = { version = "0.12", features = ["json", "stream"], default-features = false }
+
 # Process Isolation
 lilith-telemetry = { git = "https://github.com/BadC-mpany/lilith-telemetry.git", rev = "5acf49ffce2119ccb8674a14ab7539f7f661fc42", optional = true }
 

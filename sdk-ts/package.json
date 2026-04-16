@@ -1,0 +1,31 @@
+{
+  "name": "@bad-company/lilith-zero",
+  "version": "0.1.3",
+  "description": "TypeScript SDK for Lilith Zero — deterministic MCP security middleware",
+  "license": "Apache-2.0",
+  "author": "Peter Tallosy",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test",
+    "test:ci": "bun test --bail"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": ["mcp", "security", "ai", "agent", "middleware", "lilith"],
+  "devDependencies": {
+    "@types/bun": "^1.0.0",
+    "typescript": "^5.4.0"
+  }
+}

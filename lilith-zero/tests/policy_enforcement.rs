@@ -6,7 +6,7 @@
 
 use lilith_zero::config::{Config, SecurityLevel};
 use lilith_zero::engine_core::crypto::CryptoSigner;
-use lilith_zero::engine_core::events::{OutputTransform, SecurityDecision, SecurityEvent};
+use lilith_zero::engine_core::events::{SecurityDecision, SecurityEvent};
 use lilith_zero::engine_core::models::{PolicyDefinition, PolicyRule, ResourceRule};
 use lilith_zero::engine_core::security_core::SecurityCore;
 use lilith_zero::engine_core::taint::Tainted;
@@ -138,11 +138,13 @@ async fn test_lethal_trifecta_enforcement() {
     let token = core.session_id.clone();
 
     // 1. Access Private Data
-    let _ = core.evaluate(create_security_event("read_db", &token))
+    let _ = core
+        .evaluate(create_security_event("read_db", &token))
         .await;
 
     // 2. Access Untrusted Source
-    let _ = core.evaluate(create_security_event("fetch_url", &token))
+    let _ = core
+        .evaluate(create_security_event("fetch_url", &token))
         .await;
 
     // 3. Attempt Exfiltration (Should be BLOCKED)
@@ -165,9 +167,11 @@ async fn test_lethal_trifecta_disabled() {
     let token = core.session_id.clone();
 
     // 1. Trigger Trifecta Conditions
-    let _ = core.evaluate(create_security_event("read_db", &token))
+    let _ = core
+        .evaluate(create_security_event("read_db", &token))
         .await;
-    let _ = core.evaluate(create_security_event("fetch_url", &token))
+    let _ = core
+        .evaluate(create_security_event("fetch_url", &token))
         .await;
 
     // 2. Attempt Exfiltration (Should be ALLOWED)
@@ -332,36 +336,5 @@ async fn test_wildcard_resource_access() {
     match core.evaluate(event_exe).await {
         SecurityDecision::Deny { reason, .. } => assert!(reason.contains("blocked by rule")),
         d => panic!("FAIL: Expected Block for .exe, got {:?}", d),
-    }
-}
-
-#[tokio::test]
-async fn test_spotlighting_enabled() {
-    let config = Config {
-        security_level: SecurityLevel::BlockParams,
-        ..Config::default()
-    };
-    // Spotlighting is enabled by default in SecurityLevel Config, but let's be explicit if possible.
-    // Config struct doesn't have direct spotlight bool, it's inferred from level.
-    // BlockParams -> Spotlighting ON.
-
-    let signer = CryptoSigner::try_new().unwrap();
-    let mut core = SecurityCore::new(Arc::new(config), signer, None).unwrap();
-    core.set_policy(create_test_policy(false));
-    let token = core.session_id.clone();
-
-    // Allow rule triggers spotlighting
-    let event = create_security_event("read_db", &token);
-    let decision = core.evaluate(event).await;
-
-    match decision {
-        SecurityDecision::AllowWithTransforms {
-            output_transforms, ..
-        } => {
-            assert!(output_transforms
-                .iter()
-                .any(|t| matches!(t, OutputTransform::Spotlight { .. })));
-        }
-        _ => panic!("FAIL: Expected Spotlighting, got {:?}", decision),
     }
 }

@@ -1,12 +1,19 @@
-id: "minimal-policy"
-customerId: "demo-user"
-name: "Minimal Policy"
+# Minimal Lilith policy — static allow/deny only.
+#
+# Scenario: Research assistant that may search the web and check the time
+# but must never touch the production database directly.
+
+id: "minimal-demo"
+customer_id: "example-corp"
+name: "Research Assistant – Minimal Policy"
+description: "Static whitelist/blacklist; no taint tracking."
 version: 1
 
-staticRules:
-  ping: "ALLOW"
-  read_db: "DENY"
+static_rules:
+  search_web: "ALLOW"
+  get_time: "ALLOW"
+  query_database: "DENY"   # raw SQL → always blocked at the gate
 
-taintRules: []
-resourceRules: []
-protectLethalTrifecta: false
+taint_rules: []
+resource_rules: []
+protect_lethal_trifecta: false

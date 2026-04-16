@@ -60,8 +60,6 @@ impl SecurityLevel {
 pub struct SecurityConfig {
     /// Whether incoming tool requests must carry a valid HMAC session token.
     pub session_validation: bool,
-    /// Whether tool-response content should be wrapped in spotlighting delimiters.
-    pub spotlighting: bool,
     /// Whether policy violations should result in a hard `Deny`.
     ///
     /// `false` in [`SecurityLevel::AuditOnly`] (log and allow); `true` in
@@ -98,6 +96,16 @@ pub struct Config {
     pub pin_file: Option<PathBuf>,
     /// Whether pin violations should block the response or just be logged.
     pub pin_mode: PinMode,
+    /// URL of an upstream HTTP MCP server (e.g. `http://localhost:8080/mcp`).
+    ///
+    /// When set, Lilith proxies to this HTTP endpoint instead of spawning a child
+    /// process.  Mutually exclusive with `upstream_cmd` at runtime.
+    pub upstream_http_url: Option<String>,
+
+    /// Command string for the upstream stdio child process (e.g. `"python -u server.py"`).
+    ///
+    /// Set by `--upstream-cmd` / `-u`.  Mutually exclusive with `upstream_http_url`.
+    pub upstream_cmd: Option<String>,
 }
 
 impl Config {
@@ -140,6 +148,8 @@ impl Config {
                 .as_deref()
                 .map(PinMode::parse)
                 .unwrap_or(PinMode::Audit),
+            upstream_http_url: env::var("LILITH_ZERO_UPSTREAM_HTTP_URL").ok(),
+            upstream_cmd: None,
         })
     }
 
@@ -148,12 +158,10 @@ impl Config {
         match self.security_level {
             SecurityLevel::AuditOnly => SecurityConfig {
                 session_validation: true,
-                spotlighting: false,
                 block_on_violation: false,
             },
             SecurityLevel::BlockParams => SecurityConfig {
                 session_validation: true,
-                spotlighting: true,
                 block_on_violation: true,
             },
         }
@@ -174,6 +182,8 @@ impl Default for Config {
             protect_lethal_trifecta: false,
             pin_file: None,
             pin_mode: PinMode::Audit,
+            upstream_http_url: None,
+            upstream_cmd: None,
         }
     }
 }

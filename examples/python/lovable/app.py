@@ -17,7 +17,7 @@ if os.name == 'nt':
         pass
 
 # Path setup to find Lilith Zero SDK and middleware
-ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../"))
+ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../"))
 sys.path.insert(0, os.path.join(ROOT_DIR, "sdk/src"))
 
 try:

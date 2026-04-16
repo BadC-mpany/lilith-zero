@@ -30,18 +30,6 @@ pub mod crypto {
     pub const SESSION_ID_VERSION: &str = "1";
 }
 
-/// Constants for the spotlighting prompt-injection mitigation.
-pub mod spotlight {
-    /// Prefix string that begins a spotlighted data block.
-    pub const DATA_START_PREFIX: &str = "<<<LILITH_ZERO_DATA_START:";
-    /// Prefix string that ends a spotlighted data block.
-    pub const DATA_END_PREFIX: &str = "<<<LILITH_ZERO_DATA_END:";
-    /// Suffix appended after the random identifier in spotlighting delimiters.
-    pub const DELIMITER_SUFFIX: &str = ">>>";
-    /// Number of random alphanumeric characters used in each spotlighting delimiter.
-    pub const RANDOM_ID_LENGTH: usize = 8;
-}
-
 /// Constants for policy action strings and default policy identifiers.
 pub mod policy {
     /// Static rule action that permits the tool call.

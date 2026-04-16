@@ -50,10 +50,7 @@ except ImportError:
     print(f"{Colors.RED}SDK 'lilith_zero' not found. Please run the setup script first.{Colors.RESET}")
     sys.exit(1)
 
-# Paths
-_EXT = ".exe" if os.name == "nt" else ""
-LILITH_BINARY = os.path.abspath(f"lilith-zero/target/release/lilith-zero{_EXT}")
-# Using the demo policy in the current directory
+# Paths — binary discovered via LILITH_ZERO_BINARY_PATH env var, PATH, or dev build.
 POLICY_FILE = os.path.abspath(os.path.join(os.path.dirname(__file__), "demo_policy.yaml"))
 SERVER_SCRIPT = os.path.abspath(os.path.join(os.path.dirname(__file__), "vulnerable_server.py"))
 
@@ -63,17 +60,12 @@ async def run_scenario(name: str, objective: str, tool: str, args: Dict[str, Any
     print(f"{Colors.BLUE}{Colors.BOLD} OBJECTIVE: {objective:<67}{Colors.RESET}")
     print(f"{Colors.BLUE}{Colors.BOLD}[" + "="*78 + "]" + f"{Colors.RESET}")
 
-    if not os.path.exists(LILITH_BINARY):
-        logger.error(f"Binary missing at {LILITH_BINARY}. Build required.")
-        return
-
     logger.info("Initializing MCP Security Middleware...")
-    
+
     try:
         async with Lilith(
             upstream=f"{sys.executable} {SERVER_SCRIPT}",
             policy=POLICY_FILE,
-            binary=LILITH_BINARY
         ) as client:
             
             logger.info(f"{Colors.GREEN}Handshake complete. Context-aware security session established.{Colors.RESET}")

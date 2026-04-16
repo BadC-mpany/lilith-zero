@@ -1,14 +1,26 @@
-id: "fastmcp-policy"
-customerId: "demo-user"
-name: "FastMCP Policy"
+# Calculator agent policy.
+#
+# Scenario: A math assistant that can add, multiply, and look up constants,
+# but cannot divide (to show static DENY) and cannot call sqrt after
+# reading a constant (to show a trivial taint rule).
+#
+# This policy is intentionally simple — the focus here is showing that
+# Lilith wraps any MCP server transparently.
+
+id: "calculator-demo"
+customer_id: "example-corp"
+name: "Calculator Agent Policy"
 version: 1
 
-staticRules:
+# Every tool must be listed or it is denied by default.
+static_rules:
   add: "ALLOW"
-  echo: "ALLOW"
+  multiply: "ALLOW"
+  divide: "DENY"      # Blocked outright — use multiply with reciprocal instead.
+  sqrt: "ALLOW"
 
-taintRules: []
-resourceRules:
-  - uriPattern: "greetings://*"
+resource_rules:
+  - uri_pattern: "constants://*"
     action: "ALLOW"
-protectLethalTrifecta: true
+
+protect_lethal_trifecta: true

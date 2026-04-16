@@ -31,6 +31,8 @@ import contextlib
 import json
 import logging
 import os
+import platform
+import shlex
 import shutil
 import tempfile
 import uuid
@@ -114,7 +116,7 @@ def _find_binary() -> str:
             return os.path.abspath(env_path)
         else:
             _logger.warning(
-                f"{_ENV_BINARY_PATH} set to '{env_path}' but file not found."
+                "%s set to '%s' but file not found.", _ENV_BINARY_PATH, env_path
             )
 
     # 2. System PATH
@@ -150,7 +152,7 @@ def _find_binary() -> str:
                 _BINARY_NAME,
             )
             if os.path.exists(dev_binary):
-                _logger.debug(f"Found dev binary at {dev_binary}")
+                _logger.debug("Found dev binary at %s", dev_binary)
                 return dev_binary
 
             # Also check debug if release isn't built
@@ -162,10 +164,10 @@ def _find_binary() -> str:
                 _BINARY_NAME,
             )
             if os.path.exists(dev_binary_debug):
-                _logger.debug(f"Found debug dev binary at {dev_binary_debug}")
+                _logger.debug("Found debug dev binary at %s", dev_binary_debug)
                 return dev_binary_debug
     except Exception as e:
-        _logger.debug(f"Dev binary heuristic failed: {e}")
+        _logger.debug("Dev binary heuristic failed: %s", e)
 
     # If we get here, we can't find it. Ask installer to guide user.
     return install_lilith(interactive=False)
@@ -219,9 +221,6 @@ class Lilith:
                 "Upstream command is required in this version.", config_key="upstream"
             )
 
-        import platform
-        import shlex
-
         # Parse upstream command robustly
         try:
             # On Windows, posix=False is required to preserve backslashes
@@ -273,6 +272,28 @@ class Lilith:
     @property
     def audit_logs(self) -> list[AuditEntry]:
         """Get the list of structured, tamper-proof audit logs emitted by Lilith."""
+        return list(self._audit_logs)
+
+    async def drain_audit_logs(self) -> list[AuditEntry]:
+        """Flush the audit file and return all captured entries.
+
+        The background tail loop polls every 100 ms, so calling this method
+        immediately after tool calls may miss very recent entries.  This method
+        waits one poll cycle, then does a synchronous read of the full audit
+        file to guarantee completeness.  Use it when you need a definitive
+        snapshot, e.g. at the end of a test or demo scenario.
+        """
+        # One poll cycle to let the Rust background thread flush.
+        await asyncio.sleep(0.15)
+        if self._audit_file_path and os.path.exists(self._audit_file_path):
+            try:
+                self._audit_logs = []
+                with open(self._audit_file_path, encoding="utf-8") as _af:
+                    for _line in _af:
+                        if _line.strip():
+                            self._parse_audit_line(_line)
+            except OSError:
+                pass
         return list(self._audit_logs)
 
     @property
@@ -443,6 +464,19 @@ class Lilith:
             except (ProcessLookupError, asyncio.TimeoutError):
                 with contextlib.suppress(ProcessLookupError):
                     self._process.kill()
+
+        # Final deterministic drain of the audit file.  The process is dead at
+        # this point so the file is complete.  We replace (not append to) the
+        # in-memory list to avoid duplicates with what the tail loop already read.
+        if self._audit_file_path and os.path.exists(self._audit_file_path):
+            try:
+                self._audit_logs = []
+                with open(self._audit_file_path, encoding="utf-8") as _af:
+                    for _line in _af:
+                        if _line.strip():
+                            self._parse_audit_line(_line)
+            except OSError:
+                pass
 
         self._session_id = None
         self._session_event.clear()  # Clear the event for future connections
@@ -625,7 +659,7 @@ class Lilith:
             return
 
         # Give Lilith a moment to create/write to the file
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(_SESSION_POLL_INTERVAL_SEC)
 
         try:
             with open(self._audit_file_path, "r", encoding="utf-8") as f:
@@ -643,7 +677,7 @@ class Lilith:
                                     if log_line.strip():
                                         self._parse_audit_line(log_line)
                             break
-                        await asyncio.sleep(0.1)
+                        await asyncio.sleep(_SESSION_POLL_INTERVAL_SEC)
         except (asyncio.CancelledError, FileNotFoundError):
             pass
         except Exception as e:
@@ -654,18 +688,23 @@ class Lilith:
         try:
             data = json.loads(line)
             signature = data.get("signature")
-            payload = data.get("payload")
-
-            if signature and payload:
-                entry: AuditEntry = {
-                    "session_id": payload.get("session_id", ""),
-                    "timestamp": payload.get("timestamp", 0.0),
-                    "event_type": payload.get("event_type", "UNKNOWN"),
-                    "details": payload.get("details", {}),
-                    "signature": signature,
-                }
-                self._audit_logs.append(entry)
-        except (json.JSONDecodeError, Exception):
+            # The Rust audit logger serialises the payload as a JSON *string*
+            # (double-encoded): {"signature": "…", "payload": "{…}"}.
+            payload_raw = data.get("payload")
+            if not (signature and payload_raw):
+                return
+            payload = (
+                json.loads(payload_raw) if isinstance(payload_raw, str) else payload_raw
+            )
+            entry: AuditEntry = {
+                "session_id": payload.get("session_id", ""),
+                "timestamp": payload.get("timestamp", 0.0),
+                "event_type": payload.get("event_type", "UNKNOWN"),
+                "details": payload.get("details", {}),
+                "signature": signature,
+            }
+            self._audit_logs.append(entry)
+        except Exception:
             pass
 
     async def _disconnect_with_error(self, message: str) -> None:

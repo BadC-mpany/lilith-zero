@@ -233,7 +233,7 @@ mod tests {
         ];
         s.observe(&first);
         let second = vec![
-            ("tool_a".to_string(), "desc a".to_string()),      // unchanged
+            ("tool_a".to_string(), "desc a".to_string()), // unchanged
             ("tool_b".to_string(), "CHANGED desc b".to_string()), // changed
         ];
         let violations = s.observe(&second);

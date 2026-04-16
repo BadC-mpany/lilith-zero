@@ -18,7 +18,6 @@ use tracing::{debug, error, info, warn};
 
 use crate::config::Config;
 use crate::engine_core::constants::{jsonrpc, session};
-use crate::utils::policy_validator::{PolicyValidator, ValidationSeverity};
 use crate::engine_core::crypto::CryptoSigner;
 use crate::engine_core::events::{SecurityDecision, SecurityEvent};
 use crate::engine_core::models::{JsonRpcError, JsonRpcRequest, JsonRpcResponse};
@@ -29,6 +28,9 @@ use crate::mcp::pin_store::PinStore;
 use crate::mcp::pipeline::{self, DownstreamEvent, UpstreamEvent};
 use crate::mcp::process::ProcessSupervisor;
 use crate::protocol::negotiation::HandshakeManager;
+use crate::utils::policy_validator::{PolicyValidator, ValidationSeverity};
+
+use crate::mcp::http_upstream::HttpUpstream;
 
 /// The main MCP security middleware.
 ///
@@ -47,6 +49,7 @@ pub struct McpMiddleware {
 
     upstream_supervisor: Option<ProcessSupervisor>,
     pin_store: PinStore,
+    upstream_http: Option<HttpUpstream>,
 }
 
 impl McpMiddleware {
@@ -68,6 +71,12 @@ impl McpMiddleware {
         let pin_store = PinStore::new(config.pin_mode, config.pin_file.clone())
             .map_err(|e| anyhow::anyhow!("Pin store init failed: {}", e))?;
 
+        let upstream_http = if let Some(ref url) = config.upstream_http_url {
+            Some(HttpUpstream::new(url.clone()).context("Failed to init HTTP upstream")?)
+        } else {
+            None
+        };
+
         Ok(Self {
             upstream_cmd,
             upstream_args,
@@ -78,6 +87,7 @@ impl McpMiddleware {
             pending_methods: HashMap::new(),
             upstream_supervisor: None,
             pin_store,
+            upstream_http,
         })
     }
 
@@ -243,6 +253,10 @@ impl McpMiddleware {
             }
         }
 
+        if let Some(http) = self.upstream_http.as_mut() {
+            http.close().await;
+        }
+
         Ok(())
     }
 
@@ -306,7 +320,8 @@ impl McpMiddleware {
                         self.session = HandshakeManager::negotiate(protocol_version);
                     }
 
-                    if self.upstream_stdin.is_none() {
+                    let need_spawn = self.upstream_stdin.is_none() && self.upstream_http.is_none();
+                    if need_spawn {
                         if let Err(e) = self.spawn_upstream(tx_upstream_events.clone()).await {
                             error!("Failed to spawn upstream: {}", e);
                             if let Some(id) = &req.id {
@@ -344,14 +359,41 @@ impl McpMiddleware {
                     self.session.sanitize_for_upstream(req);
                     let clean_req = crate::engine_core::taint::Clean::new_unchecked(&*req);
                     self.write_upstream(clean_req).await?;
-                } else if let Some(id) = &req.id {
-                    self.write_error(
-                        writer,
-                        id.clone(),
-                        jsonrpc::ERROR_METHOD_NOT_FOUND,
-                        "Upstream not connected",
-                    )
-                    .await?;
+                } else {
+                    if self.upstream_http.is_some() {
+                        self.session.sanitize_for_upstream(req);
+                        let send_result = self
+                            .upstream_http
+                            .as_mut()
+                            .expect("invariant: upstream_http is_some checked above")
+                            .send(req)
+                            .await;
+                        match send_result {
+                            Ok(resp) => self.handle_upstream_response(resp, writer).await?,
+                            Err(e) => {
+                                error!("HTTP upstream error: {}", e);
+                                if let Some(id) = &req.id {
+                                    self.write_error(
+                                        writer,
+                                        id.clone(),
+                                        jsonrpc::ERROR_INTERNAL,
+                                        &e.to_string(),
+                                    )
+                                    .await?;
+                                }
+                            }
+                        }
+                        return Ok(());
+                    }
+                    if let Some(id) = &req.id {
+                        self.write_error(
+                            writer,
+                            id.clone(),
+                            jsonrpc::ERROR_METHOD_NOT_FOUND,
+                            "Upstream not connected",
+                        )
+                        .await?;
+                    }
                 }
             }
         }

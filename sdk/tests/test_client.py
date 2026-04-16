@@ -289,28 +289,17 @@ async def test_runtime_health_check(
 
 
 @pytest.mark.asyncio
-async def test_spotlighting_delimiters(
+async def test_tool_response_passes_through(
     mock_subprocess: AsyncMock, mock_env: MagicMock
 ) -> None:
-    """Verify detection and handling of spotlighting delimiters."""
+    """Tool response content is forwarded verbatim to the caller."""
     client = Lilith("echo")
     client._session_id = "sess"
 
-    # Mock response containing spotlight delimiters
-    # The SDK itself does NOT parse/strip them (that's user's job or verifying they
-    # exist).
-    # This test verifies that if middleware sends them, SDK passes them through
-    # correctly.
-
-    response_text = (
-        "<<<LILITH_ZERO_DATA_START:123>>>secret<<<LILITH_ZERO_DATA_END:123>>>"
-    )
-
     with patch.object(client, "_send_request", new_callable=AsyncMock) as mock_send:
-        mock_send.return_value = {"content": [{"text": response_text}]}
+        mock_send.return_value = {"content": [{"text": "plain tool output"}]}
 
-        result = await client.call_tool("read_secret", {})
+        result = await client.call_tool("some_tool", {})
         text = result["content"][0]["text"]
 
-        assert "<<<LILITH_ZERO_DATA_START" in text
-        assert "secret" in text
+        assert text == "plain tool output"

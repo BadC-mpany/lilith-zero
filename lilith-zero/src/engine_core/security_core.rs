@@ -17,7 +17,7 @@ use crate::engine::evaluator::PolicyEvaluator;
 use crate::engine_core::auth;
 use crate::engine_core::constants::jsonrpc;
 use crate::engine_core::crypto::CryptoSigner;
-use crate::engine_core::events::{OutputTransform, SecurityDecision, SecurityEvent};
+use crate::engine_core::events::{SecurityDecision, SecurityEvent};
 use crate::engine_core::models::{Decision, HistoryEntry, PolicyDefinition, PolicyRule};
 use anyhow::Result;
 
@@ -283,8 +283,10 @@ impl SecurityCore {
 
                 if let Some(policy) = &self.policy {
                     for rule in &policy.resource_rules {
-                        if self.match_resource_pattern(&uri.clone().into_inner_unchecked(), &rule.uri_pattern)
-                        {
+                        if self.match_resource_pattern(
+                            &uri.clone().into_inner_unchecked(),
+                            &rule.uri_pattern,
+                        ) {
                             if rule.action == "BLOCK" {
                                 return SecurityDecision::Deny {
                                     error_code: jsonrpc::ERROR_SECURITY_BLOCK,
@@ -330,7 +332,7 @@ impl SecurityCore {
                 SecurityDecision::AllowWithTransforms {
                     taints_to_add,
                     taints_to_remove: vec![],
-                    output_transforms: vec![OutputTransform::Spotlight { json_paths: vec![] }], // contents spotlighting
+                    output_transforms: vec![],
                 }
             }
 
@@ -374,15 +376,7 @@ impl SecurityCore {
                     }),
                 );
 
-                if self.config.security_level_config().spotlighting {
-                    SecurityDecision::AllowWithTransforms {
-                        taints_to_add: vec![],
-                        taints_to_remove: vec![],
-                        output_transforms: vec![OutputTransform::Spotlight { json_paths: vec![] }],
-                    }
-                } else {
-                    SecurityDecision::Allow
-                }
+                SecurityDecision::Allow
             }
             Decision::Denied { reason } => {
                 self.audit.log(
@@ -433,18 +427,10 @@ impl SecurityCore {
                     }),
                 );
 
-                if self.config.security_level_config().spotlighting {
-                    SecurityDecision::AllowWithTransforms {
-                        taints_to_add,
-                        taints_to_remove,
-                        output_transforms: vec![OutputTransform::Spotlight { json_paths: vec![] }],
-                    }
-                } else {
-                    SecurityDecision::AllowWithTransforms {
-                        taints_to_add,
-                        taints_to_remove,
-                        output_transforms: vec![],
-                    }
+                SecurityDecision::AllowWithTransforms {
+                    taints_to_add,
+                    taints_to_remove,
+                    output_transforms: vec![],
                 }
             }
         }

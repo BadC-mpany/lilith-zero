@@ -69,7 +69,11 @@ impl PolicyValidationError {
 
 impl std::fmt::Display for PolicyValidationError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "[{:?}] {}: {}", self.severity, self.field_path, self.message)?;
+        write!(
+            f,
+            "[{:?}] {}: {}",
+            self.severity, self.field_path, self.message
+        )?;
         if let Some(ref s) = self.suggestion {
             write!(f, " (suggestion: {})", s)?;
         }
@@ -437,14 +441,8 @@ impl PolicyValidator {
 
         match rule.action.as_str() {
             "CHECK_TAINT" => {
-                let has_forbidden = rule
-                    .forbidden_tags
-                    .as_ref()
-                    .is_some_and(|t| !t.is_empty());
-                let has_required = rule
-                    .required_taints
-                    .as_ref()
-                    .is_some_and(|t| !t.is_empty());
+                let has_forbidden = rule.forbidden_tags.as_ref().is_some_and(|t| !t.is_empty());
+                let has_required = rule.required_taints.as_ref().is_some_and(|t| !t.is_empty());
                 if !has_forbidden && !has_required {
                     out.push(PolicyValidationError::error(
                         format!("{}.forbidden_tags", prefix),

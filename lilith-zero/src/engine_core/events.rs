@@ -85,11 +85,6 @@ pub enum SecurityDecision {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum OutputTransform {
-    /// Wrap content in randomised spotlighting delimiters to prevent prompt-injection escapes.
-    Spotlight {
-        /// JSON paths within the response to spotlight; empty means all text content.
-        json_paths: Vec<String>,
-    },
     /// Redact content at the specified JSON paths.
     Redact {
         /// JSON paths within the response to redact.

@@ -10,7 +10,7 @@ echo -e "------------------------------------------------------------"
 
 # 1. Environment Detection
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-ROOT_DIR="$( cd "$SCRIPT_DIR/../../" && pwd )"
+ROOT_DIR="$( cd "$SCRIPT_DIR/../../../" && pwd )"
 
 # Detect OS for binary and python paths
 OS_TYPE="$(uname -s)"
