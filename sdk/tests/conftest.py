@@ -62,7 +62,7 @@ def require_binary() -> None:
     pass  # env var already set; individual tests use it via _find_binary()
 
 
-def pytest_collection_modifyitems(items: list) -> None:
+def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
     """Skip all tests that need a real binary when none is found."""
     if _BINARY:
         return
