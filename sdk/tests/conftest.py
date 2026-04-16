@@ -18,7 +18,9 @@ import sys
 
 import pytest
 
-_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_REPO_ROOT = os.path.dirname(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+)
 
 _CANDIDATES = [
     os.path.join(_REPO_ROOT, "lilith-zero", "target", "release", "lilith-zero"),
@@ -64,6 +66,8 @@ def pytest_collection_modifyitems(items: list) -> None:
     """Skip all tests that need a real binary when none is found."""
     if _BINARY:
         return
-    skip = pytest.mark.skip(reason="No Lilith binary found — run `cargo build -p lilith-zero`")
+    skip = pytest.mark.skip(
+        reason="No Lilith binary found — run `cargo build -p lilith-zero`"
+    )
     for item in items:
         item.add_marker(skip)
