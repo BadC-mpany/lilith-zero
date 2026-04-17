@@ -20,9 +20,9 @@ pub mod security_core;
 pub mod session;
 /// Compile-time taint wrappers (`Tainted<T>` / `Clean<T>`).
 pub mod taint;
-/// `McpSessionHandler` trait implemented by each protocol adapter.
-pub mod traits;
 /// Zero-dependency telemetry integration hook trait.
 pub mod telemetry;
+/// `McpSessionHandler` trait implemented by each protocol adapter.
+pub mod traits;
 /// `TaintedString` and `SafeString` newtypes.
 pub mod types;

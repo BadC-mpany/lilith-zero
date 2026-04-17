@@ -191,9 +191,10 @@ impl SecurityCore {
                 let tool_name_str = tool_name.into_inner_unchecked();
                 let classes = self.classify_tool(&tool_name_str);
 
-                let _eval_span = self.telemetry.as_ref().map(|h| {
-                    h.begin_tool_evaluation(&self.session_id, &tool_name_str)
-                });
+                let _eval_span = self
+                    .telemetry
+                    .as_ref()
+                    .map(|h| h.begin_tool_evaluation(&self.session_id, &tool_name_str));
 
                 let evaluator_result = if let Some(policy) = &self.policy {
                     PolicyEvaluator::evaluate_with_args(
