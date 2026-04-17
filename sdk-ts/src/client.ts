@@ -58,8 +58,6 @@ export interface LilithOptions {
   policy?: string;
   /** Absolute path to the Lilith binary (auto-discovered if omitted). */
   binary?: string;
-  /** Telemetry flock connection link. */
-  telemetryLink?: string;
 }
 
 // ─── Internal constants ──────────────────────────────────────────────────────
@@ -171,7 +169,6 @@ export class Lilith {
   private readonly _upstreamUrl: string | null;
   private readonly _binaryPath: string;
   private readonly _policyPath: string | undefined;
-  private readonly _telemetryLink: string | undefined;
 
   private _proc: ChildProcessWithoutNullStreams | null = null;
   private _reader: BufferedReader | null = null;
@@ -197,7 +194,7 @@ export class Lilith {
         ? { ...legacyOptions, upstream: upstreamOrOptions }
         : upstreamOrOptions;
 
-    const { upstream, upstreamUrl, policy, binary, telemetryLink } = opts;
+    const { upstream, upstreamUrl, policy, binary } = opts;
 
     if (upstream && upstreamUrl) {
       throw new LilithConfigError(
@@ -247,7 +244,6 @@ export class Lilith {
     }
 
     this._policyPath = policy ? resolve(policy) : undefined;
-    this._telemetryLink = telemetryLink;
   }
 
   // ─── Public properties ──────────────────────────────────────────────────
@@ -437,7 +433,6 @@ export class Lilith {
 
     if (this._policyPath) cmd.push("--policy", this._policyPath);
     if (this._auditFilePath) cmd.push("--audit-logs", this._auditFilePath);
-    if (this._telemetryLink) cmd.push("--telemetry-link", this._telemetryLink);
 
     if (this._upstreamUrl) {
       cmd.push("--transport", "http", "--upstream-url", this._upstreamUrl);
