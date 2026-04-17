@@ -64,7 +64,7 @@ export interface LilithOptions {
 
 const MCP_PROTOCOL_VERSION = "2024-11-05";
 const SDK_NAME = "lilith-zero-ts";
-const SDK_VERSION = "0.1.3";
+const SDK_VERSION = "0.2.0";
 const SESSION_TIMEOUT_MS = 5_000;
 const SESSION_ID_MARKER = "LILITH_ZERO_SESSION_ID=";
 const MAX_PAYLOAD_BYTES = 10 * 1024 * 1024; // 10 MB
