@@ -30,6 +30,7 @@ use crate::mcp::process::ProcessSupervisor;
 use crate::protocol::negotiation::HandshakeManager;
 use crate::utils::policy_validator::{PolicyValidator, ValidationSeverity};
 
+use crate::engine_core::telemetry::TelemetryHook;
 use crate::mcp::http_upstream::HttpUpstream;
 
 /// The main MCP security middleware.
@@ -50,6 +51,7 @@ pub struct McpMiddleware {
     upstream_supervisor: Option<ProcessSupervisor>,
     pin_store: PinStore,
     upstream_http: Option<HttpUpstream>,
+    telemetry: Option<Arc<dyn TelemetryHook>>,
 }
 
 impl McpMiddleware {
@@ -88,7 +90,21 @@ impl McpMiddleware {
             upstream_supervisor: None,
             pin_store,
             upstream_http,
+            telemetry: None,
         })
+    }
+
+    /// Register a telemetry hook for distributed tracing.
+    ///
+    /// Call this on the value returned by [`Self::new`] before calling [`Self::run`]:
+    ///
+    /// ```rust,ignore
+    /// let middleware = McpMiddleware::new(...)?.with_telemetry(Arc::new(MyHook));
+    /// ```
+    pub fn with_telemetry(mut self, hook: Arc<dyn TelemetryHook>) -> Self {
+        self.core.set_telemetry(Arc::clone(&hook));
+        self.telemetry = Some(hook);
+        self
     }
 
     /// Run the middleware event loop until the downstream agent disconnects or Ctrl-C is received.
@@ -266,34 +282,10 @@ impl McpMiddleware {
         writer: &mut tokio::io::Stdout,
         tx_upstream_events: &mpsc::Sender<UpstreamEvent>,
     ) -> Result<()> {
-        #[cfg(feature = "telemetry")]
-        if let Some(params) = &req.params {
-            let mut baggage = lilith_telemetry::baggage::current();
-            let mut modified = false;
-
-            if let Some(hi) = params.get("_lilith_trace_id_hi").and_then(|v| v.as_u64()) {
-                if let Some(lo) = params.get("_lilith_trace_id_lo").and_then(|v| v.as_u64()) {
-                    baggage.trace_id = lilith_telemetry::TraceId(hi, lo);
-                    modified = true;
-                }
-            }
-
-            if let Some(parent_sid) = params
-                .get("_lilith_parent_span_id")
-                .and_then(|v| v.as_u64())
-            {
-                baggage.span_id = lilith_telemetry::SpanId(parent_sid);
-                modified = true;
-            }
-
-            if modified {
-                lilith_telemetry::baggage::set_current(baggage);
-            }
-        }
-
-        #[cfg(feature = "telemetry")]
-        let _span =
-            lilith_telemetry::telemetry_span!("mcp_request", lilith_telemetry::SpanKind::Server);
+        let _request_span = self
+            .telemetry
+            .as_ref()
+            .map(|h| h.begin_mcp_request(&req.method, req.params.as_ref()));
 
         let security_event = self.session.parse_request(req);
 
@@ -351,11 +343,9 @@ impl McpMiddleware {
                 }
 
                 if self.upstream_stdin.is_some() {
-                    #[cfg(feature = "telemetry")]
-                    lilith_telemetry::telemetry_event!(
-                        lilith_telemetry::dispatcher::EventLevel::RoutineAllow,
-                        format!("Forwarding {} to upstream", req.method).as_bytes()
-                    );
+                    if let Some(hook) = &self.telemetry {
+                        hook.on_forward_upstream(&req.method);
+                    }
                     self.session.sanitize_for_upstream(req);
                     let clean_req = crate::engine_core::taint::Clean::new_unchecked(&*req);
                     self.write_upstream(clean_req).await?;
@@ -405,9 +395,7 @@ impl McpMiddleware {
         resp: JsonRpcResponse,
         writer: &mut tokio::io::Stdout,
     ) -> Result<()> {
-        #[cfg(feature = "telemetry")]
-        let _span =
-            lilith_telemetry::telemetry_span!("mcp_response", lilith_telemetry::SpanKind::Server);
+        let _response_span = self.telemetry.as_ref().map(|h| h.begin_mcp_response());
 
         let mut decision = SecurityDecision::Allow; // Default if unsolicited (notifications)?
 
@@ -485,11 +473,9 @@ impl McpMiddleware {
             }
         }
 
-        #[cfg(feature = "telemetry")]
-        lilith_telemetry::telemetry_event!(
-            lilith_telemetry::dispatcher::EventLevel::RoutineAllow,
-            b"Forwarding response to client"
-        );
+        if let Some(hook) = &self.telemetry {
+            hook.on_forward_client();
+        }
 
         let secured_resp = self.session.apply_decision(&decision, resp);
 

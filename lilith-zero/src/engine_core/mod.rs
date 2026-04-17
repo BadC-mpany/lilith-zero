@@ -22,5 +22,7 @@ pub mod session;
 pub mod taint;
 /// `McpSessionHandler` trait implemented by each protocol adapter.
 pub mod traits;
+/// Zero-dependency telemetry integration hook trait.
+pub mod telemetry;
 /// `TaintedString` and `SafeString` newtypes.
 pub mod types;

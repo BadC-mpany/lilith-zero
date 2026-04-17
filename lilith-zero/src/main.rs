@@ -53,10 +53,6 @@ struct Cli {
     #[arg(long)]
     audit_logs: Option<PathBuf>,
 
-    /// Telemetry flock link (backward-compat; prefer `lilith-zero run`).
-    #[arg(long)]
-    telemetry_link: Option<String>,
-
     /// Extra arguments forwarded to the upstream server after `--`.
     #[arg(last = true)]
     upstream_args: Vec<String>,
@@ -89,9 +85,6 @@ enum Commands {
         /// Path for audit log output.
         #[arg(long)]
         audit_logs: Option<PathBuf>,
-        /// Telemetry flock connection link.
-        #[arg(long)]
-        telemetry_link: Option<String>,
         /// Extra arguments forwarded to the upstream server after `--`.
         #[arg(last = true)]
         upstream_args: Vec<String>,
@@ -176,7 +169,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             transport,
             policy,
             audit_logs,
-            telemetry_link,
             upstream_args,
         }) => {
             let mut config = build_config(policy)?;
@@ -184,7 +176,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let cmd = config.upstream_cmd.clone().unwrap_or_default();
             init_tracing(&config)?;
             print_banner();
-            run_middleware(cmd, upstream_args, audit_logs, telemetry_link, config).await?;
+            run_middleware(cmd, upstream_args, audit_logs, config).await?;
         }
 
         // --- Policy validation ---
@@ -214,14 +206,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let cmd = config.upstream_cmd.clone().unwrap_or_default();
             init_tracing(&config)?;
             print_banner();
-            run_middleware(
-                cmd,
-                cli.upstream_args,
-                cli.audit_logs,
-                cli.telemetry_link,
-                config,
-            )
-            .await?;
+            run_middleware(cmd, cli.upstream_args, cli.audit_logs, config).await?;
         }
     }
 
@@ -236,7 +221,6 @@ async fn run_middleware(
     upstream_cmd: String,
     upstream_args: Vec<String>,
     audit_logs: Option<PathBuf>,
-    telemetry_link: Option<String>,
     config: Config,
 ) -> Result<(), Box<dyn std::error::Error>> {
     info!("Starting lilith-zero");
@@ -247,27 +231,6 @@ async fn run_middleware(
         );
     } else {
         info!("Transport: stdio → {} {:?}", upstream_cmd, upstream_args);
-    }
-
-    #[cfg(feature = "telemetry")]
-    {
-        if let Some(link_str) = telemetry_link {
-            info!("Telemetry link provided, initializing FlockMember mode");
-            let link = lilith_telemetry::FlockLink::parse(&link_str)?;
-            lilith_telemetry::init(lilith_telemetry::DeploymentMode::FlockMember {
-                target_api_endpoint: format!("{}:{}", link.host, link.port),
-                auth_key: lilith_telemetry::crypto::KeyHandle(link.key_id),
-            });
-        } else {
-            info!("No telemetry link provided, running in Alone mode");
-            lilith_telemetry::init(lilith_telemetry::DeploymentMode::Alone);
-        }
-    }
-    #[cfg(not(feature = "telemetry"))]
-    {
-        if telemetry_link.is_some() {
-            tracing::warn!("Telemetry link provided but telemetry feature is disabled");
-        }
     }
 
     let mut middleware =

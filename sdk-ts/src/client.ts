@@ -50,6 +50,10 @@ export interface AuditEntry {
 }
 
 export interface LilithOptions {
+  /** Upstream MCP server command string (stdio transport). Mutually exclusive with upstreamUrl. */
+  upstream?: string;
+  /** Upstream MCP server URL (HTTP transport). Mutually exclusive with upstream. */
+  upstreamUrl?: string;
   /** Path to the policy YAML file. */
   policy?: string;
   /** Absolute path to the Lilith binary (auto-discovered if omitted). */
@@ -162,8 +166,9 @@ interface PendingRequest {
  * tool/resource calls through the security policy engine.
  */
 export class Lilith {
-  private readonly _upstreamCmd: string;
+  private readonly _upstreamCmd: string | null;
   private readonly _upstreamArgs: string[];
+  private readonly _upstreamUrl: string | null;
   private readonly _binaryPath: string;
   private readonly _policyPath: string | undefined;
   private readonly _telemetryLink: string | undefined;
@@ -182,31 +187,52 @@ export class Lilith {
   private _auditFileOffset = 0;
   private _stopped = false;
 
-  constructor(upstream: string, options: LilithOptions = {}) {
-    if (!upstream?.trim()) {
+  constructor(upstreamOrOptions: string | LilithOptions, legacyOptions: LilithOptions = {}) {
+    // Support both forms:
+    //   new Lilith("node server.mjs", { policy: "..." })   ← positional (old)
+    //   new Lilith({ upstream: "node server.mjs", ... })   ← options object
+    //   new Lilith({ upstreamUrl: "http://...", ... })      ← HTTP transport
+    const opts: LilithOptions =
+      typeof upstreamOrOptions === "string"
+        ? { ...legacyOptions, upstream: upstreamOrOptions }
+        : upstreamOrOptions;
+
+    const { upstream, upstreamUrl, policy, binary, telemetryLink } = opts;
+
+    if (upstream && upstreamUrl) {
       throw new LilithConfigError(
-        "upstream command is required",
+        "upstream and upstreamUrl are mutually exclusive",
         "upstream",
       );
     }
 
-    // Parse the upstream command string (simple shell-style split — no full
-    // posix quoting support needed for common cases).
-    const parts = splitCommand(upstream.trim());
-    if (parts.length === 0) {
-      throw new LilithConfigError(
-        "upstream command is empty after parsing",
-        "upstream",
-      );
+    if (upstreamUrl) {
+      this._upstreamCmd = null;
+      this._upstreamArgs = [];
+      this._upstreamUrl = upstreamUrl;
+    } else {
+      const cmd = upstream?.trim() ?? "";
+      if (!cmd) {
+        throw new LilithConfigError(
+          "upstream command is required (or use upstreamUrl for HTTP transport)",
+          "upstream",
+        );
+      }
+      const parts = splitCommand(cmd);
+      if (parts.length === 0) {
+        throw new LilithConfigError(
+          "upstream command is empty after parsing",
+          "upstream",
+        );
+      }
+      this._upstreamCmd = parts[0]!;
+      this._upstreamArgs = parts.slice(1);
+      this._upstreamUrl = null;
     }
-    this._upstreamCmd = parts[0]!;
-    this._upstreamArgs = parts.slice(1);
 
     // Resolve binary.
     try {
-      this._binaryPath = options.binary
-        ? resolve(options.binary)
-        : findBinary();
+      this._binaryPath = binary ? resolve(binary) : findBinary();
     } catch (e) {
       throw e instanceof LilithConfigError
         ? e
@@ -220,10 +246,8 @@ export class Lilith {
       );
     }
 
-    this._policyPath = options.policy
-      ? resolve(options.policy)
-      : undefined;
-    this._telemetryLink = options.telemetryLink;
+    this._policyPath = policy ? resolve(policy) : undefined;
+    this._telemetryLink = telemetryLink;
   }
 
   // ─── Public properties ──────────────────────────────────────────────────
@@ -415,9 +439,13 @@ export class Lilith {
     if (this._auditFilePath) cmd.push("--audit-logs", this._auditFilePath);
     if (this._telemetryLink) cmd.push("--telemetry-link", this._telemetryLink);
 
-    cmd.push("--upstream-cmd", this._upstreamCmd);
-    if (this._upstreamArgs.length > 0) {
-      cmd.push("--", ...this._upstreamArgs);
+    if (this._upstreamUrl) {
+      cmd.push("--transport", "http", "--upstream-url", this._upstreamUrl);
+    } else {
+      cmd.push("--upstream-cmd", this._upstreamCmd!);
+      if (this._upstreamArgs.length > 0) {
+        cmd.push("--", ...this._upstreamArgs);
+      }
     }
     return cmd;
   }

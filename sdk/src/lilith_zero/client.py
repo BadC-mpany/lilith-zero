@@ -199,45 +199,55 @@ class Lilith:
         self,
         upstream: str | None = None,
         *,
+        upstream_url: str | None = None,
         policy: str | None = None,
         binary: str | None = None,
-        telemetry_link: str | None = None,
     ) -> None:
         """Initialize Lilith middleware configuration.
 
         Args:
-            upstream: Command to run the upstream MCP server (e.g., "python server.py").
-                      If None, Lilith starts in a mode waiting for connection (future).
-                      Currently required.
+            upstream: Command to run the upstream MCP server via stdio transport
+                      (e.g., "python server.py"). Mutually exclusive with upstream_url.
+            upstream_url: URL of an upstream Streamable HTTP MCP server
+                          (e.g., "http://localhost:8090/mcp"). Mutually exclusive with upstream.
             policy: Path to policy YAML file for rule-based enforcement.
             binary: Path to Lilith binary (auto-discovered if not provided).
-            telemetry_link: Optional connection link for Lilith Telemetry Flock.
 
         Raises:
-            LilithConfigError: If upstream is empty or binary not found.
+            LilithConfigError: If neither or both of upstream/upstream_url are provided,
+                               or if the binary is not found.
         """
-        if not upstream or not upstream.strip():
+        if upstream and upstream_url:
             raise LilithConfigError(
-                "Upstream command is required in this version.", config_key="upstream"
+                "upstream and upstream_url are mutually exclusive — use one or the other.",
+                config_key="upstream",
+            )
+        if not upstream and not upstream_url:
+            raise LilithConfigError(
+                "Provide upstream (stdio command) or upstream_url (HTTP URL).",
+                config_key="upstream",
             )
 
-        # Parse upstream command robustly
-        try:
-            # On Windows, posix=False is required to preserve backslashes
-            is_posix = platform.system() != "Windows"
-            parts = shlex.split(upstream.strip(), posix=is_posix)
-        except ValueError as e:
-            raise LilithConfigError(
-                f"Malformed upstream command: {e}", config_key="upstream"
-            ) from e
+        self._upstream_url = upstream_url
 
-        if not parts:
-            raise LilithConfigError(
-                "Upstream command is empty after parsing.", config_key="upstream"
-            )
-
-        self._upstream_cmd = parts[0]
-        self._upstream_args = parts[1:] if len(parts) > 1 else []
+        if upstream:
+            # Parse upstream command robustly
+            try:
+                is_posix = platform.system() != "Windows"
+                parts = shlex.split(upstream.strip(), posix=is_posix)
+            except ValueError as e:
+                raise LilithConfigError(
+                    f"Malformed upstream command: {e}", config_key="upstream"
+                ) from e
+            if not parts:
+                raise LilithConfigError(
+                    "Upstream command is empty after parsing.", config_key="upstream"
+                )
+            self._upstream_cmd: str | None = parts[0]
+            self._upstream_args: list[str] = parts[1:] if len(parts) > 1 else []
+        else:
+            self._upstream_cmd = None
+            self._upstream_args = []
 
         # Resolve binary path
         try:
@@ -257,7 +267,6 @@ class Lilith:
         self._policy_path = os.path.abspath(policy) if policy else None
 
         # Runtime state
-        self._telemetry_link = telemetry_link
         self._process: asyncio.subprocess.Process | None = None
         self._reader_task: asyncio.Task[None] | None = None
         self._stderr_task: asyncio.Task[None] | None = None
@@ -490,8 +499,10 @@ class Lilith:
         self._audit_file_path = None
 
     def _build_command(self) -> list[str]:
-        if not self._binary_path or not self._upstream_cmd:
+        if not self._binary_path:
             raise LilithConfigError("Invalid configuration for build_command")
+        if not self._upstream_cmd and not self._upstream_url:
+            raise LilithConfigError("Neither upstream_cmd nor upstream_url configured")
 
         cmd: list[str] = [self._binary_path]
 
@@ -501,9 +512,11 @@ class Lilith:
         if self._audit_file_path:
             cmd.extend(["--audit-logs", self._audit_file_path])
 
-        if self._telemetry_link:
-            cmd.extend(["--telemetry-link", self._telemetry_link])
+        if self._upstream_url:
+            cmd.extend(["--transport", "http", "--upstream-url", self._upstream_url])
+            return cmd
 
+        assert self._upstream_cmd is not None  # invariant: checked above
         cmd.extend(["--upstream-cmd", self._upstream_cmd])
         if self._upstream_args:
             cmd.append("--")

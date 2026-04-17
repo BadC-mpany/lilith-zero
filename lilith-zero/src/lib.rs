@@ -12,6 +12,8 @@
 #![warn(missing_docs)]
 #![warn(clippy::undocumented_unsafe_blocks)]
 
+pub use engine_core::telemetry::TelemetryHook;
+
 /// Runtime configuration types and security-level definitions.
 pub mod config;
 /// Policy evaluation engine: pattern matching and taint-rule evaluation.

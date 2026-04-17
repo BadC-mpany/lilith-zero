@@ -22,6 +22,7 @@ use crate::engine_core::models::{Decision, HistoryEntry, PolicyDefinition, Polic
 use anyhow::Result;
 
 use crate::engine_core::audit::AuditLogger;
+use crate::engine_core::telemetry::TelemetryHook;
 
 /// Per-session security state: holds the active policy, taint set, history, and crypto signer.
 pub struct SecurityCore {
@@ -35,6 +36,7 @@ pub struct SecurityCore {
     pub policy: Option<PolicyDefinition>,
     taints: HashSet<String>,
     history: Vec<HistoryEntry>,
+    telemetry: Option<Arc<dyn TelemetryHook>>,
 }
 
 impl SecurityCore {
@@ -53,9 +55,10 @@ impl SecurityCore {
             signer,
             audit,
             session_id,
-            policy: None, // Changed        _policy: &SandboxPolicy, to policy: None to match struct definition
+            policy: None,
             taints: HashSet::new(),
             history: Vec::new(),
+            telemetry: None,
         })
     }
 
@@ -83,6 +86,14 @@ impl SecurityCore {
             });
         }
         self.policy = Some(policy);
+    }
+
+    /// Register a telemetry hook for distributed tracing.
+    ///
+    /// Called by [`crate::mcp::server::McpMiddleware::with_telemetry`] — prefer
+    /// that builder method over calling this directly.
+    pub fn set_telemetry(&mut self, hook: Arc<dyn TelemetryHook>) {
+        self.telemetry = Some(hook);
     }
 
     /// Emit a signed audit log entry for the current session.
@@ -132,11 +143,9 @@ impl SecurityCore {
                     json!({ "timestamp": crate::utils::time::now() }),
                 );
 
-                #[cfg(feature = "telemetry")]
-                lilith_telemetry::telemetry_event!(
-                    lilith_telemetry::dispatcher::EventLevel::RoutineAllow,
-                    b"New MCP Session Handshake completed"
-                );
+                if let Some(hook) = &self.telemetry {
+                    hook.on_session_start(&self.session_id);
+                }
 
                 SecurityDecision::Allow
             }
@@ -182,17 +191,9 @@ impl SecurityCore {
                 let tool_name_str = tool_name.into_inner_unchecked();
                 let classes = self.classify_tool(&tool_name_str);
 
-                #[cfg(feature = "telemetry")]
-                let _span = lilith_telemetry::telemetry_span!(
-                    "tool_evaluation",
-                    lilith_telemetry::SpanKind::Server
-                );
-
-                #[cfg(feature = "telemetry")]
-                lilith_telemetry::telemetry_event!(
-                    lilith_telemetry::dispatcher::EventLevel::RoutineAllow,
-                    format!("Evaluating tool request: {}", tool_name_str).as_bytes()
-                );
+                let _eval_span = self.telemetry.as_ref().map(|h| {
+                    h.begin_tool_evaluation(&self.session_id, &tool_name_str)
+                });
 
                 let evaluator_result = if let Some(policy) = &self.policy {
                     PolicyEvaluator::evaluate_with_args(
@@ -225,34 +226,35 @@ impl SecurityCore {
                     Ok(decision) => {
                         let sec_decision =
                             self.process_evaluator_decision(&tool_name_str, &classes, decision);
-
-                        #[cfg(feature = "telemetry")]
-                        match &sec_decision {
-                            SecurityDecision::Deny { reason, .. } => {
-                                lilith_telemetry::telemetry_event!(
-                                    lilith_telemetry::dispatcher::EventLevel::CriticalDeny,
-                                    format!("Blocked tool {}: {}", tool_name_str, reason)
-                                        .as_bytes()
-                                );
-                            }
-                            _ => {
-                                lilith_telemetry::telemetry_event!(
-                                    lilith_telemetry::dispatcher::EventLevel::RoutineAllow,
-                                    format!("Allowed tool {}", tool_name_str).as_bytes()
-                                );
+                        if let Some(hook) = &self.telemetry {
+                            match &sec_decision {
+                                SecurityDecision::Deny { reason, .. } => {
+                                    hook.on_tool_decision(
+                                        &self.session_id,
+                                        &tool_name_str,
+                                        false,
+                                        Some(reason),
+                                    );
+                                }
+                                _ => {
+                                    hook.on_tool_decision(
+                                        &self.session_id,
+                                        &tool_name_str,
+                                        true,
+                                        None,
+                                    );
+                                }
                             }
                         }
                         sec_decision
                     }
                     Err(e) => {
                         warn!("Policy evaluation internal error: {}", e);
-                        #[cfg(feature = "telemetry")]
-                        lilith_telemetry::telemetry_event!(
-                            lilith_telemetry::dispatcher::EventLevel::CriticalDeny,
-                            format!("Policy error during evaluation: {}", e).as_bytes()
-                        );
+                        if let Some(hook) = &self.telemetry {
+                            hook.on_policy_error(&self.session_id, &tool_name_str, &e.to_string());
+                        }
                         SecurityDecision::Deny {
-                            error_code: jsonrpc::ERROR_INTERNAL, // Internal error
+                            error_code: jsonrpc::ERROR_INTERNAL,
                             reason: format!("Policy error: {}", e),
                         }
                     }

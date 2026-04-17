@@ -48,7 +48,7 @@ def mock_env(mock_subprocess: AsyncMock) -> Generator[MagicMock, None, None]:
 @pytest.mark.asyncio
 async def test_config_validation() -> None:
     """Verify strictly required configuration parameters."""
-    with pytest.raises(LilithConfigError, match="Upstream command is required"):
+    with pytest.raises(LilithConfigError, match="upstream"):
         Lilith(upstream="")
 
     with patch(
