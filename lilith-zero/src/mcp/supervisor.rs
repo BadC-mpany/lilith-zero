@@ -16,12 +16,18 @@ use tokio::signal::unix::{signal, SignalKind};
 #[cfg(target_os = "macos")]
 use libc;
 
+/// Entry point for the macOS supervisor sub-process.
+///
+/// On macOS, the main process re-execs itself with the `__supervisor` subcommand, passing the
+/// parent PID.  This supervisor uses kqueue `EVFILT_PROC` / `NOTE_EXIT` to detect when the
+/// parent dies, at which point it kills the wrapped child command and exits.
+///
+/// On non-Unix platforms this returns an error immediately.
 pub async fn supervisor_main(
     parent_pid: u32,
     cmd: String,
     args: Vec<String>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    // Description: Executes the supervisor_main logic.
     #[cfg(not(unix))]
     {
         let _ = parent_pid;
@@ -86,8 +92,7 @@ pub async fn supervisor_main(
 fn monitor_parent_kqueue(
     pid: i32,
 ) -> Result<impl std::future::Future<Output = ()>, std::io::Error> {
-    // Description: Executes the monitor_parent_kqueue logic.
-
+    // SAFETY: kqueue syscalls operate on kernel-managed file descriptors; no aliasing hazards.
     let kq = unsafe { libc::kqueue() };
     if kq < 0 {
         return Err(std::io::Error::last_os_error());
@@ -102,9 +107,11 @@ fn monitor_parent_kqueue(
         udata: std::ptr::null_mut(),
     };
 
+    // SAFETY: kq is a valid file descriptor obtained above; event is fully initialised.
     let ret = unsafe { libc::kevent(kq, &event, 1, std::ptr::null_mut(), 0, std::ptr::null()) };
 
     if ret < 0 {
+        // SAFETY: kq is valid.
         unsafe { libc::close(kq) };
         return Err(std::io::Error::last_os_error());
     }
@@ -120,6 +127,7 @@ fn monitor_parent_kqueue(
                 udata: std::ptr::null_mut(),
             }];
 
+            // SAFETY: kq and events are valid; blocking call inside spawn_blocking.
             let n = unsafe {
                 libc::kevent(
                     kq,
@@ -131,6 +139,7 @@ fn monitor_parent_kqueue(
                 )
             };
 
+            // SAFETY: kq is valid.
             unsafe { libc::close(kq) };
 
             if n > 0 {}

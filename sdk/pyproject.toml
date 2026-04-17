@@ -42,6 +42,17 @@ dev = [
     "ruff>=0.1.0",
     "mypy>=1.0.0",
     "pytest>=7.0.0",
+    "pytest-asyncio>=0.23.0",
+    "types-setuptools",
+]
+
+# PEP 735 dependency groups — used by `uv sync --dev`
+[dependency-groups]
+dev = [
+    "ruff>=0.1.0",
+    "mypy>=1.0.0",
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.23.0",
     "types-setuptools",
 ]
 
@@ -51,7 +62,11 @@ target-version = "py310"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B"]
-ignore = []
+ignore = ["E501"]  # line-length: ASCII art in __init__.py intentionally exceeds limit
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
 
 [tool.mypy]
 strict = true

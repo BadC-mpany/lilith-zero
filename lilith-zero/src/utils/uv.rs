@@ -11,11 +11,17 @@ use std::path::{Path, PathBuf};
 use tokio::process::Command;
 use tracing::info;
 
+/// Manages hermetic Python runtime provisioning via the `uv` tool.
 pub struct UvManager;
 
 impl UvManager {
+    /// Ensure a hermetic Python virtual environment for `version` exists at `target_dir`.
+    ///
+    /// If the environment is already present, this is a no-op.  On Windows, additionally
+    /// seeds required DLLs into the Scripts directory for fully isolated execution.
+    ///
+    /// Returns the path to the `python` executable within the created environment.
     pub async fn ensure_hermetic_runtime(version: &str, target_dir: &Path) -> Result<PathBuf> {
-        // Description: Executes the ensure_hermetic_runtime logic.
         let python_exe = if cfg!(windows) {
             target_dir.join("Scripts").join("python.exe")
         } else {

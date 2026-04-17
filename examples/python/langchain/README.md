@@ -1,54 +1,30 @@
-# Lilith Telemetry — LangChain Agent Demo
+# Lilith Zero — Agentic Loop Example
 
-This example demonstrates how to orchestrate a distributed AI agent network using **LangChain** and **Lilith Zero**.
+Demonstrates Lilith Zero securing a multi-turn agentic loop — no framework dependency required.
 
-It shows off the `lilith-telemetry` system where multiple `FlockMember` (Nodes) connect to a single `FlockHead` (Collector) to stream high-performance, critical security events dynamically generated through runtime policy evaluations.
+## Scenario
 
-## Architecture
+An agent has access to three tools:
 
-*   **Node (FlockMember):** Your LangChain python process running the `agent.py` script. The Lilith-Zero SDK intercepts tool access, generates deterministic telemetry logs using `RDTSC` (CPU cycles) and signs them with a provisioned Node Key.
-*   **Head (FlockHead):** The collector running the `lilith-telemetry` server example. It receives UDP telemetry streams from all members and aggregates them.
+| Tool | Class | Behaviour |
+|------|-------|-----------|
+| `calculator` | Safe | Always allowed |
+| `database` | Sensitive source | Allowed, adds `SENSITIVE_CONTEXT` taint |
+| `web_search` | Network sink | **Blocked once `SENSITIVE_CONTEXT` taint is present** |
+| `delete_record` | Destructive | **Statically denied** |
 
-## Setup & Running the Demo
+This models the core exfiltration threat: an agent that reads from a private data store and then tries to send results externally.
 
-### 1. Provision Node Keys (FlockHead Terminal)
-First, you need to generate a `flock_keys.db` registry for the server to recognize the nodes.
+## Key Concepts
+
+- **Taint tracking**: `database` adds `SENSITIVE_CONTEXT`; `web_search` is blocked by the taint rule.
+- **Static deny**: `delete_record` is denied regardless of session state.
+- **Audit log**: `drain_audit_logs()` returns a snapshot of all decisions after the loop completes.
+- **Agentic realism**: The agent loop continues running safe tools even after the blocked call — mimicking how a real agent recovers and retries.
+
+## Running
+
 ```bash
-cd lilith-telemetry
-cargo run --example provision
+export LILITH_ZERO_BINARY_PATH=/path/to/lilith-zero
+python agent.py
 ```
-*Note the keys outputted in the terminal. You will use these connection strings for the agents.*
-
-### 2. Start the Telemetry Collector (FlockHead Terminal)
-In the same terminal, boot up the UDP listening collection server.
-```bash
-cargo run --example server
-```
-*The collector will now listen on `127.0.0.1:44317`.*
-
-### 3. Start Agent 1 (Node Terminal 1)
-Open a new terminal. Compile the `lilith-zero` binary and run the LangChain example using the first connection link provisioned in Step 1.
-```bash
-cd lilith-zero
-cargo build
-
-cd examples/python/langchain
-python agent.py --telemetry-link "lilith://127.0.0.1:44317?key_id=<KEY_1>"
-```
-
-### 4. Start Agent 2 (Node Terminal 2)
-In another terminal, start the secondary agent to see interleaved logs.
-```bash
-cd examples/python/langchain
-python agent.py --telemetry-link "lilith://127.0.0.1:44317?key_id=<KEY_2>"
-```
-
-## Observing Telemetry
-
-**Local Node Logging:**
-A file named `node_telemetry_local.log` will be created in your working directory (`examples/python/langchain`). This allows you to witness the `BinaryEvent` logs written directly to disk at the edge without the collector.
-
-**Collector Aggregation:**
-A `telemetry.log` file is created inside the `lilith-telemetry` directory. If you inspect this file or watch the collector output, you will see events streaming in labeled by the `NODE` and `SESSION` identifiers.
-
-Trigger a tool like `Compute 5 + 5` in the python Agent chat interface, and you will see a `RoutineAllow` event show up immediately in both locations!

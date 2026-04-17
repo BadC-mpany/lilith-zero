@@ -7,39 +7,36 @@
 // See the License for the specific language governing permissions and
 
 use crate::engine_core::constants::session;
-use crate::engine_core::events::{OutputTransform, SecurityDecision, SecurityEvent};
+use crate::engine_core::events::{SecurityDecision, SecurityEvent};
 use crate::engine_core::models::{JsonRpcRequest, JsonRpcResponse};
 use crate::engine_core::taint::Tainted;
 use crate::engine_core::traits::McpSessionHandler;
 use crate::engine_core::types::TaintedString;
-use crate::utils::security::SecurityEngine;
 use serde_json::Value;
 
+/// MCP protocol adapter for the `2025-11-25` / `2025-06-18` specification revisions.
 #[derive(Debug)]
 pub struct Mcp2025Adapter;
 
 impl Default for Mcp2025Adapter {
     fn default() -> Self {
-        // Description: Executes the default logic.
         Self::new()
     }
 }
 
 impl Mcp2025Adapter {
+    /// Create a new [`Mcp2025Adapter`].
     pub fn new() -> Self {
-        // Description: Executes the new logic.
         Self
     }
 }
 
 impl McpSessionHandler for Mcp2025Adapter {
     fn version(&self) -> &'static str {
-        // Description: Executes the version logic.
         "2025-06-18"
     }
 
     fn parse_request(&self, req: &JsonRpcRequest) -> SecurityEvent {
-        // Description: Executes the parse_request logic.
         match req.method.as_str() {
             "initialize" => {
                 let params = req.params.as_ref().cloned().unwrap_or(Value::Null);
@@ -89,43 +86,15 @@ impl McpSessionHandler for Mcp2025Adapter {
     fn apply_decision(
         &self,
         decision: &SecurityDecision,
-        mut response: JsonRpcResponse,
+        response: JsonRpcResponse,
     ) -> JsonRpcResponse {
-        // Description: Executes the apply_decision logic.
-        match decision {
-            SecurityDecision::AllowWithTransforms {
-                output_transforms, ..
-            } => {
-                if let Some(result) = response.result.as_mut() {
-                    for transform in output_transforms {
-                        if let OutputTransform::Spotlight { .. } = transform {
-                            if let Some(structured) = result.get_mut("structuredContent") {
-                                Self::recursive_spotlight(structured);
-                            }
-
-                            if let Some(content) =
-                                result.get_mut("content").and_then(|v| v.as_array_mut())
-                            {
-                                for item in content {
-                                    if let Some(text_val) = item.get_mut("text") {
-                                        if let Some(text) = text_val.as_str() {
-                                            let spotlighted = SecurityEngine::spotlight(text);
-                                            *text_val = Value::String(spotlighted);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                response
-            }
-            _ => response,
-        }
+        // Future output transforms (e.g. Redact) are applied here.
+        // Currently no transforms are applied; the response passes through unchanged.
+        let _ = decision;
+        response
     }
 
     fn extract_session_token(&self, req: &JsonRpcRequest) -> Option<String> {
-        // Description: Executes the extract_session_token logic.
         req.params
             .as_ref()
             .and_then(|p| p.get(session::SESSION_ID_PARAM))
@@ -134,41 +103,10 @@ impl McpSessionHandler for Mcp2025Adapter {
     }
 
     fn sanitize_for_upstream(&self, req: &mut JsonRpcRequest) {
-        // Description: Executes the sanitize_for_upstream logic.
         if let Some(params) = req.params.as_mut() {
             if let Some(obj) = params.as_object_mut() {
                 obj.remove(session::SESSION_ID_PARAM);
             }
-        }
-    }
-}
-
-impl Mcp2025Adapter {
-    fn recursive_spotlight(value: &mut Value) {
-        // Description: Executes the recursive_spotlight logic.
-        match value {
-            Value::String(s) => {
-                *s = SecurityEngine::spotlight(s);
-            }
-            Value::Array(arr) => {
-                for item in arr {
-                    Self::recursive_spotlight(item);
-                }
-            }
-            Value::Object(map) => {
-                for (k, v) in map {
-                    if k == "text" || k == "message" || k == "content" || k == "summary" {
-                        if let Value::String(s) = v {
-                            *s = SecurityEngine::spotlight(s);
-                        } else {
-                            Self::recursive_spotlight(v);
-                        }
-                    } else if v.is_object() || v.is_array() {
-                        Self::recursive_spotlight(v);
-                    }
-                }
-            }
-            _ => {}
         }
     }
 }

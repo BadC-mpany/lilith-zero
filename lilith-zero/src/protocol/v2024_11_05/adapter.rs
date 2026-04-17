@@ -7,40 +7,37 @@
 // See the License for the specific language governing permissions and
 
 use crate::engine_core::constants::session;
-use crate::engine_core::events::{OutputTransform, SecurityDecision, SecurityEvent};
+use crate::engine_core::events::{SecurityDecision, SecurityEvent};
 use crate::engine_core::models::{JsonRpcRequest, JsonRpcResponse};
 use crate::engine_core::taint::Tainted;
 use crate::engine_core::traits::McpSessionHandler;
 use crate::engine_core::types::TaintedString;
-use crate::utils::security::SecurityEngine;
 use serde_json::Value;
 use tracing::debug;
 
+/// MCP protocol adapter for the `2024-11-05` specification revision.
 #[derive(Debug)]
 pub struct Mcp2024Adapter;
 
 impl Default for Mcp2024Adapter {
     fn default() -> Self {
-        // Description: Executes the default logic.
         Self::new()
     }
 }
 
 impl Mcp2024Adapter {
+    /// Create a new [`Mcp2024Adapter`].
     pub fn new() -> Self {
-        // Description: Executes the new logic.
         Self
     }
 }
 
 impl McpSessionHandler for Mcp2024Adapter {
     fn version(&self) -> &'static str {
-        // Description: Executes the version logic.
         "2024-11-05"
     }
 
     fn parse_request(&self, req: &JsonRpcRequest) -> SecurityEvent {
-        // Description: Executes the parse_request logic.
         match req.method.as_str() {
             "initialize" => {
                 let params = req.params.as_ref().cloned().unwrap_or(Value::Null);
@@ -116,53 +113,16 @@ impl McpSessionHandler for Mcp2024Adapter {
     fn apply_decision(
         &self,
         decision: &SecurityDecision,
-        mut response: JsonRpcResponse,
+        response: JsonRpcResponse,
     ) -> JsonRpcResponse {
-        // Description: Executes the apply_decision logic.
         debug!("Applying decision to response (id: {:?})", response.id);
-        match decision {
-            SecurityDecision::AllowWithTransforms {
-                output_transforms, ..
-            } => {
-                if let Some(result) = response.result.as_mut() {
-                    for transform in output_transforms {
-                        if let OutputTransform::Spotlight { .. } = transform {
-                            if let Some(content) =
-                                result.get_mut("content").and_then(|v| v.as_array_mut())
-                            {
-                                for item in content {
-                                    if let Some(text_val) = item.get_mut("text") {
-                                        if let Some(text) = text_val.as_str() {
-                                            let spotlighted = SecurityEngine::spotlight(text);
-                                            *text_val = Value::String(spotlighted);
-                                        }
-                                    }
-                                }
-                            }
-
-                            if let Some(contents) =
-                                result.get_mut("contents").and_then(|v| v.as_array_mut())
-                            {
-                                for item in contents {
-                                    if let Some(text_val) = item.get_mut("text") {
-                                        if let Some(text) = text_val.as_str() {
-                                            let spotlighted = SecurityEngine::spotlight(text);
-                                            *text_val = Value::String(spotlighted);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                response
-            }
-            _ => response,
-        }
+        // Future output transforms (e.g. Redact) are applied here.
+        // Currently no transforms are applied; the response passes through unchanged.
+        let _ = decision;
+        response
     }
 
     fn extract_session_token(&self, req: &JsonRpcRequest) -> Option<String> {
-        // Description: Executes the extract_session_token logic.
         req.params
             .as_ref()
             .and_then(|p| p.get(session::SESSION_ID_PARAM))
@@ -171,7 +131,6 @@ impl McpSessionHandler for Mcp2024Adapter {
     }
 
     fn sanitize_for_upstream(&self, req: &mut JsonRpcRequest) {
-        // Description: Executes the sanitize_for_upstream logic.
         if let Some(params) = req.params.as_mut() {
             if let Some(obj) = params.as_object_mut() {
                 obj.remove(session::SESSION_ID_PARAM);

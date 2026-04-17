@@ -1,0 +1,17 @@
+# Allow-all policy for TypeScript SDK integration tests.
+# Permits all tool calls and resource reads; no taint tracking.
+
+id: "ts-sdk-test-allow-all"
+customer_id: "test"
+name: "ts-sdk-test-allow-all"
+version: 1
+
+static_rules:
+  echo: "ALLOW"
+  add: "ALLOW"
+
+taint_rules: []
+resource_rules:
+  - uri_pattern: "test://*"
+    action: "ALLOW"
+protect_lethal_trifecta: false

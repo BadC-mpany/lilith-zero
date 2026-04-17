@@ -8,9 +8,8 @@
 
 use serde_json::json;
 use std::collections::HashSet;
-use std::fs::OpenOptions;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use tracing::{info, warn};
 
 use crate::config::Config;
@@ -18,50 +17,55 @@ use crate::engine::evaluator::PolicyEvaluator;
 use crate::engine_core::auth;
 use crate::engine_core::constants::jsonrpc;
 use crate::engine_core::crypto::CryptoSigner;
-use crate::engine_core::events::{OutputTransform, SecurityDecision, SecurityEvent};
+use crate::engine_core::events::{SecurityDecision, SecurityEvent};
 use crate::engine_core::models::{Decision, HistoryEntry, PolicyDefinition, PolicyRule};
 use anyhow::Result;
 
 use crate::engine_core::audit::AuditLogger;
+use crate::engine_core::telemetry::TelemetryHook;
 
+/// Per-session security state: holds the active policy, taint set, history, and crypto signer.
 pub struct SecurityCore {
+    /// Shared runtime configuration (security level, policy path, audience, etc.).
     pub config: Arc<Config>,
     signer: CryptoSigner,
     audit: AuditLogger,
+    /// HMAC-signed session identifier emitted to stderr on startup.
     pub session_id: String,
+    /// The currently loaded security policy; `None` means no policy (fail-closed by default).
     pub policy: Option<PolicyDefinition>,
     taints: HashSet<String>,
     history: Vec<HistoryEntry>,
+    telemetry: Option<Arc<dyn TelemetryHook>>,
 }
 
 impl SecurityCore {
+    /// Create a new [`SecurityCore`] for a fresh session.
+    ///
+    /// Generates a new HMAC session ID and optionally opens an append-only audit log file.
     pub fn new(
         config: Arc<Config>,
         signer: CryptoSigner,
         audit_log_path: Option<PathBuf>,
     ) -> Result<Self, crate::engine_core::errors::InterceptorError> {
-        // Description: Executes the new logic.
         let session_id = signer.generate_session_id()?;
-
-        let file_writer = if let Some(path) = audit_log_path {
-            let file = OpenOptions::new().create(true).append(true).open(&path)?;
-            Some(Arc::new(Mutex::new(file)))
-        } else {
-            None
-        };
-
-        let audit = AuditLogger::new(signer.clone(), file_writer);
+        let audit = AuditLogger::new(signer.clone(), audit_log_path)?;
         Ok(Self {
             config,
             signer,
             audit,
             session_id,
-            policy: None, // Changed        _policy: &SandboxPolicy, to policy: None to match struct definition
+            policy: None,
             taints: HashSet::new(),
             history: Vec::new(),
+            telemetry: None,
         })
     }
 
+    /// Load a policy into the security core.
+    ///
+    /// If `protect_lethal_trifecta` is enabled in either the policy or the config, automatically
+    /// appends the EXFILTRATION blocking rule that implements lethal-trifecta protection.
     pub fn set_policy(&mut self, mut policy: PolicyDefinition) {
         // Description: Executes the set_policy logic.
         if policy.protect_lethal_trifecta || self.config.protect_lethal_trifecta {
@@ -84,11 +88,24 @@ impl SecurityCore {
         self.policy = Some(policy);
     }
 
+    /// Register a telemetry hook for distributed tracing.
+    ///
+    /// Called by [`crate::mcp::server::McpMiddleware::with_telemetry`] — prefer
+    /// that builder method over calling this directly.
+    pub fn set_telemetry(&mut self, hook: Arc<dyn TelemetryHook>) {
+        self.telemetry = Some(hook);
+    }
+
+    /// Emit a signed audit log entry for the current session.
     pub fn log_audit(&self, event_type: &str, details: serde_json::Value) {
         // Description: Executes the log_audit logic.
         self.audit.log(&self.session_id, event_type, details);
     }
 
+    /// Evaluate a [`SecurityEvent`] against the loaded policy and session state.
+    ///
+    /// Returns the [`SecurityDecision`] that should be applied to the request/response.
+    /// Errors in policy evaluation produce `Deny` (fail-closed).
     #[must_use]
     pub async fn evaluate(&mut self, event: SecurityEvent) -> SecurityDecision {
         // Description: Executes the evaluate logic.
@@ -126,11 +143,9 @@ impl SecurityCore {
                     json!({ "timestamp": crate::utils::time::now() }),
                 );
 
-                #[cfg(feature = "telemetry")]
-                lilith_telemetry::telemetry_event!(
-                    lilith_telemetry::dispatcher::EventLevel::RoutineAllow,
-                    b"New MCP Session Handshake completed"
-                );
+                if let Some(hook) = &self.telemetry {
+                    hook.on_session_start(&self.session_id);
+                }
 
                 SecurityDecision::Allow
             }
@@ -173,20 +188,13 @@ impl SecurityCore {
                     }
                 }
 
-                let tool_name_str = tool_name.into_inner();
+                let tool_name_str = tool_name.into_inner_unchecked();
                 let classes = self.classify_tool(&tool_name_str);
 
-                #[cfg(feature = "telemetry")]
-                let _span = lilith_telemetry::telemetry_span!(
-                    "tool_evaluation",
-                    lilith_telemetry::SpanKind::Server
-                );
-
-                #[cfg(feature = "telemetry")]
-                lilith_telemetry::telemetry_event!(
-                    lilith_telemetry::dispatcher::EventLevel::RoutineAllow,
-                    format!("Evaluating tool request: {}", tool_name_str).as_bytes()
-                );
+                let _eval_span = self
+                    .telemetry
+                    .as_ref()
+                    .map(|h| h.begin_tool_evaluation(&self.session_id, &tool_name_str));
 
                 let evaluator_result = if let Some(policy) = &self.policy {
                     PolicyEvaluator::evaluate_with_args(
@@ -219,34 +227,35 @@ impl SecurityCore {
                     Ok(decision) => {
                         let sec_decision =
                             self.process_evaluator_decision(&tool_name_str, &classes, decision);
-
-                        #[cfg(feature = "telemetry")]
-                        match &sec_decision {
-                            SecurityDecision::Deny { reason, .. } => {
-                                lilith_telemetry::telemetry_event!(
-                                    lilith_telemetry::dispatcher::EventLevel::CriticalDeny,
-                                    format!("Blocked tool {}: {}", tool_name_str, reason)
-                                        .as_bytes()
-                                );
-                            }
-                            _ => {
-                                lilith_telemetry::telemetry_event!(
-                                    lilith_telemetry::dispatcher::EventLevel::RoutineAllow,
-                                    format!("Allowed tool {}", tool_name_str).as_bytes()
-                                );
+                        if let Some(hook) = &self.telemetry {
+                            match &sec_decision {
+                                SecurityDecision::Deny { reason, .. } => {
+                                    hook.on_tool_decision(
+                                        &self.session_id,
+                                        &tool_name_str,
+                                        false,
+                                        Some(reason),
+                                    );
+                                }
+                                _ => {
+                                    hook.on_tool_decision(
+                                        &self.session_id,
+                                        &tool_name_str,
+                                        true,
+                                        None,
+                                    );
+                                }
                             }
                         }
                         sec_decision
                     }
                     Err(e) => {
                         warn!("Policy evaluation internal error: {}", e);
-                        #[cfg(feature = "telemetry")]
-                        lilith_telemetry::telemetry_event!(
-                            lilith_telemetry::dispatcher::EventLevel::CriticalDeny,
-                            format!("Policy error during evaluation: {}", e).as_bytes()
-                        );
+                        if let Some(hook) = &self.telemetry {
+                            hook.on_policy_error(&self.session_id, &tool_name_str, &e.to_string());
+                        }
                         SecurityDecision::Deny {
-                            error_code: jsonrpc::ERROR_INTERNAL, // Internal error
+                            error_code: jsonrpc::ERROR_INTERNAL,
                             reason: format!("Policy error: {}", e),
                         }
                     }
@@ -277,8 +286,10 @@ impl SecurityCore {
 
                 if let Some(policy) = &self.policy {
                     for rule in &policy.resource_rules {
-                        if self.match_resource_pattern(&uri.clone().into_inner(), &rule.uri_pattern)
-                        {
+                        if self.match_resource_pattern(
+                            &uri.clone().into_inner_unchecked(),
+                            &rule.uri_pattern,
+                        ) {
                             if rule.action == "BLOCK" {
                                 return SecurityDecision::Deny {
                                     error_code: jsonrpc::ERROR_SECURITY_BLOCK,
@@ -312,7 +323,7 @@ impl SecurityCore {
                         error_code: jsonrpc::ERROR_SECURITY_BLOCK,
                         reason: format!(
                             "Access to resource denied (Default Deny): {}",
-                            uri.into_inner()
+                            uri.into_inner_unchecked()
                         ),
                     };
                 }
@@ -324,7 +335,7 @@ impl SecurityCore {
                 SecurityDecision::AllowWithTransforms {
                     taints_to_add,
                     taints_to_remove: vec![],
-                    output_transforms: vec![OutputTransform::Spotlight { json_paths: vec![] }], // contents spotlighting
+                    output_transforms: vec![],
                 }
             }
 
@@ -333,13 +344,17 @@ impl SecurityCore {
     }
 
     fn classify_tool(&self, name: &str) -> Vec<String> {
-        // Description: Executes the classify_tool logic.
         if name.starts_with("read_") || name.starts_with("get_") {
             vec!["READ".to_string()]
         } else if name.starts_with("write_") || name.starts_with("delete_") {
             vec!["WRITE".to_string()]
         } else if matches!(name, "curl" | "wget" | "fetch" | "requests" | "http") {
-            vec!["EXFILTRATION".to_string(), "NETWORK".to_string()]
+            warn!(
+                tool = %name,
+                "Tool looks like a network egress tool; add an explicit EXFILTRATION \
+                 policy rule rather than relying on heuristic classification"
+            );
+            vec!["NETWORK".to_string()]
         } else {
             vec![]
         }
@@ -364,15 +379,7 @@ impl SecurityCore {
                     }),
                 );
 
-                if self.config.security_level_config().spotlighting {
-                    SecurityDecision::AllowWithTransforms {
-                        taints_to_add: vec![],
-                        taints_to_remove: vec![],
-                        output_transforms: vec![OutputTransform::Spotlight { json_paths: vec![] }],
-                    }
-                } else {
-                    SecurityDecision::Allow
-                }
+                SecurityDecision::Allow
             }
             Decision::Denied { reason } => {
                 self.audit.log(
@@ -387,9 +394,14 @@ impl SecurityCore {
                         }
                     }),
                 );
-                SecurityDecision::Deny {
-                    error_code: jsonrpc::ERROR_SECURITY_BLOCK,
-                    reason,
+                if self.config.security_level_config().block_on_violation {
+                    SecurityDecision::Deny {
+                        error_code: jsonrpc::ERROR_SECURITY_BLOCK,
+                        reason,
+                    }
+                } else {
+                    warn!(tool = %tool_name, %reason, "Policy violation in AuditOnly mode — allowing");
+                    SecurityDecision::Allow
                 }
             }
             Decision::AllowedWithSideEffects {
@@ -418,18 +430,10 @@ impl SecurityCore {
                     }),
                 );
 
-                if self.config.security_level_config().spotlighting {
-                    SecurityDecision::AllowWithTransforms {
-                        taints_to_add,
-                        taints_to_remove,
-                        output_transforms: vec![OutputTransform::Spotlight { json_paths: vec![] }],
-                    }
-                } else {
-                    SecurityDecision::AllowWithTransforms {
-                        taints_to_add,
-                        taints_to_remove,
-                        output_transforms: vec![],
-                    }
+                SecurityDecision::AllowWithTransforms {
+                    taints_to_add,
+                    taints_to_remove,
+                    output_transforms: vec![],
                 }
             }
         }

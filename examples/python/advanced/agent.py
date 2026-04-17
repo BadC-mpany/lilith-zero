@@ -1,117 +1,119 @@
-# Copyright 2026 BadCompany
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+"""
+Advanced Lilith reference implementation — taint tracking, conditional rules, resource ACL.
+
+Demonstrates every major Lilith SDK feature:
+  1. Taint source    — read_report() adds CONFIDENTIAL taint to the session
+  2. Taint sink      — post_to_slack() blocked while CONFIDENTIAL taint is active
+  3. Taint cleaner   — redact() removes CONFIDENTIAL taint; subsequent post allowed
+  4. Conditional     — archive() blocked unless confirmed=true (tool_args_match exception)
+  5. Resource ACL    — reports://public/* readable; reports://confidential/* readable but taints
+  6. Audit logs      — Lilith emits HMAC-signed JSONL; accessible via lilith.audit_logs
+  7. Spans           — logical grouping for telemetry-linked deployments
+
+Run:
+    export LILITH_ZERO_BINARY_PATH=/path/to/lilith-zero   # or add to PATH
+    python agent.py
+"""
 
 import asyncio
 import os
-import shutil
 import sys
-from dotenv import load_dotenv
-
-# Optional: Rich for UI
-try:
-    from rich.console import Console
-    from rich.panel import Panel
-    from rich.table import Table
-except ImportError:
-    print("Please install rich and python-dotenv")
-    print("uv pip install rich python-dotenv")
-    exit(1)
 
 from lilith_zero import Lilith, PolicyViolationError
 
-console = Console()
+POLICY = os.path.join(os.path.dirname(__file__), "policy.yaml")
+SERVER = os.path.join(os.path.dirname(__file__), "server.py")
 
-# Configuration
-PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../"))
-load_dotenv(os.path.join(PROJECT_ROOT, "examples/.env"))
 
-LILITH_BIN = shutil.which("lilith-zero") or os.environ.get("LILITH_ZERO_BINARY_PATH")
-MOCK_SERVER = os.path.join(os.path.dirname(__file__), "mock_server.py")
-POLICY_FILE = os.path.join(os.path.dirname(__file__), "policy.yaml")
+def section(title: str) -> None:
+    print(f"\n{'─' * 60}")
+    print(f"  {title}")
+    print(f"{'─' * 60}")
 
-async def run_comprehensive_demo():
-    console.print(Panel.fit("[bold blue]LILITH ZERO[/bold blue] - Comprehensive Feature Showcase", border_style="blue"))
-    
+
+async def main() -> None:
     async with Lilith(
-        upstream=f"python -u {MOCK_SERVER}",
-        policy=POLICY_FILE,
-        binary=LILITH_BIN
+        upstream=f"{sys.executable} -u {SERVER}",
+        policy=POLICY,
     ) as lilith:
-        
-        console.print(f"[dim]Session ID: {lilith.session_id}[/dim]")
-        
-        # 1. DISCOVERY (Tools & Resources)
+        print(f"session  : {lilith.session_id}")
+
         tools = await lilith.list_tools()
         resources = await lilith.list_resources()
-        
-        table = Table(title="Lilith Inventory", border_style="cyan")
-        table.add_column("Type", style="bold cyan")
-        table.add_column("Name", style="white")
-        for t in tools: table.add_row("Tool", t['name'])
-        for r in resources: table.add_row("Resource", r['uri'])
-        console.print(table)
+        print(f"tools    : {[t['name'] for t in tools]}")
+        print(f"resources: {[r['uri'] for r in resources]}")
 
-        # 2. STATIC RULES & TAINT INDUCTION
-        console.print("\n[bold green]Case 1: Taint Induction[/bold green]")
-        profile = await lilith.call_tool("get_user_profile", {"user_id": "123"})
-        console.print(Panel(profile['content'][0]['text'], title="[red]TAINTED SOURCE[/red]", border_style="red"))
-        
-        # 3. TAINT TRACKING (Blocking Export)
-        console.print("\n[bold green]Case 2: Taint Enforcement (Blocked Sink)[/bold green]")
+        # ── 1. Taint source ──────────────────────────────────────────────
+        section("1 · Taint source: read_report() adds CONFIDENTIAL taint")
+        result = await lilith.call_tool("read_report", {"path": "q3_financials.txt"})
+        print(f"  ok: {result['content'][0]['text'][:60]}...")
+
+        # ── 2. Taint sink — blocked ───────────────────────────────────────
+        section("2 · Taint sink: post_to_slack() BLOCKED (CONFIDENTIAL active)")
         try:
-            await lilith.call_tool("export_to_untrusted_cloud", {"data": "Leaking secrets..."})
-        except PolicyViolationError as e:
-            console.print(f"  [bold red]BLOCKED:[/bold red] {e}")
+            await lilith.call_tool("post_to_slack", {"text": "Revenue is $42M!"})
+            print("  ERROR: should have been blocked")
+        except PolicyViolationError as exc:
+            print(f"  blocked ✓: {exc}")
 
-        # 4. TAINT REMOVAL (Scrubbing)
-        console.print("\n[bold green]Case 3: Taint Scrubbing (Removes SENSITIVE tag)[/bold green]")
-        cleaned = await lilith.call_tool("sanitize_data", {"data": "Secret: Kryptos-42"})
-        console.print(f"  [cyan]>[/cyan] Sanitized: {cleaned['content'][0]['text']}")
-        
-        # Now try to export again after scrubbing
-        # NOTE: Lilith taint tracking is session-wide. If the session is tainted, it stays tainted 
-        # unless a tool explicitly removes it. In this demo, 'sanitize_data' has action: REMOVE_TAINT.
-        console.print("  [white]Attempting export after scrubbing...[/white]")
-        res = await lilith.call_tool("export_to_untrusted_cloud", {"data": "Safe record"})
-        console.print(f"  [green]SUCCESS:[/green] Export Allowed because taint was removed.")
+        # ── 3. Neutral tool unaffected ────────────────────────────────────
+        section("3 · Neutral tool: summarize() is unaffected by taint")
+        result = await lilith.call_tool("summarize", {"text": "Revenue is $42M for Q3."})
+        print(f"  ok: {result['content'][0]['text']}")
 
-        # 5. LOGIC RULES WITH EXCEPTIONS
-        console.print("\n[bold green]Case 4: Logic Rules with Contextual Exceptions[/bold green]")
-        console.print("  [white]Attempting dry run command...[/white]")
+        # ── 4. Taint cleaner — scrub then re-allow sink ───────────────────
+        section("4 · Taint cleaner: redact() removes CONFIDENTIAL; post now allowed")
+        result = await lilith.call_tool("redact", {"text": "INTERNAL revenue $42M Q3"})
+        print(f"  redacted: {result['content'][0]['text']}")
+
+        result = await lilith.call_tool("post_to_slack", {"text": "Report summary ready."})
+        print(f"  posted ✓: {result['content'][0]['text']}")
+
+        # ── 5. Conditional block ──────────────────────────────────────────
+        section("5 · Conditional: archive() blocked; allowed with confirmed=true")
         try:
-            await lilith.call_tool("execute_system_command", {"command": "reboot", "force": "false"})
-        except PolicyViolationError:
-            console.print("  [bold red]BLOCKED:[/bold red] Logic rule prevents non-force commands.")
-            
-        console.print("  [white]Attempting authorized force command...[/white]")
-        res = await lilith.call_tool("execute_system_command", {"command": "reboot", "force": "true"})
-        console.print(f"  [green]ALLOWED:[/green] {res['content'][0]['text']}")
+            await lilith.call_tool("archive", {"path": "q3_financials.txt"})
+            print("  ERROR: should have been blocked")
+        except PolicyViolationError as exc:
+            print(f"  blocked ✓: {exc}")
 
-        # 6. RESOURCE ACCESS CONTROL
-        console.print("\n[bold green]Case 5: Resource Access (Pattern Matching)[/bold green]")
-        public_uri = "s3://public/release_notes.txt"
-        private_uri = "s3://internal/audit_logs.txt"
-        
-        console.print(f"  [white]Reading {public_uri}...[/white]")
-        pub = await lilith.read_resource(public_uri)
-        console.print(f"    [green]Result:[/green] {pub['contents'][0]['text']}")
-        
-        console.print(f"  [white]Reading {private_uri}...[/white]")
+        result = await lilith.call_tool(
+            "archive", {"path": "q3_financials.txt", "confirmed": True}
+        )
+        print(f"  allowed ✓: {result['content'][0]['text']}")
+
+        # ── 6. Resource ACL ───────────────────────────────────────────────
+        section("6 · Resource ACL: public readable; confidential readable but taints")
+
+        pub = await lilith.read_resource("reports://public/q3_press_release.txt")
+        print(f"  public ✓: {pub['contents'][0]['text']}")
+
+        # Reading a confidential resource re-adds the CONFIDENTIAL taint
+        conf = await lilith.read_resource("reports://confidential/q3_full_financials.txt")
+        print(f"  confidential ✓: {conf['contents'][0]['text'][:50]}...")
+
+        # Session is tainted again — post to Slack must fail
         try:
-            await lilith.read_resource(private_uri)
-        except PolicyViolationError as e:
-            console.print(f"    [bold red]BLOCKED:[/bold red] {e}")
+            await lilith.call_tool("post_to_slack", {"text": "Earnings call notes"})
+            print("  ERROR: should have been blocked after confidential resource read")
+        except PolicyViolationError as exc:
+            print(f"  re-blocked ✓: taint reinstated by resource read")
+
+        # ── 7. Spans (telemetry grouping) ─────────────────────────────────
+        section("7 · Spans: logical grouping (no-op without telemetry link)")
+        async with lilith.span("document-processing"):
+            result = await lilith.call_tool("redact", {"text": "Some text"})
+            print(f"  within span: {result['content'][0]['text'][:40]}")
+
+        # ── 8. Audit logs ─────────────────────────────────────────────────
+        section("8 · Audit logs")
+        logs = await lilith.drain_audit_logs()
+        print(f"  total events captured: {len(logs)}")
+        for entry in logs[:3]:
+            print(f"    [{entry['event_type']}] {str(entry.get('details', {}))[:60]}")
+
+    print("\n✓ Done")
+
 
 if __name__ == "__main__":
-    asyncio.run(run_comprehensive_demo())
+    asyncio.run(main())

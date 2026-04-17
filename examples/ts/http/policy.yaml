@@ -1,0 +1,15 @@
+# TypeScript HTTP example policy — static allow/deny, no taint tracking.
+
+id: "ts-http-demo"
+customer_id: "example-corp"
+name: "TypeScript HTTP Demo"
+version: 1
+
+static_rules:
+  search_web: "ALLOW"
+  get_time: "ALLOW"
+  query_database: "DENY"
+
+taint_rules: []
+resource_rules: []
+protect_lethal_trifecta: false

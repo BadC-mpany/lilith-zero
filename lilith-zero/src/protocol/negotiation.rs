@@ -10,11 +10,14 @@ use crate::engine_core::session::ActiveSession;
 use crate::protocol::{v2024_11_05, v2025_11_25};
 use tracing::info;
 
+/// Selects the correct protocol adapter for an MCP session based on the client's version string.
 pub struct HandshakeManager;
 
 impl HandshakeManager {
+    /// Return an [`ActiveSession`] adapter matching `client_version`.
+    ///
+    /// Defaults to the latest `2025-11-25` adapter for unrecognised version strings.
     pub fn negotiate(client_version: &str) -> ActiveSession {
-        // Description: Executes the negotiate logic.
         match client_version {
             "2024-11-05" => {
                 info!("Initializing Legacy 2024 Adapter...");

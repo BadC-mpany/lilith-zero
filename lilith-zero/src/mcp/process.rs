@@ -16,12 +16,18 @@ use tracing::debug;
 #[cfg(windows)]
 use win32job::Job;
 
+/// Manages the lifecycle of the upstream MCP server subprocess.
+///
+/// On Linux, uses `PR_SET_PDEATHSIG` to kill the child when the parent exits.
+/// On macOS, re-execs as a supervisor process that uses kqueue `NOTE_EXIT` to monitor the parent.
+/// On Windows, attaches the child to a Job Object with `KillOnJobClose`.
 pub struct ProcessSupervisor {
     kill_tx: Option<oneshot::Sender<()>>,
     #[cfg(windows)]
     _job: Option<Job>,
 }
 
+/// Return type of [`ProcessSupervisor::spawn`]: supervisor handle plus stdio streams.
 pub type ProcessSpawnResult = (
     ProcessSupervisor,
     Option<Box<dyn AsyncWrite + Unpin + Send>>,
@@ -30,12 +36,16 @@ pub type ProcessSpawnResult = (
 );
 
 impl ProcessSupervisor {
+    /// Spawn the upstream MCP server process at `cmd` with `args`.
+    ///
+    /// Returns a [`ProcessSpawnResult`] containing the supervisor handle and the three stdio
+    /// streams (stdin, stdout, stderr).  The caller must pass `tx_events` so the supervisor can
+    /// deliver [`UpstreamEvent::Terminated`] when the child exits.
     pub fn spawn(
         cmd: &str,
         args: &[String],
         tx_events: mpsc::Sender<UpstreamEvent>,
     ) -> Result<ProcessSpawnResult, crate::engine_core::errors::InterceptorError> {
-        // Description: Executes the spawn logic.
         debug!("ProcessSupervisor: spawning '{}' with args {:?}", cmd, args);
 
         #[cfg(target_os = "macos")]
@@ -68,6 +78,7 @@ impl ProcessSupervisor {
             .stderr(Stdio::piped());
 
         #[cfg(target_os = "linux")]
+        // SAFETY: `prctl` is a syscall with no Rust-visible aliasing hazards.
         unsafe {
             command.pre_exec(|| {
                 let ret = libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL);
@@ -168,8 +179,8 @@ impl ProcessSupervisor {
         ))
     }
 
+    /// Send a kill signal to the supervised process.
     pub fn kill(&mut self) {
-        // Description: Executes the kill logic.
         if let Some(tx) = self.kill_tx.take() {
             let _ = tx.send(());
         }
@@ -178,7 +189,6 @@ impl ProcessSupervisor {
 
 impl Drop for ProcessSupervisor {
     fn drop(&mut self) {
-        // Description: Executes the drop logic.
         self.kill();
     }
 }

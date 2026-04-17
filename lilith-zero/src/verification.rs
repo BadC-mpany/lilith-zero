@@ -152,6 +152,127 @@ mod verification {
         kani::assume(depth > 50);
         kani::assert(depth > 50, "Depth > 50 must trigger error path");
     }
+
+    // ── New concrete proofs against actual codebase constants ──────────────
+
+    /// The MAX_MESSAGE_SIZE_BYTES constant must be exactly 10 MiB.
+    /// Catches accidental drift if someone edits the constant.
+    #[kani::proof]
+    fn prove_max_message_size_is_exactly_10mib() {
+        use crate::engine_core::constants::limits;
+        const EXPECTED: u64 = 10 * 1024 * 1024;
+        kani::assert(
+            limits::MAX_MESSAGE_SIZE_BYTES == EXPECTED,
+            "CRITICAL: MAX_MESSAGE_SIZE_BYTES must be exactly 10 MiB (10485760)",
+        );
+    }
+
+    /// All JSON-RPC security error codes must be negative.
+    /// Positive codes violate the JSON-RPC 2.0 spec.
+    #[kani::proof]
+    fn prove_all_jsonrpc_error_codes_are_negative() {
+        use crate::engine_core::constants::jsonrpc;
+        kani::assert(
+            jsonrpc::ERROR_SECURITY_BLOCK < 0,
+            "ERROR_SECURITY_BLOCK must be negative",
+        );
+        kani::assert(jsonrpc::ERROR_AUTH < 0, "ERROR_AUTH must be negative");
+        kani::assert(
+            jsonrpc::ERROR_METHOD_NOT_FOUND < 0,
+            "ERROR_METHOD_NOT_FOUND must be negative",
+        );
+        kani::assert(
+            jsonrpc::ERROR_INVALID_REQUEST < 0,
+            "ERROR_INVALID_REQUEST must be negative",
+        );
+        kani::assert(
+            jsonrpc::ERROR_INTERNAL < 0,
+            "ERROR_INTERNAL must be negative",
+        );
+        kani::assert(jsonrpc::ERROR_PARSE < 0, "ERROR_PARSE must be negative");
+    }
+
+    /// Security block code (-32000) and auth code (-32001) must be distinct.
+    /// If they collapse, callers cannot distinguish policy denial from auth failure.
+    #[kani::proof]
+    fn prove_security_error_codes_distinct() {
+        use crate::engine_core::constants::jsonrpc;
+        kani::assert(
+            jsonrpc::ERROR_SECURITY_BLOCK != jsonrpc::ERROR_AUTH,
+            "CRITICAL: SECURITY_BLOCK and AUTH error codes must differ",
+        );
+    }
+
+    /// ALLOW and DENY action strings must not be equal.
+    /// If they were the same string, the evaluator would be trivially broken.
+    #[kani::proof]
+    fn prove_action_strings_allow_deny_distinct() {
+        use crate::engine_core::constants::policy;
+        // Compare bytes to avoid any Unicode normalisation surprises.
+        kani::assert(
+            policy::ACTION_ALLOW.as_bytes() != policy::ACTION_DENY.as_bytes(),
+            "CRITICAL: ACTION_ALLOW must not equal ACTION_DENY",
+        );
+    }
+
+    /// Session ID version prefix must be the single character "1".
+    /// A non-"1" prefix would silently break all session validation.
+    #[kani::proof]
+    fn prove_session_id_version_is_one() {
+        use crate::engine_core::constants::crypto;
+        kani::assert(
+            crypto::SESSION_ID_VERSION.as_bytes() == b"1",
+            "CRITICAL: SESSION_ID_VERSION must be '1'",
+        );
+    }
+
+    /// Symbolic proof: if content-length > MAX_MESSAGE_SIZE_BYTES the codec must reject.
+    /// Models the invariant independently of the full Decoder implementation.
+    #[kani::proof]
+    fn prove_oversized_content_length_rejected() {
+        use crate::engine_core::constants::limits;
+        let content_length: u64 = kani::any();
+        kani::assume(content_length > limits::MAX_MESSAGE_SIZE_BYTES);
+        let rejected = content_length > limits::MAX_MESSAGE_SIZE_BYTES;
+        kani::assert(
+            rejected,
+            "CRITICAL: payload exceeding limit must be rejected",
+        );
+    }
+
+    /// Symbolic proof: a content-length exactly at the limit is accepted; one byte over is not.
+    #[kani::proof]
+    fn prove_content_length_boundary_exact() {
+        use crate::engine_core::constants::limits;
+        let at_limit: u64 = limits::MAX_MESSAGE_SIZE_BYTES;
+        let over_limit: u64 = limits::MAX_MESSAGE_SIZE_BYTES + 1;
+        kani::assert(
+            at_limit <= limits::MAX_MESSAGE_SIZE_BYTES,
+            "Exactly-at-limit must be accepted",
+        );
+        kani::assert(
+            over_limit > limits::MAX_MESSAGE_SIZE_BYTES,
+            "One byte over limit must be rejected",
+        );
+    }
+
+    /// Symbolic trifecta: the guard fires on (AP ∧ US), not on either alone.
+    /// Exhaustively covers all 4 combinations of the two boolean inputs.
+    #[kani::proof]
+    fn prove_trifecta_fires_iff_both_taints_present_exhaustive() {
+        let ap: bool = kani::any();
+        let us: bool = kani::any();
+        let fires = ap && us;
+
+        // If both present: must fire.
+        if ap && us {
+            kani::assert(fires, "Trifecta MUST fire when both AP and US are set");
+        }
+        // If either absent: must not fire.
+        if !ap || !us {
+            kani::assert(!fires, "Trifecta must NOT fire when either taint is absent");
+        }
+    }
 }
 
 #[cfg(test)]

@@ -1,35 +1,34 @@
-id: "langchain-policy"
-customerId: "demo-user"
-name: "LangChain Integration Policy"
+# Agentic loop policy — data-exfiltration prevention.
+#
+# Scenario: An AI agent with access to internal databases and the public web.
+# The policy prevents sensitive data read from the database from leaking via
+# web_search (data-exfiltration pattern) and blocks destructive operations.
+#
+# This is the same policy a LangChain, AutoGen, or CrewAI agent would use —
+# Lilith enforces it regardless of the framework driving tool calls.
+
+id: "agentic-loop-demo"
+customer_id: "example-corp"
+name: "Agentic Loop Policy"
 version: 1
 
-staticRules:
+static_rules:
   calculator: "ALLOW"
   database: "ALLOW"
   web_search: "ALLOW"
-  list_files: "ALLOW"
-  delete_record: "DENY"
+  delete_record: "DENY"     # Destructive — never allowed in this agent.
 
-taintRules:
+taint_rules:
+  # Reading the database marks the session with SENSITIVE_CONTEXT.
   - tool: "database"
     action: "ADD_TAINT"
     tag: "SENSITIVE_CONTEXT"
-  
+
+  # Web search is blocked once SENSITIVE_CONTEXT is active — prevents
+  # the agent from leaking internal data to external search queries.
   - tool: "web_search"
     action: "CHECK_TAINT"
-    forbiddenTags: ["SENSITIVE_CONTEXT"]
-    error: "Security Violation: Web search is prohibited after accessing the database to prevent data exfiltration."
+    forbidden_tags: ["SENSITIVE_CONTEXT"]
+    error: "web_search is blocked after database access to prevent data exfiltration."
 
-  - tool: "list_files"
-    action: "BLOCK"
-    error: "Access denied. Node is not authorized to list files outside the project directory."
-    pattern:
-      not:
-        tool_args_match:
-          path: "/Users/mozer/Documents/projects/lilith-zero*"
-
-resourceRules:
-  - uriPattern: "file:///Users/mozer/Documents/projects/lilith-zero/*"
-    action: "ALLOW"
-
-protectLethalTrifecta: true
+protect_lethal_trifecta: true

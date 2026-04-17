@@ -9,7 +9,9 @@
 use crate::engine_core::events::{SecurityDecision, SecurityEvent};
 use crate::engine_core::models::{JsonRpcRequest, JsonRpcResponse};
 
+/// Behaviour required of a protocol-version-specific MCP session adapter.
 pub trait McpSessionHandler: Send + Sync {
+    /// Returns the MCP protocol version string this adapter implements (e.g. `"2024-11-05"`).
     fn version(&self) -> &'static str;
 
     /// Parse a raw JSON-RPC request into a generic SecurityEvent.

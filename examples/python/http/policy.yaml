@@ -1,0 +1,17 @@
+# HTTP transport example policy — mirrors minimal/policy.yaml.
+# Demonstrates that Lilith enforces identical policy regardless of transport.
+
+id: "http-demo"
+customer_id: "example-corp"
+name: "HTTP Transport Demo Policy"
+description: "Static whitelist/blacklist over Streamable HTTP transport."
+version: 1
+
+static_rules:
+  search_web: "ALLOW"
+  get_time: "ALLOW"
+  query_database: "DENY"
+
+taint_rules: []
+resource_rules: []
+protect_lethal_trifecta: false

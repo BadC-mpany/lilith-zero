@@ -11,25 +11,36 @@ use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 
+/// A parsed Windows PE (Portable Executable) file.
 pub struct PeFile {
+    /// The open file handle.
     pub file: File,
+    /// The preferred load address declared in the PE optional header.
     pub image_base: u64,
+    /// The section table entries.
     pub sections: Vec<Section>,
+    /// `true` for PE32+ (64-bit), `false` for PE32 (32-bit).
     pub is_64bit: bool,
 }
 
+/// A single section entry from the PE section table.
 #[derive(Debug, Clone)]
 pub struct Section {
+    /// Section name (up to 8 bytes, null-padded).
     pub name: String,
+    /// Virtual address of the section relative to the image base.
     pub virtual_address: u32,
+    /// Size of the section in virtual memory.
     pub virtual_size: u32,
+    /// File offset of the raw section data.
     pub raw_data_ptr: u32,
+    /// Size of the raw section data on disk.
     pub raw_data_size: u32,
 }
 
 impl PeFile {
+    /// Open and parse the PE headers of the file at `path`.
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self> {
-        // Description: Executes the open logic.
         let mut file = File::open(path)?;
         let mut buffer = [0u8; 1024];
         file.read_exact(&mut buffer)
@@ -122,8 +133,10 @@ impl PeFile {
     }
 }
 
+/// Convert a relative virtual address (RVA) to a file offset using the section table.
+///
+/// Returns `None` if no section contains the given RVA.
 pub fn rva_to_offset(sections: &[Section], rva: u32) -> Option<u64> {
-    // Description: Executes the rva_to_offset logic.
     for s in sections {
         if rva >= s.virtual_address && rva < s.virtual_address + s.virtual_size {
             return Some((rva - s.virtual_address) as u64 + s.raw_data_ptr as u64);
@@ -132,8 +145,8 @@ pub fn rva_to_offset(sections: &[Section], rva: u32) -> Option<u64> {
     None
 }
 
+/// Return the list of DLL names declared in the import and delay-import tables of `path`.
 pub fn get_dependencies<P: AsRef<Path>>(path: P) -> Result<Vec<String>> {
-    // Description: Executes the get_dependencies logic.
     let mut pe = PeFile::open(path)?;
     let mut deps = Vec::new();
 
@@ -158,7 +171,6 @@ fn extract_deps_from_dir(
     sections: &[Section],
     dir_index: usize,
 ) -> Result<Vec<String>> {
-    // Description: Executes the extract_deps_from_dir logic.
     file.seek(SeekFrom::Start(0))?;
     let mut buffer = [0u8; 1024];
     file.read_exact(&mut buffer)?;
@@ -240,7 +252,6 @@ fn extract_deps_from_dir(
 }
 
 fn read_null_terminated_string(file: &mut File, offset: u64) -> Result<String> {
-    // Description: Executes the read_null_terminated_string logic.
     file.seek(SeekFrom::Start(offset))?;
     let mut bytes = Vec::new();
     let mut b = [0u8; 1];

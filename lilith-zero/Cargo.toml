@@ -12,7 +12,7 @@ tokio = { version = "1.35", features = ["full"] }
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-serde_yaml = "0.9"
+serde_yaml_ng = "0.9"
 
 # Error handling
 thiserror = "2.0"
@@ -21,10 +21,6 @@ anyhow = "1.0"
 # Observability
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
-tracing-opentelemetry = "0.32"
-opentelemetry = "0.31"
-opentelemetry_sdk = { version = "0.31", features = ["rt-tokio"] }
-opentelemetry-stdout = { version = "0.31", features = ["trace"] }
 
 # Utilities
 uuid = { version = "1.13", features = ["v4", "serde"] }
@@ -33,21 +29,24 @@ clap = { version = "4.5", features = ["derive"] }
 hex = "0.4"
 sha2 = "0.10"
 hmac = "0.12"
-ring = "0.17"
 rand = "0.9"
 base64 = "0.22"
 jsonwebtoken = "10.3"
+schemars = { version = "0.8", optional = true }
 tokio-util = { version = "0.7", features = ["codec"] }
 bytes = "1.11.1"
 futures = { version = "0.3", features = ["std"] }
 futures-util = "0.3"
 async-trait = "0.1"
 
-# Process Isolation
+# HTTP upstream transport (always compiled in; transport is a runtime --transport flag)
+reqwest = { version = "0.12", features = ["json", "stream"], default-features = false }
+# Optional telemetry integration — implements TelemetryHook trait from engine_core
 lilith-telemetry = { path = "../lilith-telemetry", optional = true }
 
 [features]
 default = []
+schema = ["dep:schemars"]
 telemetry = ["dep:lilith-telemetry"]
 
 [target.'cfg(windows)'.dependencies]
@@ -72,7 +71,6 @@ nix = { version = "0.31", features = ["signal"] }
 libc = "0.2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
-rusty-sandbox = "0.2"
 nix = { version = "0.31", features = ["signal"] }
 libc = "0.2"
 

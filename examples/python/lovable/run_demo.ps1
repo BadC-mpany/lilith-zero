@@ -9,7 +9,7 @@ Write-Host "------------------------------------------------------------" -Foreg
 
 # 1. Environment Detection (Project Root)
 $ScriptDir = $PSScriptRoot
-$RootDir = [System.IO.Path]::GetFullPath((Join-Path $ScriptDir "../../"))
+$RootDir = [System.IO.Path]::GetFullPath((Join-Path $ScriptDir "../../../"))
 
 $IsWin = if ($null -ne $IsWindows) { $IsWindows } else { $env:OS -like "*Windows*" }
 $BinaryName = if ($IsWin) { "lilith-zero.exe" } else { "lilith-zero" }

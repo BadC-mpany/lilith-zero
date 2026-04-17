@@ -8,7 +8,7 @@
 
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use hmac::{Hmac, Mac};
-use ring::rand::{SecureRandom, SystemRandom};
+use rand::{rngs::OsRng, TryRngCore};
 use sha2::Sha256;
 use uuid::Uuid;
 
@@ -16,6 +16,10 @@ use crate::engine_core::constants::crypto;
 
 type HmacSha256 = Hmac<Sha256>;
 
+/// HMAC-SHA256 signer used for session ID generation and audit-log signing.
+///
+/// Holds an ephemeral 32-byte secret generated at process startup;
+/// the secret never leaves the process.
 #[derive(Clone)]
 pub struct CryptoSigner {
     secret: [u8; crypto::SECRET_KEY_LENGTH],
@@ -24,18 +28,21 @@ pub struct CryptoSigner {
 use crate::engine_core::errors::{CryptoError, InterceptorError};
 
 impl CryptoSigner {
+    /// Generate a new [`CryptoSigner`] with a fresh ephemeral secret from the OS RNG.
+    ///
+    /// The returned `Result` must be checked; a failure here means the OS RNG is unavailable,
+    /// which is a fatal startup condition.
     #[must_use = "crypto initialization result must be checked"]
     pub fn try_new() -> Result<Self, InterceptorError> {
-        // Description: Executes the try_new logic.
-        let rng = SystemRandom::new();
         let mut secret = [0u8; crypto::SECRET_KEY_LENGTH];
-        rng.fill(&mut secret)
+        OsRng
+            .try_fill_bytes(&mut secret)
             .map_err(|_| InterceptorError::CryptoError(CryptoError::RandomError))?;
         Ok(Self { secret })
     }
 
+    /// Sign `data` with the signer's HMAC secret and return a URL-safe base64 encoded MAC.
     pub fn sign(&self, data: &[u8]) -> String {
-        // Description: Executes the sign logic.
         let mut mac = HmacSha256::new_from_slice(&self.secret)
             .expect("HMAC should accept secret of correct length");
         mac.update(data);
@@ -43,8 +50,11 @@ impl CryptoSigner {
         URL_SAFE_NO_PAD.encode(result.into_bytes())
     }
 
+    /// Generate a new session ID token of the form `{version}.{uuid_b64}.{hmac_b64}`.
+    ///
+    /// The HMAC binds the UUID to this signer's secret, enabling constant-time validation
+    /// without persistent storage.
     pub fn generate_session_id(&self) -> Result<String, InterceptorError> {
-        // Description: Executes the generate_session_id logic.
         let uuid = Uuid::new_v4();
         let uuid_bytes = uuid.as_bytes();
 
@@ -66,9 +76,12 @@ impl CryptoSigner {
         ))
     }
 
+    /// Validate a session ID token using constant-time HMAC comparison.
+    ///
+    /// Returns `true` if the token was produced by this signer, `false` otherwise.
+    /// A return value of `false` must be treated as an authentication failure.
     #[must_use = "session validation result must be checked"]
     pub fn validate_session_id(&self, session_id: &str) -> bool {
-        // Description: Executes the validate_session_id logic.
         let parts: Vec<&str> = session_id.split('.').collect();
         if parts.len() != 3 {
             return false;

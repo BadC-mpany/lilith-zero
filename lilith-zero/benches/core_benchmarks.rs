@@ -35,6 +35,8 @@ fn bench_policy_validator(c: &mut Criterion) {
         id: "bench-policy".to_string(),
         customer_id: "bench".to_string(),
         name: "Benchmark Policy".to_string(),
+        description: None,
+        schema_version: None,
         version: 1,
         static_rules: HashMap::new(),
         resource_rules: Vec::new(),

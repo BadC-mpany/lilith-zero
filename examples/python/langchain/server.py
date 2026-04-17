@@ -1,159 +1,164 @@
-import sys
+"""
+Agentic-loop MCP server — pure stdlib, no external dependencies.
+
+Scenario: An AI agent assistant with access to:
+  - calculator   — safe, always allowed
+  - database     — internal data (adds SENSITIVE_CONTEXT taint)
+  - web_search   — blocked after database access (taint sink)
+  - delete_record — permanently destructive (static DENY)
+"""
+
 import json
 import logging
+import sys
 
-# Configure logging to stderr
-logging.basicConfig(level=logging.INFO, stream=sys.stderr)
-logger = logging.getLogger("LangChainServer")
+logging.basicConfig(level=logging.INFO, stream=sys.stderr, format="%(name)s: %(message)s")
+log = logging.getLogger("agentic-server")
 
-# Tool Implementations
+
 def calculator(expression: str) -> str:
-    """Evaluate a math expression."""
-    # Unsafe eval for demo purposes (Lilith protects this!)
-    try:
-        return str(eval(expression))
-    except Exception as e:
-        return f"Error: {e}"
+    """Evaluate a simple arithmetic expression (e.g. '2 + 2')."""
+    allowed = set("0123456789 +-*/().")
+    if not all(c in allowed for c in expression):
+        return "Error: invalid characters in expression"
+    return str(eval(expression))  # noqa: S307 — demo only, Lilith guards externally
 
-def read_customer_data(customer_id: str) -> str:
-    """Read sensitive customer PII."""
-    return f"{{ 'id': '{customer_id}', 'name': 'John Doe', 'ssn': '123-45-6789' }}"
-
-def export_analytics(data: str) -> str:
-    """Export data to external analytics service."""
-    return "Export accepted: 200 OK"
-
-def system_maintenance(region: str) -> str:
-    """Perform system maintenance operations."""
-    return f"Maintenance scheduled for region: {region}"
 
 def database(query: str) -> str:
-    """Access the internal knowledge database."""
-    return f"Database results for '{query}': Found 3 sensitive records."
+    """Query the internal knowledge database."""
+    return (
+        f"DB results for '{query}': "
+        "3 records found — customer IDs 1001, 1002, 1003 with PII attached."
+    )
+
 
 def web_search(query: str) -> str:
-    """Search the public internet."""
-    return f"Search results for '{query}': No public information found."
+    """Search the public internet for information."""
+    return f"Web results for '{query}': Found 5 public articles."
+
 
 def delete_record(record_id: str) -> str:
-    """Delete a record from the database."""
-    return f"Record {record_id} deleted successfully."
+    """Permanently delete a record from the database."""
+    return f"Record {record_id} deleted."
 
-def list_files(path: str) -> str:
-    """List files in a directory."""
-    return f"Files in {path}: README.md, src/, tests/, target/"
 
-TOOLS = {
-    "calculator": calculator,
-    "read_customer_data": read_customer_data,
-    "export_analytics": export_analytics,
-    "system_maintenance": system_maintenance,
-    "database": database,
-    "web_search": web_search,
-    "delete_record": delete_record,
-    "list_files": list_files,
+TOOLS: dict = {
+    "calculator": {
+        "fn": calculator,
+        "description": calculator.__doc__,
+        "inputSchema": {
+            "type": "object",
+            "properties": {"expression": {"type": "string"}},
+            "required": ["expression"],
+        },
+    },
+    "database": {
+        "fn": database,
+        "description": database.__doc__,
+        "inputSchema": {
+            "type": "object",
+            "properties": {"query": {"type": "string"}},
+            "required": ["query"],
+        },
+    },
+    "web_search": {
+        "fn": web_search,
+        "description": web_search.__doc__,
+        "inputSchema": {
+            "type": "object",
+            "properties": {"query": {"type": "string"}},
+            "required": ["query"],
+        },
+    },
+    "delete_record": {
+        "fn": delete_record,
+        "description": delete_record.__doc__,
+        "inputSchema": {
+            "type": "object",
+            "properties": {"record_id": {"type": "string"}},
+            "required": ["record_id"],
+        },
+    },
 }
 
-def handle_request(req):
-    msg_id = req.get("id")
-    method = req.get("method")
-    params = req.get("params", {})
-    
-    response = {"jsonrpc": "2.0", "id": msg_id}
-    
+
+def read_message() -> dict | None:
+    while True:
+        header_line = sys.stdin.readline()
+        if not header_line:
+            return None
+        header_line = header_line.strip()
+        if not header_line:
+            continue
+        if header_line.lower().startswith("content-length:"):
+            length = int(header_line.split(":", 1)[1].strip())
+            sys.stdin.readline()
+            body = sys.stdin.read(length)
+            return json.loads(body)
+
+
+def send_message(msg: dict) -> None:
+    body = json.dumps(msg)
+    sys.stdout.write(f"Content-Length: {len(body)}\r\n\r\n{body}")
+    sys.stdout.flush()
+
+
+def handle(req: dict) -> dict | None:
+    req_id = req.get("id")
+    method = req.get("method", "")
+    params = req.get("params") or {}
+    base = {"jsonrpc": "2.0", "id": req_id}
+
+    if method == "notifications/initialized":
+        return None
+
     if method == "initialize":
-        response["result"] = {
+        return {**base, "result": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
-            "serverInfo": {"name": "LangChainServer", "version": "1.0"}
-        }
-    elif method == "tools/list":
-        response["result"] = {
-            "tools": [
-                {
-                    "name": name,
-                    "description": func.__doc__,
-                    "inputSchema": {
-                        "type": "object",
-                        "properties": {
-                            "expression": {"type": "string"},
-                            "customer_id": {"type": "string"},
-                            "data": {"type": "string"},
-                            "region": {"type": "string"}
-                        }
-                    }
-                }
-                for name, func in TOOLS.items()
-            ]
-        }
-    elif method == "tools/call":
-        name = params.get("name")
-        args = params.get("arguments", {})
-        if name in TOOLS:
-            try:
-                # Naive argument mapping for demo
-                clean_args = {k: v for k, v in args.items() if not k.startswith("_")}
-                result = TOOLS[name](**clean_args)
-                response["result"] = {
-                    "content": [{"type": "text", "text": str(result)}],
-                    "isError": False
-                }
-            except Exception as e:
-                response["error"] = {"code": -32603, "message": str(e)}
-        else:
-            response["error"] = {"code": -32601, "message": f"Tool not found: {name}"}
-    elif method == "notifications/initialized":
-        return None
-    else:
-        return None
-        
-    return response
+            "serverInfo": {"name": "agentic-server", "version": "1.0.0"},
+        }}
 
-def main():
-    logger.info("Starting LangChain MCP Server...")
-    
-    # We use a robust reader that handles LSP-style Content-Length headers
-    stdin = sys.stdin.buffer
+    if method == "tools/list":
+        return {**base, "result": {"tools": [
+            {"name": name, "description": spec["description"], "inputSchema": spec["inputSchema"]}
+            for name, spec in TOOLS.items()
+        ]}}
 
+    if method == "tools/call":
+        name = params.get("name", "")
+        args = {k: v for k, v in (params.get("arguments") or {}).items()
+                if not k.startswith("_")}
+        spec = TOOLS.get(name)
+        if spec is None:
+            return {**base, "error": {"code": -32601, "message": f"Unknown tool: {name}"}}
+        try:
+            result = spec["fn"](**args)
+            return {**base, "result": {
+                "content": [{"type": "text", "text": str(result)}],
+                "isError": False,
+            }}
+        except Exception as exc:
+            return {**base, "error": {"code": -32603, "message": str(exc)}}
+
+    return {**base, "error": {"code": -32601, "message": f"Method not found: {method}"}}
+
+
+def main() -> None:
+    log.info("agentic-server ready")
     while True:
         try:
-            # 1. Read Headers
-            headers = {}
-            while True:
-                line = stdin.readline()
-                if not line:
-                    return # EOF
-                line = line.decode().strip()
-                if not line:
-                    break # End of headers
-                if ":" in line:
-                    k, v = line.split(":", 1)
-                    headers[k.lower().strip()] = v.strip()
-
-            # 2. Read Body
-            if "content-length" in headers:
-                length = int(headers["content-length"])
-                body = stdin.read(length)
-                if not body:
-                    break
-                req = json.loads(body.decode())
-                
-                resp = handle_request(req)
-                if resp:
-                    out = json.dumps(resp)
-                    # We also respond with Content-Length for the Lilith interceptor
-                    sys.stdout.write(f"Content-Length: {len(out)}\r\n\r\n{out}")
-                    sys.stdout.flush()
-            else:
-                # Fallback for plain newline-delimited JSON (if headers missing)
-                # Note: this is a bit tricky with mixed binary read, 
-                # but for the demo we assume Lilith is always sending headers now.
-                logger.warning("Received message without Content-Length header")
-                continue
-
-        except Exception as e:
-            logger.error(f"Server Error: {e}")
+            req = read_message()
+            if req is None:
+                break
+            resp = handle(req)
+            if resp is not None:
+                send_message(resp)
+        except (KeyboardInterrupt, BrokenPipeError):
             break
+        except Exception as exc:
+            log.error("unhandled error: %s", exc)
+
 
 if __name__ == "__main__":
     main()

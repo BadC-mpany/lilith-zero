@@ -21,6 +21,8 @@ Provides security controls for Model Context Protocol tool servers including:
 - Process isolation
 """
 
+import sys
+
 from .client import Lilith
 from .exceptions import LilithError, PolicyViolationError
 
@@ -40,8 +42,6 @@ ASCII_ART = """
 \033[38;2;120;20;255m███████╗██║███████╗██║   ██║   ██║  ██║     ███████╗███████╗██║  ██║╚██████╔╝\033[0m
 \033[38;2;80;0;200m╚══════╝╚═╝╚══════╝╚═╝   ╚═╝   ╚═╝  ╚═╝     ╚══════╝╚══════╝╚═╝  ╚═╝ ╚═════╝ \033[0m
 """
-
-import sys
 
 sys.stdout.write(ASCII_ART + "\n")
 sys.stdout.flush()

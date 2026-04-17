@@ -1,14 +1,18 @@
-// Copyright 2026 BadCompany
-// Licensed under the Apache License, Version 2.0 (the "License");
-//     http://www.apache.org/licenses/LICENSE-2.0
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
+//! MCP transport layer: stdio codec, pipeline, server middleware, and process supervision.
 
+/// Upstream subprocess lifecycle management.
 pub mod process;
 
+/// HTTP upstream transport for MCP Streamable HTTP protocol (2025-11-25).
+pub mod http_upstream;
+
+/// LSP-style `Content-Length` framing codec for MCP stdio transport.
 pub mod codec;
+/// Tool-description pinning for rug-pull prevention.
+pub mod pin_store;
+/// Async reader tasks for downstream agent and upstream server I/O.
 pub mod pipeline;
+/// Main MCP security middleware event loop.
 pub mod server;
+/// macOS parent-death supervisor re-exec mode.
 pub mod supervisor;

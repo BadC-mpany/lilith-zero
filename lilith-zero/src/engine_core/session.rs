@@ -11,15 +11,20 @@ use crate::engine_core::models::{JsonRpcRequest, JsonRpcResponse};
 use crate::engine_core::traits::McpSessionHandler;
 use crate::protocol::{v2024_11_05, v2025_11_25};
 
+/// A protocol-version-specific session adapter for the currently active MCP handshake.
+///
+/// Created by [`crate::protocol::negotiation::HandshakeManager::negotiate`] and held
+/// for the lifetime of a single MCP session.
 #[derive(Debug)]
 pub enum ActiveSession {
+    /// Adapter for the MCP `2024-11-05` protocol revision.
     V2024(v2024_11_05::adapter::Mcp2024Adapter),
+    /// Adapter for the MCP `2025-11-25` / `2025-06-18` protocol revisions.
     V2025(v2025_11_25::adapter::Mcp2025Adapter),
 }
 
 impl McpSessionHandler for ActiveSession {
     fn version(&self) -> &'static str {
-        // Description: Executes the version logic.
         match self {
             Self::V2024(s) => s.version(),
             Self::V2025(s) => s.version(),
@@ -27,7 +32,6 @@ impl McpSessionHandler for ActiveSession {
     }
 
     fn parse_request(&self, req: &JsonRpcRequest) -> SecurityEvent {
-        // Description: Executes the parse_request logic.
         match self {
             Self::V2024(s) => s.parse_request(req),
             Self::V2025(s) => s.parse_request(req),
@@ -39,7 +43,6 @@ impl McpSessionHandler for ActiveSession {
         decision: &SecurityDecision,
         response: JsonRpcResponse,
     ) -> JsonRpcResponse {
-        // Description: Executes the apply_decision logic.
         match self {
             Self::V2024(s) => s.apply_decision(decision, response),
             Self::V2025(s) => s.apply_decision(decision, response),
@@ -47,7 +50,6 @@ impl McpSessionHandler for ActiveSession {
     }
 
     fn extract_session_token(&self, req: &JsonRpcRequest) -> Option<String> {
-        // Description: Executes the extract_session_token logic.
         match self {
             Self::V2024(s) => s.extract_session_token(req),
             Self::V2025(s) => s.extract_session_token(req),
@@ -55,7 +57,6 @@ impl McpSessionHandler for ActiveSession {
     }
 
     fn sanitize_for_upstream(&self, req: &mut JsonRpcRequest) {
-        // Description: Executes the sanitize_for_upstream logic.
         match self {
             Self::V2024(s) => s.sanitize_for_upstream(req),
             Self::V2025(s) => s.sanitize_for_upstream(req),
