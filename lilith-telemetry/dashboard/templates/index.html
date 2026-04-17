@@ -1,0 +1,695 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lilith-Trace | Multi-Node Telemetry</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #09090b;
+            --surface: #101014;
+            --surface-lighter: #18181b;
+            --accent: #6366f1;
+            --accent-glow: rgba(99, 102, 241, 0.2);
+            --text: #fafafa;
+            --text-dim: #a1a1aa;
+            --border: rgba(255, 255, 255, 0.06);
+            --deny: #ef4444;
+            --allow: #10b981;
+            --init: #f59e0b;
+            --sidebar-width: 320px;
+            --table-header: #1c1c21;
+        }
+
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            background-color: var(--bg);
+            color: var(--text);
+            font-family: 'Outfit', sans-serif;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        /* Top Navigation */
+        header {
+            height: 64px;
+            padding: 0 1.5rem;
+            background: var(--surface);
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-shrink: 0;
+        }
+
+        .logo-group {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .logo {
+            font-size: 1.25rem;
+            font-weight: 800;
+            background: linear-gradient(135deg, #fff 0%, #6366f1 100%);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+            letter-spacing: -0.5px;
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 24px;
+        }
+
+        .nav-link {
+            font-size: 0.9rem;
+            font-weight: 500;
+            color: var(--text-dim);
+            text-decoration: none;
+            transition: color 0.2s;
+        }
+
+        .nav-link.active { color: var(--text); }
+        .nav-link:hover { color: var(--accent); }
+
+        /* Layout Container */
+        .app-container {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        /* Sidebar - Trace List Table */
+        .sidebar {
+            width: var(--sidebar-width);
+            background: var(--surface);
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            flex-shrink: 0;
+        }
+
+        .sidebar-header {
+            padding: 1rem;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .sidebar-title {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .trace-list {
+            flex: 1;
+            overflow-y: auto;
+        }
+
+        .trace-item {
+            padding: 1rem;
+            border-bottom: 1px solid var(--border);
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .trace-item:hover { background: rgba(255, 255, 255, 0.02); }
+        .trace-item.active { 
+            background: var(--accent-glow);
+            border-left: 3px solid var(--accent);
+        }
+
+        .trace-item-header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 4px;
+        }
+
+        .trace-item-id {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: var(--accent);
+        }
+
+        .trace-item-time {
+            font-size: 0.7rem;
+            color: var(--text-dim);
+        }
+
+        .trace-item-op {
+            font-size: 0.85rem;
+            font-weight: 500;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .trace-item-meta {
+            font-size: 0.75rem;
+            color: var(--text-dim);
+            margin-top: 6px;
+            display: flex;
+            gap: 12px;
+        }
+
+        /* Main Content - Jaeger Style Timeline */
+        .main-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background: var(--bg);
+            overflow: hidden;
+        }
+
+        .trace-detail-header {
+            padding: 1.5rem;
+            background: var(--surface-lighter);
+            border-bottom: 1px solid var(--border);
+        }
+
+        .trace-title-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 1.5rem;
+        }
+
+        .trace-full-id {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 1.25rem;
+            font-weight: 700;
+            margin: 0;
+        }
+
+        .span-stats {
+            display: flex;
+            gap: 2rem;
+            margin-top: 1rem;
+        }
+
+        .stat-item {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .stat-label {
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            color: var(--text-dim);
+            margin-bottom: 2px;
+        }
+
+        .stat-value {
+            font-size: 0.95rem;
+            font-weight: 600;
+        }
+
+        /* Timeline Table */
+        .timeline-container {
+            flex: 1;
+            overflow: auto;
+            position: relative;
+        }
+
+        .timeline-table {
+            width: 100%;
+            border-collapse: collapse;
+            min-width: 800px;
+        }
+
+        .timeline-header {
+            position: sticky;
+            top: 0;
+            background: var(--table-header);
+            z-index: 10;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .timeline-header th {
+            padding: 8px 16px;
+            text-align: left;
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: var(--text-dim);
+            border-right: 1px solid var(--border);
+        }
+
+        .col-service { width: 240px; }
+        .col-operation { width: 300px; }
+        .col-timeline { min-width: 400px; position: relative; }
+
+        .timeline-row {
+            border-bottom: 1px solid var(--border);
+            transition: background 0.1s;
+        }
+
+        .timeline-row:hover { background: rgba(255, 255, 255, 0.02); }
+
+        .timeline-cell {
+            padding: 8px 16px;
+            font-size: 0.8rem;
+            border-right: 1px solid var(--border);
+            vertical-align: middle;
+        }
+
+        .service-name {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-weight: 500;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .service-icon {
+            width: 8px;
+            height: 8px;
+            border-radius: 2px;
+        }
+
+        .op-name {
+            font-weight: 500;
+            color: var(--text);
+        }
+
+        /* Gantt Bars */
+        .gantt-cell {
+            padding: 0;
+            position: relative;
+            height: 38px;
+            background-image: linear-gradient(to right, var(--border) 1px, transparent 1px);
+            background-size: 20% 100%; /* Vertical grid lines */
+        }
+
+        .gantt-bar-wrap {
+            position: absolute;
+            top: 10px;
+            height: 18px;
+            display: flex;
+            align-items: center;
+        }
+
+        .gantt-bar {
+            height: 100%;
+            border-radius: 4px;
+            min-width: 4px;
+            box-shadow: 0 0 12px rgba(0,0,0,0.5);
+            position: relative;
+        }
+
+        .gantt-label {
+            position: absolute;
+            left: calc(100% + 8px);
+            font-size: 0.65rem;
+            color: var(--text-dim);
+            white-space: nowrap;
+        }
+
+        /* Empty States */
+        .empty-main {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            color: var(--text-dim);
+        }
+
+        .empty-icon {
+            font-size: 3rem;
+            margin-bottom: 1rem; opacity: 0.3;
+        }
+
+        /* Scrollbar Styling */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
+
+        .level-pill {
+            font-size: 0.6rem;
+            padding: 1px 6px;
+            border-radius: 4px;
+            margin-left: 8px;
+            font-weight: 700;
+        }
+        .pill-routine { background: rgba(16, 185, 129, 0.1); color: var(--allow); border: 1px solid rgba(16, 185, 129, 0.2); }
+        .pill-critical { background: rgba(239, 68, 68, 0.1); color: var(--deny); border: 1px solid rgba(239, 68, 68, 0.2); }
+        .pill-init { background: rgba(245, 158, 11, 0.1); color: var(--init); border: 1px solid rgba(245, 158, 11, 0.2); }
+    </style>
+</head>
+<body>
+
+<header>
+    <div class="logo-group">
+        <div class="logo">LILITH // TRACE</div>
+    </div>
+    <div class="nav-links">
+        <a href="#" id="nav-search" class="nav-link active" onclick="switchView('search')">Search</a>
+        <a href="#" id="nav-nodes" class="nav-link" onclick="switchView('nodes')">Nodes</a>
+        <a href="#" class="nav-link">Stats</a>
+    </div>
+    <div class="status-badge">
+        <div class="status-dot"></div>
+        LIVE COLLECTOR
+    </div>
+</header>
+
+<div class="app-container">
+    <!-- Search View (Sidebar + Detail) -->
+    <div id="search-view" style="display: flex; flex: 1; overflow: hidden;">
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <div class="sidebar-title">Recent Traces</div>
+                <div style="display: flex; gap: 4px;">
+                    <button style="padding: 4px 8px; font-size: 0.7rem;" onclick="fetchTraces()">Refresh</button>
+                    <button style="padding: 4px 8px; font-size: 0.7rem; color: var(--deny); border-color: rgba(239, 68, 68, 0.3);" onclick="clearDiskLogs()">Clear Disk</button>
+                </div>
+            </div>
+            <div class="trace-list" id="trace-list">
+                <!-- Trace items injected here -->
+            </div>
+        </aside>
+
+        <main class="main-content" id="detail-view">
+            <div class="empty-main">
+                <div class="empty-icon">Traces</div>
+                <p>Select a trace from the list to view its timeline</p>
+            </div>
+        </main>
+    </div>
+
+    <!-- Nodes View -->
+    <main id="nodes-view" class="main-content" style="display: none; padding: 2rem; overflow-y: auto;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
+            <h1 style="margin: 0; font-weight: 700;">Distributed Nodes</h1>
+            <div id="node-count-badge" style="background: var(--accent-glow); color: var(--accent); padding: 4px 12px; border-radius: 99px; font-weight: 600; font-size: 0.9rem;">
+                0 Nodes Active
+            </div>
+        </div>
+        <div id="nodes-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); gap: 1.5rem;">
+            <!-- Node cards injected here -->
+        </div>
+    </main>
+</div>
+
+<script>
+    let currentTraces = {};
+    let selectedCompositeKey = null;
+    let currentView = 'search';
+    let nodeFilter = null;
+
+    // View Switching
+    function switchView(view) {
+        currentView = view;
+        document.getElementById('search-view').style.display = view === 'search' ? 'flex' : 'none';
+        document.getElementById('nodes-view').style.display = view === 'nodes' ? 'block' : 'none';
+        
+        document.getElementById('nav-search').classList.toggle('active', view === 'search');
+        document.getElementById('nav-nodes').classList.toggle('active', view === 'nodes');
+        
+        if (view === 'nodes') renderNodesView();
+    }
+
+    function filterByNode(nodeId) {
+        nodeFilter = nodeId;
+        switchView('search');
+        renderTraceList();
+    }
+
+    function getServiceColor(nodeId) {
+        // Return a stable color based on hex string
+        let hash = 0;
+        for (let i = 0; i < nodeId.length; i++) {
+            hash = nodeId.charCodeAt(i) + ((hash << 5) - hash);
+        }
+        const h = Math.abs(hash % 360);
+        return `hsl(${h}, 70%, 60%)`;
+    }
+
+    async function fetchTraces() {
+        try {
+            const resp = await fetch('/api/traces');
+            const rawData = await resp.json();
+            
+            if (rawData.length === 0) return;
+
+            const newTraces = {};
+            rawData.forEach(entry => {
+                const head = entry.header;
+                const traceId = head.trace_id;
+                const nodeId = head.agent_id;
+                const compositeKey = `${nodeId}-${traceId}`;
+                
+                if (!newTraces[compositeKey]) {
+                    newTraces[compositeKey] = {
+                        id: traceId,
+                        node: nodeId,
+                        compositeKey: compositeKey,
+                        startTimeStr: entry.timestamp_human,
+                        startTimeRaw: head.timestamp,
+                        spans: []
+                    };
+                }
+                newTraces[compositeKey].spans.push(entry);
+            });
+
+            currentTraces = newTraces;
+            renderTraceList();
+            if (selectedCompositeKey) renderTraceDetail(selectedCompositeKey);
+            if (currentView === 'nodes') renderNodesView();
+        } catch (e) {
+            console.error("Failed to fetch traces:", e);
+        }
+    }
+
+    // renderTraceList function follows
+    function renderTraceList() {
+        const listContainer = document.getElementById('trace-list');
+        let sortedTraces = Object.values(currentTraces).sort((a, b) => b.startTimeRaw - a.startTimeRaw);
+        
+        // Apply node filter if set
+        if (nodeFilter) {
+            sortedTraces = sortedTraces.filter(t => t.node === nodeFilter);
+            // Add a "Clear Filter" indicator
+            const filterInfo = document.createElement('div');
+            filterInfo.style = "padding: 8px 16px; background: var(--accent-glow); font-size: 0.75rem; display: flex; justify-content: space-between; align-items: center;";
+            filterInfo.innerHTML = `<span>Filtering by Node: ${nodeFilter.substring(0, 10)}</span><button onclick="nodeFilter=null; renderTraceList()" style="background:transparent; border:none; color:var(--deny); cursor:pointer;">✕</button>`;
+            listContainer.innerHTML = '';
+            listContainer.appendChild(filterInfo);
+        } else {
+            listContainer.innerHTML = '';
+        }
+
+        const itemsHtml = sortedTraces.map(trace => {
+            const firstOp = trace.spans.find(s => s.header.parent_span_id === "0000000000000000") || trace.spans[0];
+            const opName = firstOp.payload.split('\n')[0];
+            const isActive = selectedCompositeKey === trace.compositeKey ? 'active' : '';
+            
+            return `
+                <div class="trace-item ${isActive}" onclick="selectTrace('${trace.compositeKey}')">
+                    <div class="trace-item-header">
+                        <span class="trace-item-id">${trace.id.substring(0, 8)}...</span>
+                        <span class="trace-item-time">${trace.startTimeStr.split(' ')[1]}</span>
+                    </div>
+                    <div class="trace-item-op">${opName}</div>
+                    <div class="trace-item-meta">
+                        <span>${trace.spans.length} spans</span>
+                        <span>${trace.node.substring(0, 10)}</span>
+                    </div>
+                </div>
+            `;
+        }).join('');
+        
+        const tempDiv = document.createElement('div');
+        tempDiv.innerHTML = itemsHtml;
+        listContainer.appendChild(tempDiv);
+    }
+
+    function renderNodesView() {
+        const grid = document.getElementById('nodes-grid');
+        const nodeStats = {};
+        
+        Object.values(currentTraces).forEach(t => {
+            if (!nodeStats[t.node]) {
+                nodeStats[t.node] = {
+                    id: t.node,
+                    traceCount: 0,
+                    spanCount: 0,
+                    lastSeen: 0,
+                    lastSeenStr: ''
+                };
+            }
+            nodeStats[t.node].traceCount++;
+            nodeStats[t.node].spanCount += t.spans.length;
+            if (t.startTimeRaw > nodeStats[t.node].lastSeen) {
+                nodeStats[t.node].lastSeen = t.startTimeRaw;
+                nodeStats[t.node].lastSeenStr = t.startTimeStr;
+            }
+        });
+
+        const nodes = Object.values(nodeStats);
+        document.getElementById('node-count-badge').textContent = `${nodes.length} Nodes Active`;
+
+        grid.innerHTML = nodes.map(node => {
+            const color = getServiceColor(node.id);
+            return `
+                <div style="background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; display: flex; flex-direction: column; gap: 1rem;">
+                    <div style="display: flex; align-items: center; gap: 12px;">
+                        <div style="width: 12px; height: 12px; border-radius: 3px; background: ${color}"></div>
+                        <h3 style="margin: 0; font-family: 'JetBrains Mono', monospace; font-size: 1.1rem; color: var(--accent);">${node.id.substring(0, 16)}...</h3>
+                    </div>
+                    
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                        <div class="stat-item">
+                            <span class="stat-label">Traces</span>
+                            <span class="stat-value" style="font-size: 1.2rem;">${node.traceCount}</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-label">Total Spans</span>
+                            <span class="stat-value" style="font-size: 1.2rem;">${node.spanCount}</span>
+                        </div>
+                        <div class="stat-item" style="grid-column: span 2;">
+                            <span class="stat-label">Last Activity</span>
+                            <span class="stat-value">${node.lastSeenStr}</span>
+                        </div>
+                    </div>
+
+                    <div style="margin-top: auto; padding-top: 1rem; border-top: 1px solid var(--border); display: flex; gap: 8px;">
+                        <button onclick="filterByNode('${node.id}')" style="flex: 1; padding: 8px; border-radius: 6px; background: var(--accent); border: none; color: white; font-weight: 600; cursor: pointer;">View Traces</button>
+                        <button onclick="alert('Node Details Coming Soon')" style="padding: 8px; border-radius: 6px; background: var(--surface-lighter); border: 1px solid var(--border); color: var(--text-dim); cursor: pointer;">Details</button>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    function selectTrace(id) {
+        selectedTraceId = id;
+        renderTraceList();
+        renderTraceDetail(id);
+    }
+
+    function renderTraceDetail(id) {
+        const trace = currentTraces[id];
+        const detailContainer = document.getElementById('detail-view');
+        
+        // Sort spans by timestamp
+        const spans = [...trace.spans].sort((a, b) => a.header.timestamp - b.header.timestamp);
+        const startTime = spans[0].header.timestamp;
+        const endTime = spans[spans.length - 1].header.timestamp;
+        const totalDuration = endTime - startTime || 1; // Prevent div by zero
+
+        // Depth calculation
+        const depthMap = {};
+        spans.forEach(s => {
+            if (s.header.parent_span_id === "0000000000000000") {
+                depthMap[s.header.span_id] = 0;
+            } else {
+                const parentDepth = depthMap[s.header.parent_span_id];
+                depthMap[s.header.span_id] = (parentDepth !== undefined ? parentDepth + 1 : 1);
+            }
+        });
+
+        detailContainer.innerHTML = `
+            <div class="trace-detail-header">
+                <div class="trace-title-row">
+                    <h2 class="trace-full-id">${trace.id}</h2>
+                    <div class="span-stats">
+                        <div class="stat-item">
+                            <span class="stat-label">Duration</span>
+                            <span class="stat-value">${(totalDuration / 1000).toFixed(2)}ms</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-label">Services</span>
+                            <span class="stat-value">${new Set(spans.map(s => s.header.agent_id)).size}</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-label">Total Spans</span>
+                            <span class="stat-value">${spans.length}</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="timeline-container">
+                <table class="timeline-table">
+                    <thead class="timeline-header">
+                        <tr>
+                            <th class="col-service">Service & Operation</th>
+                            <th class="col-timeline">Timeline</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${spans.map((s, idx) => {
+                            const level = s.header.event_level === 0 ? 'critical' : (s.header.event_level === 255 ? 'init' : 'routine');
+                            const offsetPct = ((s.header.timestamp - startTime) / totalDuration) * 90; // Leave space for label
+                            const color = getServiceColor(s.header.agent_id);
+                            const depth = depthMap[s.header.span_id] || 0;
+                            const nextSpanTs = spans[idx+1] ? spans[idx+1].header.timestamp : s.header.timestamp;
+                            const widthPct = Math.max(0.5, ((nextSpanTs - s.header.timestamp) / totalDuration) * 100);
+
+                            return `
+                                <tr class="timeline-row">
+                                    <td class="timeline-cell" style="padding-left: ${depth * 20 + 16}px">
+                                        <div class="service-name">
+                                            <div class="service-icon" style="background: ${color}"></div>
+                                            <span>${s.header.agent_id.substring(0, 10)}</span>
+                                            <span class="level-pill pill-${level}">${level}</span>
+                                        </div>
+                                        <div class="op-name" title="${s.payload}">${s.payload.split('\n')[0]}</div>
+                                    </td>
+                                    <td class="timeline-cell gantt-cell">
+                                        <div class="gantt-bar-wrap" style="left: ${offsetPct}%">
+                                            <div class="gantt-bar" style="width: ${widthPct}%; background: ${color}; opacity: 0.8"></div>
+                                            <div class="gantt-label">${((s.header.timestamp - startTime) / 1000).toFixed(2)}ms</div>
+                                        </div>
+                                    </td>
+                                </tr>
+                            `;
+                        }).join('')}
+                    </tbody>
+                </table>
+            </div>
+        `;
+    }
+
+    async function clearDiskLogs() {
+        if (!confirm("Are you sure you want to delete all trace logs on disk? This cannot be undone.")) return;
+        
+        try {
+            const resp = await fetch('/api/clear', { method: 'POST' });
+            if (resp.ok) {
+                currentTraces = {};
+                selectedTraceId = null;
+                renderTraceList();
+                document.getElementById('detail-view').innerHTML = `
+                    <div class="empty-main">
+                        <div class="empty-icon">Traces</div>
+                        <p>Logs cleared successfully</p>
+                    </div>
+                `;
+            }
+        } catch (e) {
+            console.error("Failed to clear logs:", e);
+        }
+    }
+
+    // Auto-refresh
+    setInterval(fetchTraces, 3000);
+    fetchTraces();
+</script>
+
+</body>
+</html>

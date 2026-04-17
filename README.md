@@ -1,12 +1,20 @@
+<div align="center">
+
 # Lilith-Zero
 
 **Deterministic Security Middleware for MCP tool calls written in Rust.**
 
-<div align="center">
+<br/>
 
 [![CI](https://github.com/BadC-mpany/lilith-zero/actions/workflows/ci.yml/badge.svg)](https://github.com/BadC-mpany/lilith-zero/actions)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Version](https://img.shields.io/badge/Version-0.1.3-green.svg)](https://github.com/BadC-mpany/lilith-zero/releases)
+
+<br/>
+
+![Linux](https://img.shields.io/badge/Linux-FCC624?style=flat&logo=linux&logoColor=black)
+![Windows](https://img.shields.io/badge/Windows-0078D6?style=flat&logo=microsoft-windows&logoColor=white)
+![macOS](https://img.shields.io/badge/macOS-FFD700?style=flat&logo=apple&logoColor=black)
 
 <br/>
 <img src="lilith-banner.svg" alt="Lilith Zero ASCII Art" width="800" />
@@ -168,6 +176,8 @@ if __name__ == "__main__":
 ```
 
 ### 5. Observability & Auditing
+
+**Audit Logs**
 Lilith Zero emits **cryptographically signed** audit logs to `stderr` (visible in agent logs).
 
 **Format**: `[AUDIT] <HMAC-SHA256 Signature> <JSON Payload>`
@@ -177,6 +187,9 @@ Lilith Zero emits **cryptographically signed** audit logs to `stderr` (visible i
 [AUDIT] 8f3...a1b {"session_id": "uuid", "event": "Decision", "decision": "DENY", "details": {...}}
 ```
 This ensures non-repudiation. Even if the log file is tampered with, the signature will fail verification against the session's ephemeral secret (or a configured shared secret).
+
+**Telemetry Grouping**
+Lilith Zero integrates directly with the `lilith-telemetry` system. When run with a Flock telemetry link (e.g., `--telemetry-link`), it enables cross-process span propagation. This allows all multi-tool interactions originating from a single LLM reasoning step to be accurately traced and grouped into unified, logical context spans within your dashboard.
 
 ### 6. Examples
 Full integration examples are available in the `examples/` directory:

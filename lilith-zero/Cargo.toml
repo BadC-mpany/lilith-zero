@@ -41,10 +41,13 @@ async-trait = "0.1"
 
 # HTTP upstream transport (always compiled in; transport is a runtime --transport flag)
 reqwest = { version = "0.12", features = ["json", "stream"], default-features = false }
+# Optional telemetry integration — implements TelemetryHook trait from engine_core
+lilith-telemetry = { path = "../lilith-telemetry", optional = true }
 
 [features]
 default = []
 schema = ["dep:schemars"]
+telemetry = ["dep:lilith-telemetry"]
 
 [target.'cfg(windows)'.dependencies]
 win32job = "2.0"

@@ -228,13 +228,11 @@ impl PolicyValidator {
                     )));
                 }
             }
-            "ADD_TAINT" | "REMOVE_TAINT" => {
-                if rule.tag.is_none() {
-                    return Err(InterceptorError::ConfigurationError(format!(
-                        "{}: {} action requires 'tag'",
-                        context, rule.action
-                    )));
-                }
+            "ADD_TAINT" | "REMOVE_TAINT" if rule.tag.is_none() => {
+                return Err(InterceptorError::ConfigurationError(format!(
+                    "{}: {} action requires 'tag'",
+                    context, rule.action
+                )));
             }
             "BLOCK" | "BLOCK_CURRENT" | "BLOCK_SECOND" => {}
             _ => {}
@@ -454,15 +452,13 @@ impl PolicyValidator {
                     ));
                 }
             }
-            "ADD_TAINT" | "REMOVE_TAINT" => {
-                if rule.tag.is_none() {
-                    out.push(PolicyValidationError::error(
-                        format!("{}.tag", prefix),
-                        Some(idx),
-                        format!("'{}' action requires 'tag'", rule.action),
-                        Some("Add 'tag: \"MY_TAINT_TAG\"'"),
-                    ));
-                }
+            "ADD_TAINT" | "REMOVE_TAINT" if rule.tag.is_none() => {
+                out.push(PolicyValidationError::error(
+                    format!("{}.tag", prefix),
+                    Some(idx),
+                    format!("'{}' action requires 'tag'", rule.action),
+                    Some("Add 'tag: \"MY_TAINT_TAG\"'"),
+                ));
             }
             _ => {}
         }
