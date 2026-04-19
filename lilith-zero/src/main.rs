@@ -50,17 +50,27 @@ enum AuthMode {
     Entra,
 }
 
-/// Hook output format: controls how decisions are signalled to the caller.
+/// Hook output format: controls how the allow/deny decision is communicated.
 ///
-/// Claude Code and GitHub Copilot use different protocols for allow/deny:
-/// - `claude`: exit code 0 = allow, exit code 2 = deny (no JSON to stdout).
-/// - `copilot`: always exit 0, write `{"permissionDecision":"allow"|"deny",...}` to stdout.
+/// Each format is a thin adapter over the same internal policy engine.
+/// Adding a new integration requires only a new format variant and adapter —
+/// the engine, taint tracking, and persistence are never touched.
+///
+/// | Format   | Caller                              | Decision mechanism                  |
+/// |----------|-------------------------------------|-------------------------------------|
+/// | `claude` | Claude Code                         | Exit code 0 (allow) / 2 (deny)     |
+/// | `copilot`| Copilot CLI / GitHub cloud agent    | JSON stdout `permissionDecision`    |
+/// | `vscode` | VS Code Copilot sidebar agent mode  | JSON stdout `hookSpecificOutput`    |
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 enum HookFormat {
-    /// Claude Code format: decision via exit code (default).
+    /// Claude Code: decision via exit code 0 (allow) or 2 (deny). Default.
     Claude,
-    /// GitHub Copilot format: decision via JSON on stdout, exit code always 0.
+    /// GitHub Copilot CLI / cloud coding agent: flat `{"permissionDecision":...}` on stdout.
     Copilot,
+    /// VS Code Copilot sidebar agent mode: `{"hookSpecificOutput":{...}}` wrapper on stdout.
+    /// Covers all built-in tools (editFiles, runTerminalCommand, #fetch, …) and MCP tools.
+    #[value(name = "vscode")]
+    VsCode,
 }
 
 /// Lilith Zero — deterministic MCP security middleware.
@@ -214,16 +224,21 @@ enum Commands {
         cmd_args: Vec<String>,
     },
 
-    /// Agent hook integration (Claude Code and GitHub Copilot).
+    /// Agent hook integration (Claude Code, GitHub Copilot, VS Code Copilot).
     ///
     /// Reads a JSON event from stdin, evaluates it against the active policy,
     /// and signals the decision to the caller via the selected format.
+    /// The policy engine is the same regardless of format — only the I/O adapter changes.
     ///
     /// Claude Code (default):
     ///   lilith-zero hook --policy policy.yaml
     ///
-    /// GitHub Copilot (VS Code / JetBrains):
+    /// GitHub Copilot CLI / cloud coding agent:
     ///   lilith-zero hook --format copilot --event preToolUse --policy policy.yaml
+    ///
+    /// VS Code Copilot sidebar agent mode (agent mode, built-in + MCP tools):
+    ///   lilith-zero hook --format vscode --policy policy.yaml
+    ///   (event is inferred from hookEventName in the JSON payload)
     Hook {
         /// Name of the hook event.
         /// Claude Code: "PreToolUse" | "PostToolUse" (inferred from JSON when omitted).
@@ -408,6 +423,9 @@ async fn run_hook(
         derive_session_id, is_output_ignored_event, normalize_event_name, CopilotHookInput,
         CopilotHookOutput,
     };
+    use lilith_zero::hook::vscode::{
+        VsCodeGenericOutput, VsCodeHookInput, VsCodePostToolOutput, VsCodePreToolOutput,
+    };
     use lilith_zero::hook::{HookHandler, HookInput};
     use std::io::Read;
 
@@ -416,8 +434,8 @@ async fn run_hook(
 
     match format {
         // ----------------------------------------------------------------
-        // Claude Code format — existing behaviour, unchanged.
-        // Decision: exit code 0 (allow) or 2 (deny).
+        // Claude Code — decision via exit code 0 (allow) or 2 (deny).
+        // No JSON written to stdout.
         // ----------------------------------------------------------------
         HookFormat::Claude => {
             if buffer.trim().is_empty() {
@@ -434,11 +452,11 @@ async fn run_hook(
         }
 
         // ----------------------------------------------------------------
-        // GitHub Copilot format — JSON on stdout, exit code always 0.
-        // Decision: {"permissionDecision":"allow"|"deny",...}
+        // GitHub Copilot CLI / cloud coding agent.
+        // Decision: flat {"permissionDecision":"allow"|"deny"} on stdout.
+        // Exit code always 0.
         // ----------------------------------------------------------------
         HookFormat::Copilot => {
-            // Fail-closed: empty stdin is a security violation, not an error to propagate.
             if buffer.trim().is_empty() {
                 println!(
                     "{}",
@@ -447,7 +465,6 @@ async fn run_hook(
                 return Ok(());
             }
 
-            // Fail-closed: malformed JSON must deny, never allow.
             let copilot_input: CopilotHookInput = match serde_json::from_str(&buffer) {
                 Ok(v) => v,
                 Err(e) => {
@@ -459,7 +476,6 @@ async fn run_hook(
                 }
             };
 
-            // Determine the event from --event flag, or auto-detect from payload shape.
             let event_name: &str = match event_override.as_deref() {
                 Some(ev) => ev,
                 None => infer_copilot_event(&copilot_input),
@@ -467,29 +483,18 @@ async fn run_hook(
 
             let normalized = normalize_event_name(event_name);
 
-            // For events whose output Copilot ignores (sessionStart, sessionEnd, etc.),
-            // run no policy evaluation and return allow. We still write a response so
-            // logs are consistent and future Copilot versions can act on the output.
             if is_output_ignored_event(normalized) {
                 println!("{}", CopilotHookOutput::allow().to_json_line());
                 return Ok(());
             }
 
-            // Derive stable session ID from the workspace path.
             let session_id = derive_session_id(&copilot_input.cwd);
-
-            // Decode toolArgs from the Copilot double-encoded JSON string.
             let tool_args = copilot_input.decoded_tool_args();
+            let tool_output = copilot_input
+                .tool_result
+                .as_ref()
+                .map(|r| serde_json::json!({"resultType": r.result_type, "text": r.text_result}));
 
-            // Build the tool output for postToolUse events.
-            let tool_output = copilot_input.tool_result.as_ref().map(|r| {
-                serde_json::json!({
-                    "resultType": r.result_type,
-                    "text": r.text_result
-                })
-            });
-
-            // Normalise into the internal HookInput format used by HookHandler.
             let hook_input = HookInput {
                 session_id,
                 hook_event_name: normalized.to_string(),
@@ -510,7 +515,6 @@ async fn run_hook(
             let exit_code = match handler.handle(hook_input).await {
                 Ok(code) => code,
                 Err(e) => {
-                    // Fail-closed: handler errors must deny.
                     println!(
                         "{}",
                         CopilotHookOutput::deny(format!("handler error: {e}")).to_json_line()
@@ -519,14 +523,80 @@ async fn run_hook(
                 }
             };
 
-            // Translate the internal exit code to a Copilot JSON response.
             let output = if exit_code == 0 {
                 CopilotHookOutput::allow()
             } else {
                 CopilotHookOutput::deny("blocked by Lilith Zero security policy")
             };
             println!("{}", output.to_json_line());
-            // Always exit 0 for Copilot — the decision is in the JSON, not the exit code.
+        }
+
+        // ----------------------------------------------------------------
+        // VS Code Copilot sidebar agent mode.
+        // Decision: {"hookSpecificOutput":{"permissionDecision":...}} on stdout.
+        // Exit code always 0. Event name inferred from hookEventName in payload.
+        // Covers all VS Code tools: editFiles, runTerminalCommand, #fetch, MCP, …
+        // ----------------------------------------------------------------
+        HookFormat::VsCode => {
+            if buffer.trim().is_empty() {
+                println!(
+                    "{}",
+                    VsCodePreToolOutput::deny("no input received on stdin").to_json_line()
+                );
+                return Ok(());
+            }
+
+            let vscode_input: VsCodeHookInput = match serde_json::from_str(&buffer) {
+                Ok(v) => v,
+                Err(e) => {
+                    println!(
+                        "{}",
+                        VsCodePreToolOutput::deny(format!("JSON parse error: {e}")).to_json_line()
+                    );
+                    return Ok(());
+                }
+            };
+
+            // --event overrides the hookEventName in the payload if provided.
+            let event = event_override
+                .as_deref()
+                .unwrap_or(&vscode_input.hook_event_name);
+
+            // Non-tool events: VS Code ignores our output but we write a valid response.
+            let is_pre_tool = event == "PreToolUse";
+            let is_post_tool = event == "PostToolUse";
+            if !is_pre_tool && !is_post_tool {
+                println!("{}", VsCodeGenericOutput::for_event(event).to_json_line());
+                return Ok(());
+            }
+
+            // Normalise to internal format and evaluate.
+            let hook_input = vscode_input.to_hook_input();
+            let mut handler = HookHandler::new(Arc::new(config), audit_logs)?;
+            let exit_code = match handler.handle(hook_input).await {
+                Ok(code) => code,
+                Err(e) => {
+                    println!(
+                        "{}",
+                        VsCodePreToolOutput::deny(format!("handler error: {e}")).to_json_line()
+                    );
+                    return Ok(());
+                }
+            };
+
+            if is_pre_tool {
+                let output = if exit_code == 0 {
+                    VsCodePreToolOutput::allow()
+                } else {
+                    VsCodePreToolOutput::deny("blocked by Lilith Zero security policy")
+                };
+                println!("{}", output.to_json_line());
+            } else {
+                // PostToolUse: engine runs for taint propagation; always allow output
+                // through (blocking post-tool output requires explicit policy support).
+                println!("{}", VsCodePostToolOutput::allow().to_json_line());
+            }
+            // Always exit 0 — decision is in the JSON, not the exit code.
         }
     }
 

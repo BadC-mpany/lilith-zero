@@ -86,17 +86,34 @@ if (-not (Test-Path -LiteralPath $LilithBin -PathType Leaf)) {
 }
 
 # ---------------------------------------------------------------------------
-# Resolve and validate event name
+# Resolve format and event name
 # ---------------------------------------------------------------------------
-$Event = $env:LILITH_ZERO_EVENT
+$Format = $env:LILITH_ZERO_FORMAT
+if (-not $Format) { $Format = 'copilot' }
 
-if (-not $Event) {
-    Deny-Request 'LILITH_ZERO_EVENT must be set (e.g. preToolUse, postToolUse, sessionStart, sessionEnd)'
+$ValidFormats = @('copilot', 'vscode')
+if ($Format -notin $ValidFormats) {
+    Deny-Request "Invalid LILITH_ZERO_FORMAT value: $Format (must be copilot or vscode)"
 }
 
-$ValidEvents = @('preToolUse', 'postToolUse', 'sessionStart', 'sessionEnd', 'userPromptSubmitted', 'errorOccurred')
-if ($Event -notin $ValidEvents) {
-    Deny-Request "Invalid LILITH_ZERO_EVENT value: $Event"
+$Event = $env:LILITH_ZERO_EVENT
+$EventArgs = @()
+
+if ($Format -eq 'copilot') {
+    if (-not $Event) {
+        Deny-Request 'LILITH_ZERO_EVENT must be set for --format copilot (e.g. preToolUse, postToolUse)'
+    }
+    $ValidEvents = @('preToolUse', 'postToolUse', 'sessionStart', 'sessionEnd', 'userPromptSubmitted', 'errorOccurred')
+    if ($Event -notin $ValidEvents) {
+        Deny-Request "Invalid LILITH_ZERO_EVENT value: $Event"
+    }
+    $EventArgs = @('--event', $Event)
+} elseif ($Event) {
+    $ValidVsCodeEvents = @('PreToolUse', 'PostToolUse', 'SessionStart', 'SessionEnd', 'UserPromptSubmit', 'SubagentStart', 'SubagentStop', 'Stop', 'PreCompact')
+    if ($Event -notin $ValidVsCodeEvents) {
+        Deny-Request "Invalid LILITH_ZERO_EVENT value: $Event"
+    }
+    $EventArgs = @('--event', $Event)
 }
 
 # ---------------------------------------------------------------------------
@@ -143,7 +160,7 @@ $psi.UseShellExecute        = $false
 $psi.CreateNoWindow         = $true
 
 # Build argument list safely (no string concatenation of untrusted input)
-$argList = @('hook', '--format', 'copilot', '--event', $Event) + $PolicyArgs + $AuditArgs
+$argList = @('hook', '--format', $Format) + $EventArgs + $PolicyArgs + $AuditArgs
 $psi.Arguments = ($argList | ForEach-Object { "`"$_`"" }) -join ' '
 
 $proc = [System.Diagnostics.Process]::new()

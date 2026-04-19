@@ -1,0 +1,71 @@
+{
+  "_comment": "Lilith Zero — VS Code Copilot sidebar agent hooks template",
+  "_instructions": [
+    "Copy this file to .github/hooks/hooks.json in your repository.",
+    "Copy hook-wrapper.sh (Linux/Mac) or hook-wrapper.ps1 (Windows) to .github/hooks/.",
+    "Create lilith-policy.yaml in .github/hooks/ with your security policy.",
+    "",
+    "This template is for the VS Code Copilot SIDEBAR agent (agent mode in the chat panel).",
+    "It covers ALL tool calls: editFiles, createFile, runTerminalCommand, #fetch,",
+    "pushToGitHub, MCP tools, and any future tools added to the VS Code agent registry.",
+    "",
+    "The only agent activity NOT interceptable is the LLM generating text responses.",
+    "",
+    "VS Code uses PascalCase event names (PreToolUse, PostToolUse) unlike the",
+    "GitHub cloud coding agent which uses camelCase (preToolUse, postToolUse).",
+    "",
+    "Security note: Deploy via enterprise image or VS Code policy to prevent",
+    "developers from removing or modifying .github/hooks/ on their local machines."
+  ],
+  "version": 1,
+  "hooks": {
+    "PreToolUse": [
+      {
+        "type": "command",
+        "command": ".github/hooks/hook-wrapper.sh",
+        "windows": ".github/hooks/hook-wrapper.ps1",
+        "env": {
+          "LILITH_ZERO_FORMAT": "vscode",
+          "LILITH_ZERO_POLICY": ".github/hooks/lilith-policy.yaml"
+        },
+        "timeout": 10
+      }
+    ],
+    "PostToolUse": [
+      {
+        "type": "command",
+        "command": ".github/hooks/hook-wrapper.sh",
+        "windows": ".github/hooks/hook-wrapper.ps1",
+        "env": {
+          "LILITH_ZERO_FORMAT": "vscode",
+          "LILITH_ZERO_POLICY": ".github/hooks/lilith-policy.yaml"
+        },
+        "timeout": 10
+      }
+    ],
+    "SessionStart": [
+      {
+        "type": "command",
+        "command": ".github/hooks/hook-wrapper.sh",
+        "windows": ".github/hooks/hook-wrapper.ps1",
+        "env": {
+          "LILITH_ZERO_FORMAT": "vscode",
+          "LILITH_ZERO_POLICY": ".github/hooks/lilith-policy.yaml"
+        },
+        "timeout": 5
+      }
+    ],
+    "SessionEnd": [
+      {
+        "type": "command",
+        "command": ".github/hooks/hook-wrapper.sh",
+        "windows": ".github/hooks/hook-wrapper.ps1",
+        "env": {
+          "LILITH_ZERO_FORMAT": "vscode",
+          "LILITH_ZERO_POLICY": ".github/hooks/lilith-policy.yaml"
+        },
+        "timeout": 5
+      }
+    ]
+  }
+}

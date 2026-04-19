@@ -88,22 +88,46 @@ if [ ! -x "$LILITH_BIN" ]; then
 fi
 
 # ---------------------------------------------------------------------------
-# Resolve event name
+# Resolve output format and event name
+#
+# LILITH_ZERO_FORMAT selects the hook protocol:
+#   copilot  — GitHub Copilot CLI / cloud coding agent (camelCase events, flat JSON output)
+#   vscode   — VS Code Copilot sidebar agent mode (PascalCase events, hookSpecificOutput)
+#
+# For vscode format, LILITH_ZERO_EVENT is optional: VS Code embeds the event
+# name in the JSON payload as hookEventName. For copilot format, the event
+# must be supplied explicitly.
 # ---------------------------------------------------------------------------
-EVENT="${LILITH_ZERO_EVENT:-}"
+FORMAT="${LILITH_ZERO_FORMAT:-copilot}"
 
-if [ -z "$EVENT" ]; then
-    deny "LILITH_ZERO_EVENT must be set (e.g. preToolUse, postToolUse, sessionStart, sessionEnd)"
-fi
-
-# Allowlist of valid event names to prevent injection via the env var
-case "$EVENT" in
-    preToolUse|postToolUse|sessionStart|sessionEnd|userPromptSubmitted|errorOccurred)
-        ;;
-    *)
-        deny "Invalid LILITH_ZERO_EVENT value: $EVENT"
-        ;;
+case "$FORMAT" in
+    copilot|vscode) ;;
+    *) deny "Invalid LILITH_ZERO_FORMAT value: $FORMAT (must be copilot or vscode)" ;;
 esac
+
+EVENT="${LILITH_ZERO_EVENT:-}"
+EVENT_ARGS=()
+
+if [ "$FORMAT" = "copilot" ]; then
+    # Copilot CLI/cloud: event must be explicit (not embedded in JSON)
+    if [ -z "$EVENT" ]; then
+        deny "LILITH_ZERO_EVENT must be set for --format copilot (e.g. preToolUse, postToolUse)"
+    fi
+    # Allowlist camelCase event names
+    case "$EVENT" in
+        preToolUse|postToolUse|sessionStart|sessionEnd|userPromptSubmitted|errorOccurred) ;;
+        *) deny "Invalid LILITH_ZERO_EVENT value: $EVENT" ;;
+    esac
+    EVENT_ARGS=(--event "$EVENT")
+elif [ -n "$EVENT" ]; then
+    # VS Code: event is optional (embedded in JSON) but can be overridden
+    # Allowlist PascalCase event names
+    case "$EVENT" in
+        PreToolUse|PostToolUse|SessionStart|SessionEnd|UserPromptSubmit|SubagentStart|SubagentStop|Stop|PreCompact) ;;
+        *) deny "Invalid LILITH_ZERO_EVENT value: $EVENT" ;;
+    esac
+    EVENT_ARGS=(--event "$EVENT")
+fi
 
 # ---------------------------------------------------------------------------
 # Resolve policy file (optional but strongly recommended)
@@ -135,7 +159,7 @@ fi
 # Stdin is passed through automatically because we use exec.
 # ---------------------------------------------------------------------------
 exec "$LILITH_BIN" hook \
-    --format copilot \
-    --event "$EVENT" \
+    --format "$FORMAT" \
+    "${EVENT_ARGS[@]}" \
     "${POLICY_ARGS[@]}" \
     "${AUDIT_ARGS[@]}"

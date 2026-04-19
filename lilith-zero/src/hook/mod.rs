@@ -2,8 +2,10 @@
 // Licensed under the Apache License, Version 2.0 (the "License");
 //     http://www.apache.org/licenses/LICENSE-2.0
 
-/// GitHub Copilot hook format: types, session ID derivation, event normalization.
+/// GitHub Copilot CLI / cloud agent hook adapter.
 pub mod copilot;
+/// VS Code Copilot sidebar agent hook adapter.
+pub mod vscode;
 
 use crate::config::Config;
 use crate::engine_core::events::{SecurityDecision, SecurityEvent};
