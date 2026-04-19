@@ -1,0 +1,30 @@
+# Lilith Zero — Static Policy for gh copilot CLI
+#
+# Complete tool names used by gh copilot CLI (confirmed by observation):
+#
+#   bash          — ALL shell execution (ls, curl, git, writes, find, everything)
+#   view          — dedicated file read tool
+#   rg            — dedicated ripgrep search
+#   glob          — directory listing / glob-based search (fallback when bash blocked)
+#   report_intent — announces intent before acting (informational, no side effects)
+#
+# Strategy: allow safe read-only tools, deny all shell execution.
+# This blocks: file writes, curl/wget, git push, arbitrary commands.
+
+id: gh-copilot-static-demo
+customer_id: enterprise-demo
+name: "gh copilot — Static Allow/Deny Policy"
+version: 1
+
+static_rules:
+  # Safe read-only tools — always allow
+  view:          ALLOW   # read file contents
+  rg:            ALLOW   # ripgrep search
+  glob:          ALLOW   # directory listing (fallback when bash blocked)
+  report_intent: ALLOW   # informational only
+
+  # Shell execution — deny everything that runs in a shell
+  bash:          DENY    # blocks ls, curl, git, file writes, and everything else
+
+taint_rules: []
+resource_rules: []

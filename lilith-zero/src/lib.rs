@@ -26,6 +26,9 @@ pub mod hook;
 pub mod mcp;
 /// MCP protocol version adapters and handshake negotiation.
 pub mod protocol;
+/// Copilot Studio REST webhook server (compiled with `--features webhook`).
+#[cfg(feature = "webhook")]
+pub mod server;
 /// Utility helpers: policy validation, spotlighting, PE parsing, uv runtime, time.
 pub mod utils;
 

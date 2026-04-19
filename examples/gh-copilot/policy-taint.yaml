@@ -1,0 +1,35 @@
+# Lilith Zero — Taint Tracking Policy for gh copilot CLI
+#
+# Scenario: agent reads a file (view tool → SENSITIVE_DATA taint).
+# Any subsequent bash execution in the SAME SESSION is blocked.
+#
+# IMPORTANT: taint persists within one gh copilot session (same sessionId).
+# Starting a new `gh copilot` invocation = new sessionId = clean state.
+# Test correctly by putting both operations in ONE prompt (see guide).
+
+id: gh-copilot-taint-demo
+customer_id: enterprise-demo
+name: "gh copilot — Taint Tracking Policy"
+version: 1
+
+static_rules:
+  report_intent: ALLOW
+  rg:            ALLOW   # search is always safe (no file content read)
+  glob:          ALLOW   # directory listing is always safe
+  view:          ALLOW   # file reads allowed, but they SET a taint
+  bash:          ALLOW   # shell allowed UNLESS taint is active (see below)
+
+taint_rules:
+  # Reading a file marks the session — content may contain secrets
+  - tool: view
+    action: ADD_TAINT
+    tag: SENSITIVE_DATA
+
+  # After any file read, block shell execution to prevent exfiltration
+  # (bash includes curl, git, file writes — all exfiltration paths)
+  - tool: bash
+    action: CHECK_TAINT
+    required_taints: ["SENSITIVE_DATA"]
+    error: "BLOCKED: shell execution denied after file read (exfiltration prevention). Use a new session to run shell commands."
+
+resource_rules: []

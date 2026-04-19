@@ -31,8 +31,15 @@ sha2 = "0.10"
 hmac = "0.12"
 rand = "0.9"
 base64 = "0.22"
-jsonwebtoken = "10.3"
+# Enable rust_crypto feature so jsonwebtoken selects the RustCrypto backend
+# at compile time. Without this, jsonwebtoken 10.3 panics on any crypto
+# operation when no CryptoProvider is installed at runtime.
+jsonwebtoken = { version = "10.3", features = ["rust_crypto"] }
 schemars = { version = "0.8", optional = true }
+# Webhook server (Copilot Studio integration) — compiled only with --features webhook
+axum = { version = "0.7", features = ["macros"], optional = true }
+tower = { version = "0.4", features = ["timeout"], optional = true }
+tower-http = { version = "0.5", features = ["trace", "request-id", "util"], optional = true }
 tokio-util = { version = "0.7", features = ["codec"] }
 bytes = "1.11.1"
 futures = { version = "0.3", features = ["std"] }
@@ -48,6 +55,10 @@ fs2 = "0.4.3"
 [features]
 default = []
 schema = ["dep:schemars"]
+# webhook: adds the Copilot Studio REST webhook server (POST /validate + /analyze-tool-execution).
+# Pulls in axum, tower-http, and enables TLS on reqwest for JWKS fetching.
+# Build with: cargo build --features webhook
+webhook = ["dep:axum", "dep:tower", "dep:tower-http", "reqwest/rustls-tls"]
 # telemetry: implemented via dependency inversion — lilith-telemetry depends on
 # lilith-zero (not vice versa) and ships its own lilith-zero-telemetry binary.
 # See: https://github.com/BadC-mpany/lilith-telemetry
@@ -82,6 +93,7 @@ assert_cmd = "2.1.2"
 predicates = "3.1.3"
 criterion = "0.5"
 proptest = "1.10.0"
+tempfile = "3"
 
 [[bench]]
 name = "core_benchmarks"

@@ -1,0 +1,39 @@
+# Lilith Zero — Lethal Trifecta Protection for gh copilot CLI
+#
+# Blocks the "read private → access untrusted → exfiltrate" pattern.
+#
+# With protect_lethal_trifecta: true, Lilith auto-blocks all NETWORK/EXFILTRATION
+# tools when BOTH ACCESS_PRIVATE and UNTRUSTED_SOURCE taints are active.
+#
+# Test: "read Cargo.toml, then search the web, then run curl"
+#   Step 1 (view)  → ACCESS_PRIVATE taint added
+#   Step 2 (bash)  → UNTRUSTED_SOURCE taint added
+#   Step 3 (bash with curl) → blocked by trifecta rule
+
+id: gh-copilot-lethal-trifecta
+customer_id: enterprise-demo
+name: "gh copilot — Lethal Trifecta Auto-Protection"
+version: 1
+
+protect_lethal_trifecta: true
+
+static_rules:
+  report_intent: ALLOW
+  rg:            ALLOW
+  glob:          ALLOW
+  view:          ALLOW   # adds ACCESS_PRIVATE taint
+  bash:          ALLOW   # first bash adds UNTRUSTED_SOURCE; second blocked if both taints active
+
+taint_rules:
+  - tool: view
+    action: ADD_TAINT
+    tag: ACCESS_PRIVATE
+
+  - tool: bash
+    action: ADD_TAINT
+    tag: UNTRUSTED_SOURCE
+
+  # protect_lethal_trifecta automatically blocks bash (classified as NETWORK)
+  # when both ACCESS_PRIVATE + UNTRUSTED_SOURCE are active.
+
+resource_rules: []

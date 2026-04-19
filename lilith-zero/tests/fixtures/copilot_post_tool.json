@@ -1,0 +1,10 @@
+{
+    "timestamp": 1704614700000,
+    "cwd": "/home/user/project",
+    "toolName": "allowed_tool",
+    "toolArgs": "{\"arg1\":\"val1\"}",
+    "toolResult": {
+        "resultType": "success",
+        "textResultForLlm": "command executed successfully"
+    }
+}

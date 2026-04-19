@@ -1,0 +1,57 @@
+{
+  "_usage": [
+    "Option A — Repo-level: copy this file to .github/hooks/hooks.json in your repository.",
+    "  gh copilot will automatically load it from the git root.",
+    "",
+    "Option B — Global: merge the 'hooks' key into ~/.copilot/config.json.",
+    "  This applies to all gh copilot sessions on your machine.",
+    "",
+    "Before using, set these environment variables or edit BINARY_PATH/POLICY_PATH below:",
+    "  export LILITH_ZERO_BIN=/absolute/path/to/lilith-zero",
+    "  export LILITH_ZERO_POLICY=/absolute/path/to/policy.yaml",
+    "",
+    "Event names use camelCase (preToolUse, postToolUse) for gh copilot CLI."
+  ],
+  "version": 1,
+  "hooks": {
+    "preToolUse": [
+      {
+        "type": "command",
+        "bash": "examples/gh-copilot/hook-wrapper.sh",
+        "powershell": "examples\\gh-copilot\\hook-wrapper.ps1",
+        "env": {
+          "LILITH_ZERO_FORMAT": "copilot",
+          "LILITH_ZERO_EVENT": "preToolUse",
+          "LILITH_ZERO_POLICY": "examples/gh-copilot/policy-static.yaml"
+        },
+        "timeoutSec": 10
+      }
+    ],
+    "postToolUse": [
+      {
+        "type": "command",
+        "bash": "examples/gh-copilot/hook-wrapper.sh",
+        "powershell": "examples\\gh-copilot\\hook-wrapper.ps1",
+        "env": {
+          "LILITH_ZERO_FORMAT": "copilot",
+          "LILITH_ZERO_EVENT": "postToolUse",
+          "LILITH_ZERO_POLICY": "examples/gh-copilot/policy-static.yaml"
+        },
+        "timeoutSec": 10
+      }
+    ],
+    "sessionStart": [
+      {
+        "type": "command",
+        "bash": "examples/gh-copilot/hook-wrapper.sh",
+        "powershell": "examples\\gh-copilot\\hook-wrapper.ps1",
+        "env": {
+          "LILITH_ZERO_FORMAT": "copilot",
+          "LILITH_ZERO_EVENT": "sessionStart",
+          "LILITH_ZERO_POLICY": "examples/gh-copilot/policy-static.yaml"
+        },
+        "timeoutSec": 5
+      }
+    ]
+  }
+}
