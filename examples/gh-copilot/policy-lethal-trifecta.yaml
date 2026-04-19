@@ -1,0 +1,81 @@
+# Lilith Zero — Lethal Trifecta Protection for gh copilot CLI
+#
+# The "Lethal Trifecta" is the most dangerous agentic attack pattern:
+#   1. Agent reads private/sensitive data  (ACCESS_PRIVATE taint)
+#   2. Agent accesses an untrusted source  (UNTRUSTED_SOURCE taint)
+#   3. Agent exfiltrates data to network   (blocked automatically)
+#
+# With `protect_lethal_trifecta: true`, Lilith Zero auto-injects a rule
+# that blocks ALL network/exfiltration tools whenever BOTH taints are active.
+# You do not need to write the blocking rule yourself.
+#
+# This policy is your production-ready defence against prompt injection
+# leading to data exfiltration.
+
+id: gh-copilot-lethal-trifecta
+customer_id: enterprise-demo
+name: "gh copilot — Lethal Trifecta Auto-Protection"
+version: 1
+
+# Enable automatic lethal-trifecta blocking.
+# When both ACCESS_PRIVATE and UNTRUSTED_SOURCE taints are present,
+# ALL tools classified as EXFILTRATION or NETWORK are blocked.
+protect_lethal_trifecta: true
+
+static_rules:
+  # File operations
+  read_file: ALLOW
+  readFile: ALLOW
+  write_file: ALLOW
+  writeFile: ALLOW
+  edit: ALLOW
+  str_replace_editor: ALLOW
+  search: ALLOW
+  search_files: ALLOW
+  searchFiles: ALLOW
+  grep: ALLOW
+  list_directory: ALLOW
+
+  # Shell (guarded by taint rules)
+  shell: ALLOW
+  bash: ALLOW
+  run_terminal_command: ALLOW
+  runTerminalCommand: ALLOW
+
+  # Network (will be auto-blocked by lethal trifecta when both taints active)
+  fetch: ALLOW
+  "#fetch": ALLOW
+  web_search: ALLOW
+  curl: ALLOW
+  wget: ALLOW
+  http_request: ALLOW
+
+taint_rules:
+  # Step 1: Accessing private data marks the session
+  - tool: read_file
+    action: ADD_TAINT
+    tag: ACCESS_PRIVATE
+
+  - tool: readFile
+    action: ADD_TAINT
+    tag: ACCESS_PRIVATE
+
+  # Step 2: Accessing untrusted sources marks the session
+  # (web_search, fetch from external URLs, reading user-controlled input)
+  - tool: web_search
+    action: ADD_TAINT
+    tag: UNTRUSTED_SOURCE
+
+  - tool: "#fetch"
+    action: ADD_TAINT
+    tag: UNTRUSTED_SOURCE
+
+  - tool: fetch
+    action: ADD_TAINT
+    tag: UNTRUSTED_SOURCE
+
+  # Step 3: When BOTH taints are present, network tools are auto-blocked
+  # by the protect_lethal_trifecta rule (no explicit rule needed here).
+  # curl and wget are classified as NETWORK tools and blocked automatically.
+
+resource_rules: []
