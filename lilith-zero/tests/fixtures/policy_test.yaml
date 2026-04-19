@@ -1,0 +1,9 @@
+id: test-policy
+customer_id: test-customer
+name: Test Hook Policy
+version: 1
+static_rules:
+  allowed_tool: ALLOW
+  forbidden_tool: DENY
+taint_rules: []
+resource_rules: []

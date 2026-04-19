@@ -46,6 +46,15 @@ pub enum SecurityEvent {
         /// Optional session token included in the request parameters.
         session_token: Option<String>,
     },
+    /// An MCP tool-call response to be evaluated for post-execution side effects.
+    ToolResponse {
+        /// The tool name.
+        tool_name: String,
+        /// The tool result/output.
+        result: Value,
+        /// Optional session token.
+        session_token: Option<String>,
+    },
     /// A request that requires no security evaluation and is forwarded as-is.
     Passthrough {
         /// The JSON-RPC request identifier, if present.

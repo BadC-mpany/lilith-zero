@@ -1,3 +1,4 @@
+#![cfg(not(miri))]
 use assert_cmd::Command;
 use serde_json::json;
 use std::io::Write;

@@ -14,6 +14,8 @@ pub mod errors;
 pub mod events;
 /// Data models: policies, rules, JSON-RPC messages, and session structures.
 pub mod models;
+/// State persistence for ephemeral hook execution.
+pub mod persistence;
 /// Per-session security state and policy evaluation entry point.
 pub mod security_core;
 /// Active protocol-version adapter for the current MCP session.

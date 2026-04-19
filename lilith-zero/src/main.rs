@@ -124,6 +124,24 @@ enum Commands {
 
         cmd_args: Vec<String>,
     },
+
+    /// Claude Code hook integration.
+    ///
+    /// Reads JSON from stdin and enforces security policies.
+    Hook {
+        /// Name of the hook event (e.g. "PreToolUse", "PostToolUse").
+        /// Inferred from JSON if omitted.
+        #[arg(short, long)]
+        event: Option<String>,
+
+        /// Path to policy YAML.
+        #[arg(long)]
+        policy: Option<PathBuf>,
+
+        /// Path for audit log output.
+        #[arg(long)]
+        audit_logs: Option<PathBuf>,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -194,6 +212,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             pin_command(action)?;
         }
 
+        // --- State persistence / Hook mode ---
+        Some(Commands::Hook {
+            event,
+            policy,
+            audit_logs,
+        }) => {
+            let config = build_config(policy)?;
+            init_tracing(&config)?;
+            run_hook(event, audit_logs, config).await?;
+        }
+
         // --- Backward-compatible flat-arg middleware mode ---
         None => {
             let mut config = build_config(cli.policy)?;
@@ -238,6 +267,34 @@ async fn run_middleware(
 
     middleware.run().await?;
     Ok(())
+}
+
+async fn run_hook(
+    event_override: Option<String>,
+    audit_logs: Option<PathBuf>,
+    config: Config,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use lilith_zero::hook::{HookHandler, HookInput};
+    use std::io::Read;
+
+    let mut buffer = String::new();
+    std::io::stdin().read_to_string(&mut buffer)?;
+
+    if buffer.trim().is_empty() {
+        return Err("No input received on stdin".into());
+    }
+
+    let mut input: HookInput =
+        serde_json::from_str(&buffer).map_err(|e| format!("Invalid hook JSON: {e}"))?;
+
+    if let Some(ev) = event_override {
+        input.hook_event_name = ev;
+    }
+
+    let mut handler = HookHandler::new(Arc::new(config), audit_logs)?;
+    let exit_code = handler.handle(input).await?;
+
+    std::process::exit(exit_code);
 }
 
 // ---------------------------------------------------------------------------

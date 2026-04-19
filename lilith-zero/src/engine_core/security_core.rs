@@ -24,6 +24,15 @@ use anyhow::Result;
 use crate::engine_core::audit::AuditLogger;
 use crate::engine_core::telemetry::TelemetryHook;
 
+/// Representative state of a security session, used for persistence.
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
+pub struct SessionState {
+    /// Set of active security taints for the session.
+    pub taints: HashSet<String>,
+    /// Sequential history of tool executions and security decisions.
+    pub history: Vec<HistoryEntry>,
+}
+
 /// Per-session security state: holds the active policy, taint set, history, and crypto signer.
 pub struct SecurityCore {
     /// Shared runtime configuration (security level, policy path, audience, etc.).
@@ -36,6 +45,8 @@ pub struct SecurityCore {
     pub policy: Option<PolicyDefinition>,
     taints: HashSet<String>,
     history: Vec<HistoryEntry>,
+    /// Whether to strictly validate session HMAC signatures.
+    pub validate_session_tokens: bool,
     telemetry: Option<Arc<dyn TelemetryHook>>,
 }
 
@@ -58,6 +69,7 @@ impl SecurityCore {
             policy: None,
             taints: HashSet::new(),
             history: Vec::new(),
+            validate_session_tokens: true,
             telemetry: None,
         })
     }
@@ -100,6 +112,20 @@ impl SecurityCore {
     pub fn log_audit(&self, event_type: &str, details: serde_json::Value) {
         // Description: Executes the log_audit logic.
         self.audit.log(&self.session_id, event_type, details);
+    }
+
+    /// Export the current session state (taints and history).
+    pub fn export_state(&self) -> SessionState {
+        SessionState {
+            taints: self.taints.clone(),
+            history: self.history.clone(),
+        }
+    }
+
+    /// Import session state from a [`SessionState`] object.
+    pub fn import_state(&mut self, state: SessionState) {
+        self.taints = state.taints;
+        self.history = state.history;
     }
 
     /// Evaluate a [`SecurityEvent`] against the loaded policy and session state.
@@ -156,10 +182,10 @@ impl SecurityCore {
                 session_token,
                 ..
             } => {
-                if self.config.security_level_config().session_validation {
+                if self.validate_session_tokens {
                     match session_token {
                         Some(token) => {
-                            if token != self.session_id {
+                            if token != self.session_id && self.validate_session_tokens {
                                 warn!(
                                     "Session ID mismatch. Expected: {}, Got: {}",
                                     self.session_id, token
@@ -265,7 +291,7 @@ impl SecurityCore {
             SecurityEvent::ResourceRequest {
                 uri, session_token, ..
             } => {
-                if self.config.security_level_config().session_validation {
+                if self.validate_session_tokens {
                     if let Some(token) = session_token {
                         if !self.signer.validate_session_id(&token) {
                             return SecurityDecision::Deny {
@@ -339,6 +365,16 @@ impl SecurityCore {
                 }
             }
 
+            SecurityEvent::ToolResponse {
+                tool_name: _,
+                result: _,
+                ..
+            } => {
+                // Currently, we don't have explicit "post-execution" rules in PolicyDefinition.
+                // However, we can use this to apply transforms or propagate taints if added in the future.
+                // For now, it's a no-op that allows state updates.
+                SecurityDecision::Allow
+            }
             SecurityEvent::Passthrough { .. } => SecurityDecision::Allow,
         }
     }

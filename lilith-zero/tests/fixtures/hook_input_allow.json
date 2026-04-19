@@ -1,0 +1,8 @@
+{
+    "session_id": "test-session-123",
+    "hook_event_name": "PreToolUse",
+    "tool_name": "allowed_tool",
+    "tool_input": {
+        "arg1": "val1"
+    }
+}

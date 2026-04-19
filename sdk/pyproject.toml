@@ -54,6 +54,7 @@ dev = [
     "pytest>=7.0.0",
     "pytest-asyncio>=0.23.0",
     "types-setuptools",
+    "pytest-timeout>=2.4.0",
 ]
 
 [tool.ruff]

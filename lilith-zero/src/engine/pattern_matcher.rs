@@ -334,18 +334,28 @@ mod proptests {
     use proptest::prelude::*;
 
     proptest! {
+        // Miri is slow, so we scale down the number of cases drastically.
+        // Also disable forking under Miri as it is not supported.
+        #![proptest_config(ProptestConfig {
+            cases: if cfg!(miri) { 1 } else { 100 },
+            .. ProptestConfig::default()
+        })]
+
         #[test]
         fn test_wildcard_match_properties(pattern in "\\PC*", text in "\\PC*") {
+            if cfg!(miri) { eprintln!("Running Miri: test_wildcard_match_properties"); }
             let _ = PatternMatcher::wildcard_match(&pattern, &text);
         }
 
         #[test]
         fn test_wildcard_match_identity(text in "\\PC*") {
+            if cfg!(miri) { eprintln!("Running Miri: test_wildcard_match_identity"); }
             assert!(PatternMatcher::wildcard_match(&text, &text));
         }
 
         #[test]
         fn test_wildcard_match_star(text in "\\PC*") {
+            if cfg!(miri) { eprintln!("Running Miri: test_wildcard_match_star"); }
             assert!(PatternMatcher::wildcard_match("*", &text));
         }
     }
@@ -390,18 +400,23 @@ mod proptests {
     }
 
     proptest! {
+        // Miri is slow, so we scale down the number of cases drastically.
+        // Also disable forking under Miri as it is not supported.
+        #![proptest_config(ProptestConfig {
+            cases: if cfg!(miri) { 1 } else { 100 },
+            .. ProptestConfig::default()
+        })]
+
         #[test]
         fn test_pattern_eval_fuzz(
             cond in arb_logic_condition(),
-            // We need a runtime to block on async
         ) {
-            let rt = tokio::runtime::Runtime::new().unwrap();
-            rt.block_on(async {
-                let args = serde_json::json!({});
-                let _ = PatternMatcher::evaluate_pattern_with_args(
-                    &cond, &[], "test", &[], &HashSet::new(), &args
-                ).await;
-            });
+            if cfg!(miri) { eprintln!("Running Miri: test_pattern_eval_fuzz"); }
+            let args = serde_json::json!({});
+            // Call the sync condition evaluator directly to avoid Tokio runtime overhead under Miri
+            let _ = PatternMatcher::evaluate_condition_with_args(
+                &cond, &[], "test", &[], &std::collections::HashSet::new(), &args, 0
+            );
         }
     }
 }
