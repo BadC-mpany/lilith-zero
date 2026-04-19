@@ -20,6 +20,8 @@ pub mod config;
 pub mod engine;
 /// Core engine primitives: errors, events, models, crypto, taint, session, and traits.
 pub mod engine_core;
+/// Claude Code hook integration.
+pub mod hook;
 /// MCP transport layer: stdio codec, pipeline, server middleware, and process supervision.
 pub mod mcp;
 /// MCP protocol version adapters and handshake negotiation.
