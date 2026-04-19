@@ -1,0 +1,27 @@
+id: claude-security-demo
+customer_id: test-user
+name: Claude Code Security Policy
+version: 1
+
+# Explicitly allow standard tools (using Claude Code tool names)
+static_rules:
+  Bash: ALLOW
+  Read: ALLOW
+  Write: ALLOW
+  Grep: ALLOW
+  Glob: ALLOW
+  WebSearch: ALLOW
+
+# Taint Propagation & Blocking
+taint_rules:
+  # Rule 1: Reading any file taints the session with sensitive data
+  - tool: Read
+    action: ADD_TAINT
+    tag: SENSITIVE_DATA
+
+  # Rule 2: Block searching the web if sensitive data has been read
+  - tool: WebSearch
+    action: BLOCK
+    required_taints: ["SENSITIVE_DATA"]
+    error: "Security Block: Potentially exfiltrating sensitive local data to the web detected by Lilith Zero."
+resource_rules: []

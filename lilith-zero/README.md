@@ -20,6 +20,14 @@ lilith-zero \
   -- tools.py
 ```
 
+### Claude Code Integration
+Lilith Zero supports **Claude Code** native hooks. To enable multi-turn security enforcement in Claude Code:
+
+1.  Specify the `hook` command in your `.claude/settings.json`.
+2.  Provide a policy file that defines your security invariants.
+
+See [the Claude Code Example](./examples/claude_code/README.md) for full setup instructions and a demo policy.
+
 ## Architecture
 
 lilith-zero uses an async Actor Model to handle concurrent I/O streams without deadlocks.
