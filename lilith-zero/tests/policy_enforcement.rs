@@ -17,6 +17,7 @@ use std::sync::Arc;
 // --- Helpers ---
 
 fn create_core_with_defaults() -> SecurityCore {
+    if cfg!(miri) { eprintln!("Running Miri: SecurityCore Test Setup"); }
     let config = Arc::new(Config::default());
     let signer = CryptoSigner::try_new().expect("Failed to create signer");
     SecurityCore::new(config, signer, None).expect("Failed to init core")
