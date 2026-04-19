@@ -1,94 +1,35 @@
 # Lilith Zero — Taint Tracking Policy for gh copilot CLI
 #
-# Demonstrates Information Flow Control (IFC) through taint tracking.
+# Scenario: agent reads a file (view tool → SENSITIVE_DATA taint).
+# Any subsequent bash execution in the SAME SESSION is blocked.
 #
-# Scenario: an agent reads a sensitive file (e.g. .env, credentials.json),
-# acquiring a SENSITIVE_DATA taint. Any subsequent attempt to send data
-# over the network (curl, fetch, etc.) is blocked — preventing exfiltration
-# even if the agent was instructed to "share" the data.
-#
-# Taint state persists across multiple tool calls in the same session.
-# Restarting gh copilot starts a fresh session (new cwd-derived session ID).
+# IMPORTANT: taint persists within one gh copilot session (same sessionId).
+# Starting a new `gh copilot` invocation = new sessionId = clean state.
+# Test correctly by putting both operations in ONE prompt (see guide).
 
 id: gh-copilot-taint-demo
 customer_id: enterprise-demo
-name: "gh copilot — Taint Tracking / IFC Policy"
+name: "gh copilot — Taint Tracking Policy"
 version: 1
 
 static_rules:
-  # File reads: allowed, but some files add a taint (see taint_rules below)
-  read_file: ALLOW
-  readFile: ALLOW
-  cat: ALLOW
-
-  # File writes: allowed without taint requirements
-  write_file: ALLOW
-  writeFile: ALLOW
-  edit: ALLOW
-  str_replace_editor: ALLOW
-
-  # Search: allowed
-  search: ALLOW
-  search_files: ALLOW
-  searchFiles: ALLOW
-  grep: ALLOW
-
-  # Shell (limited): allowed for read-only operations
-  shell: ALLOW
-  bash: ALLOW
-  run_terminal_command: ALLOW
-  runTerminalCommand: ALLOW
-
-  # Network: allowed ONLY if SENSITIVE_DATA taint is NOT active
-  # (blocked via taint_rules below when taint is present)
-  fetch: ALLOW
-  "#fetch": ALLOW
-  web_search: ALLOW
-  curl: ALLOW
-  wget: ALLOW
-  http_request: ALLOW
+  report_intent: ALLOW
+  rg:            ALLOW   # search is always safe (no file content read)
+  glob:          ALLOW   # directory listing is always safe
+  view:          ALLOW   # file reads allowed, but they SET a taint
+  bash:          ALLOW   # shell allowed UNLESS taint is active (see below)
 
 taint_rules:
-  # Reading sensitive files adds SENSITIVE_DATA taint
-  - tool: read_file
-    action: ADD_TAINT
-    tag: SENSITIVE_DATA
-    # Note: this fires for ALL read_file calls. In production you would
-    # use resource_rules + path patterns to taint only specific files.
-
-  - tool: readFile
+  # Reading a file marks the session — content may contain secrets
+  - tool: view
     action: ADD_TAINT
     tag: SENSITIVE_DATA
 
-  # Block network tools when SENSITIVE_DATA taint is active
-  - tool: fetch
+  # After any file read, block shell execution to prevent exfiltration
+  # (bash includes curl, git, file writes — all exfiltration paths)
+  - tool: bash
     action: CHECK_TAINT
     required_taints: ["SENSITIVE_DATA"]
-    error: "BLOCKED: network access denied after reading sensitive file (exfiltration prevention)"
-
-  - tool: "#fetch"
-    action: CHECK_TAINT
-    required_taints: ["SENSITIVE_DATA"]
-    error: "BLOCKED: network access denied after reading sensitive file (exfiltration prevention)"
-
-  - tool: curl
-    action: CHECK_TAINT
-    required_taints: ["SENSITIVE_DATA"]
-    error: "BLOCKED: curl denied after reading sensitive file (exfiltration prevention)"
-
-  - tool: wget
-    action: CHECK_TAINT
-    required_taints: ["SENSITIVE_DATA"]
-    error: "BLOCKED: wget denied after reading sensitive file (exfiltration prevention)"
-
-  - tool: web_search
-    action: CHECK_TAINT
-    required_taints: ["SENSITIVE_DATA"]
-    error: "BLOCKED: web search denied after reading sensitive file (exfiltration prevention)"
-
-  - tool: http_request
-    action: CHECK_TAINT
-    required_taints: ["SENSITIVE_DATA"]
-    error: "BLOCKED: HTTP request denied after reading sensitive file (exfiltration prevention)"
+    error: "BLOCKED: shell execution denied after file read (exfiltration prevention). Use a new session to run shell commands."
 
 resource_rules: []

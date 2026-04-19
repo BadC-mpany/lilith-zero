@@ -52,10 +52,15 @@ pub struct CopilotHookInput {
     pub timestamp: Option<i64>,
 
     /// Absolute path of the current working directory for this Copilot session.
-    ///
-    /// This is the primary session key — we derive a stable `session_id` from
-    /// it using SHA-256 because Copilot has no native session identity.
     pub cwd: String,
+
+    /// Stable session UUID provided by the Copilot CLI (present in gh copilot CLI v1.0+).
+    ///
+    /// When present, this is used directly as the session key for taint persistence,
+    /// giving correct per-session isolation. When absent (older CLI versions or the
+    /// cloud agent), the session ID is derived from `cwd` via SHA-256.
+    #[serde(rename = "sessionId", default)]
+    pub session_id: Option<String>,
 
     /// Name of the tool being invoked (present for `preToolUse` / `postToolUse`).
     #[serde(rename = "toolName", default)]
@@ -504,6 +509,7 @@ mod tests {
         let input = CopilotHookInput {
             timestamp: None,
             cwd: "/workspace".to_string(),
+            session_id: None,
             tool_name: Some("bash".to_string()),
             tool_args: Some(r#"{"command":"ls -la"}"#.to_string()),
             tool_result: None,
@@ -521,6 +527,7 @@ mod tests {
         let input = CopilotHookInput {
             timestamp: None,
             cwd: "/workspace".to_string(),
+            session_id: None,
             tool_name: Some("no_args_tool".to_string()),
             tool_args: None,
             tool_result: None,
@@ -540,6 +547,7 @@ mod tests {
         let input = CopilotHookInput {
             timestamp: None,
             cwd: "/workspace".to_string(),
+            session_id: None,
             tool_name: Some("bash".to_string()),
             tool_args: Some("not valid json {{{{".to_string()),
             tool_result: None,

@@ -1,9 +1,15 @@
 # Lilith Zero — Static Policy for gh copilot CLI
 #
-# This policy demonstrates static allow/deny rules.
-# Every tool call goes through this before execution.
+# Complete tool names used by gh copilot CLI (confirmed by observation):
 #
-# Tools not listed → DENIED (fail-closed default).
+#   bash          — ALL shell execution (ls, curl, git, writes, find, everything)
+#   view          — dedicated file read tool
+#   rg            — dedicated ripgrep search
+#   glob          — directory listing / glob-based search (fallback when bash blocked)
+#   report_intent — announces intent before acting (informational, no side effects)
+#
+# Strategy: allow safe read-only tools, deny all shell execution.
+# This blocks: file writes, curl/wget, git push, arbitrary commands.
 
 id: gh-copilot-static-demo
 customer_id: enterprise-demo
@@ -11,59 +17,14 @@ name: "gh copilot — Static Allow/Deny Policy"
 version: 1
 
 static_rules:
-  # --- File Operations ---
-  # Allow reading files (safe, no side effects)
-  read_file: ALLOW
-  readFile: ALLOW
+  # Safe read-only tools — always allow
+  view:          ALLOW   # read file contents
+  rg:            ALLOW   # ripgrep search
+  glob:          ALLOW   # directory listing (fallback when bash blocked)
+  report_intent: ALLOW   # informational only
 
-  # Allow creating new files
-  write_file: ALLOW
-  writeFile: ALLOW
-
-  # Allow editing existing files
-  edit: ALLOW
-  str_replace_editor: ALLOW
-  str_replace_based_edit_tool: ALLOW
-
-  # DENY deleting files — too destructive
-  delete_file: DENY
-  deleteFile: DENY
-
-  # --- Shell / Terminal ---
-  # DENY unrestricted shell execution
-  shell: DENY
-  bash: DENY
-  run_terminal_command: DENY
-  runTerminalCommand: DENY
-  execute_command: DENY
-
-  # Allow git read operations (status, log, diff)
-  git_status: ALLOW
-  git_log: ALLOW
-  git_diff: ALLOW
-
-  # DENY git destructive operations
-  git_push: DENY
-  git_reset: DENY
-  git_force_push: DENY
-  pushToGitHub: DENY
-
-  # --- Search & Read ---
-  search: ALLOW
-  search_files: ALLOW
-  searchFiles: ALLOW
-  grep: ALLOW
-  find: ALLOW
-  list_directory: ALLOW
-
-  # --- Network ---
-  # DENY all network access by default
-  fetch: DENY
-  "#fetch": DENY
-  web_search: DENY
-  http_request: DENY
-  curl: DENY
-  wget: DENY
+  # Shell execution — deny everything that runs in a shell
+  bash:          DENY    # blocks ls, curl, git, file writes, and everything else
 
 taint_rules: []
 resource_rules: []
