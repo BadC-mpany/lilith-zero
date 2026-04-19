@@ -26,6 +26,8 @@ allow = [
     "Unicode-DFS-2016",
     "Unlicense",
     "Unicode-3.0",
+    # webpki-roots (Mozilla CA cert bundle) — data license for root certificates
+    "CDLA-Permissive-2.0",
 ]
 confidence-threshold = 0.8
 
