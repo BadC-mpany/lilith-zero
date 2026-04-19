@@ -1,6 +1,6 @@
 [package]
 name = "lilith-zero"
-version = "0.1.3"
+version = "0.2.0"
 edition = "2021"
 license = "Apache-2.0"
 authors = ["Peter Tallosy"]
@@ -41,13 +41,13 @@ async-trait = "0.1"
 
 # HTTP upstream transport (always compiled in; transport is a runtime --transport flag)
 reqwest = { version = "0.12", features = ["json", "stream"], default-features = false }
-# Optional telemetry integration — implements TelemetryHook trait from engine_core
-lilith-telemetry = { path = "../lilith-telemetry", optional = true }
 
 [features]
 default = []
 schema = ["dep:schemars"]
-telemetry = ["dep:lilith-telemetry"]
+# telemetry: implemented via dependency inversion — lilith-telemetry depends on
+# lilith-zero (not vice versa) and ships its own lilith-zero-telemetry binary.
+# See: https://github.com/BadC-mpany/lilith-telemetry
 
 [target.'cfg(windows)'.dependencies]
 win32job = "2.0"
@@ -98,6 +98,3 @@ strip = true
 inherits = "release"
 debug = true
 strip = false
-
-[profile.dev.package."*"]
-opt-level = 3  # Optimize dependencies in dev
