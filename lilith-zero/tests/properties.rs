@@ -2,7 +2,7 @@ use lilith_zero::engine::pattern_matcher::PatternMatcher;
 use lilith_zero::engine_core::models::{LogicCondition, LogicValue};
 use proptest::prelude::*;
 use std::collections::HashSet;
-use tokio::runtime::Runtime;
+// use tokio::runtime::Runtime;
 
 proptest! {
     // Miri is slow, so we scale down the number of cases.
