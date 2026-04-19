@@ -26,6 +26,30 @@ enum Transport {
     Http,
 }
 
+/// Authentication mode for the Copilot Studio webhook server.
+///
+/// Selected at startup via `--auth-mode`. The mode cannot be changed without
+/// restarting the server — changing it mid-session would create a TOCTOU gap.
+#[cfg(feature = "webhook")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum AuthMode {
+    /// No JWT validation — **development only**.
+    ///
+    /// All requests are accepted without a token. A prominent warning is
+    /// logged on every request. Never use this in production.
+    None,
+    /// HS256 shared-secret validation.
+    ///
+    /// Requires `LILITH_ZERO_JWT_SECRET` env var or `--jwt-secret` flag.
+    /// Suitable for internal deployments where both sides share a secret.
+    SharedSecret,
+    /// RS256 validation via Microsoft Entra ID JWKS endpoint (production).
+    ///
+    /// Requires `--entra-tenant-id` and `--entra-audience`. Public keys are
+    /// fetched from the tenant's JWKS endpoint and cached for 1 hour.
+    Entra,
+}
+
 /// Hook output format: controls how decisions are signalled to the caller.
 ///
 /// Claude Code and GitHub Copilot use different protocols for allow/deny:
@@ -128,6 +152,58 @@ enum Commands {
     Pin {
         #[command(subcommand)]
         action: PinAction,
+    },
+
+    /// Start the Copilot Studio external threat detection webhook server.
+    ///
+    /// Implements the Microsoft Copilot Studio external security provider API:
+    ///   POST /validate                  — health check
+    ///   POST /analyze-tool-execution    — tool execution evaluation
+    ///
+    /// Examples:
+    ///   # Development (no auth, localhost only):
+    ///   lilith-zero serve --bind 127.0.0.1:8080 --auth-mode none --policy policy.yaml
+    ///
+    ///   # Production with Entra ID:
+    ///   lilith-zero serve --bind 0.0.0.0:8443 \
+    ///     --auth-mode entra \
+    ///     --entra-tenant-id <TENANT_GUID> \
+    ///     --entra-audience https://security.contoso.com \
+    ///     --policy policy.yaml
+    #[cfg(feature = "webhook")]
+    Serve {
+        /// Address and port to bind the server to.
+        #[arg(long, default_value = "127.0.0.1:8080")]
+        bind: String,
+
+        /// Authentication mode for incoming requests.
+        #[arg(long, value_enum, default_value = "none")]
+        auth_mode: AuthMode,
+
+        /// Shared secret for HS256 JWT validation (`--auth-mode shared-secret`).
+        /// Can also be set via `LILITH_ZERO_JWT_SECRET` env var.
+        #[arg(long)]
+        jwt_secret: Option<String>,
+
+        /// Microsoft Entra ID tenant GUID (`--auth-mode entra`).
+        /// Can also be set via `LILITH_ZERO_ENTRA_TENANT_ID` env var.
+        #[arg(long)]
+        entra_tenant_id: Option<String>,
+
+        /// Expected JWT audience for Entra ID validation (`--auth-mode entra`).
+        /// Typically the root URL of your threat detection API (e.g.
+        /// `https://security.contoso.com`).
+        /// Can also be set via `LILITH_ZERO_ENTRA_AUDIENCE` env var.
+        #[arg(long)]
+        entra_audience: Option<String>,
+
+        /// Path to policy YAML.
+        #[arg(long)]
+        policy: Option<PathBuf>,
+
+        /// Path for audit log output.
+        #[arg(long)]
+        audit_logs: Option<PathBuf>,
     },
 
     #[command(hide = true, name = "__supervisor")]
@@ -237,6 +313,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // --- Pin store management ---
         Some(Commands::Pin { action }) => {
             pin_command(action)?;
+        }
+
+        // --- Copilot Studio webhook server ---
+        #[cfg(feature = "webhook")]
+        Some(Commands::Serve {
+            bind,
+            auth_mode,
+            jwt_secret,
+            entra_tenant_id,
+            entra_audience,
+            policy,
+            audit_logs,
+        }) => {
+            let config = build_config(policy)?;
+            init_tracing(&config)?;
+            run_webhook_server(
+                bind,
+                auth_mode,
+                jwt_secret,
+                entra_tenant_id,
+                entra_audience,
+                audit_logs,
+                config,
+            )
+            .await?;
         }
 
         // --- State persistence / Hook mode ---
@@ -429,6 +530,66 @@ async fn run_hook(
         }
     }
 
+    Ok(())
+}
+
+/// Launch the Copilot Studio webhook server.
+#[cfg(feature = "webhook")]
+async fn run_webhook_server(
+    bind: String,
+    auth_mode: AuthMode,
+    jwt_secret: Option<String>,
+    entra_tenant_id: Option<String>,
+    entra_audience: Option<String>,
+    audit_logs: Option<PathBuf>,
+    config: Config,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use lilith_zero::server::auth::{
+        EntraAuthenticator, NoAuthAuthenticator, SharedSecretAuthenticator,
+    };
+    use lilith_zero::server::webhook::{serve, WebhookState};
+    use std::sync::Arc;
+
+    let auth: Arc<dyn lilith_zero::server::auth::Authenticator> = match auth_mode {
+        AuthMode::None => {
+            tracing::warn!(
+                "SECURITY WARNING: webhook server starting in no-auth mode. \
+                 All requests will be accepted without authentication. \
+                 Use --auth-mode shared-secret or --auth-mode entra for production."
+            );
+            Arc::new(NoAuthAuthenticator)
+        }
+        AuthMode::SharedSecret => {
+            let secret = jwt_secret
+                .or_else(|| std::env::var("LILITH_ZERO_JWT_SECRET").ok())
+                .ok_or(
+                    "--auth-mode shared-secret requires --jwt-secret or LILITH_ZERO_JWT_SECRET",
+                )?;
+            let audience = config.expected_audience.clone();
+            Arc::new(SharedSecretAuthenticator::new(secret, audience))
+        }
+        AuthMode::Entra => {
+            let tenant_id = entra_tenant_id
+                .or_else(|| std::env::var("LILITH_ZERO_ENTRA_TENANT_ID").ok())
+                .ok_or(
+                    "--auth-mode entra requires --entra-tenant-id or LILITH_ZERO_ENTRA_TENANT_ID",
+                )?;
+            let audience = entra_audience
+                .or_else(|| std::env::var("LILITH_ZERO_ENTRA_AUDIENCE").ok())
+                .ok_or(
+                    "--auth-mode entra requires --entra-audience or LILITH_ZERO_ENTRA_AUDIENCE",
+                )?;
+            Arc::new(EntraAuthenticator::new(tenant_id, audience))
+        }
+    };
+
+    let state = WebhookState {
+        config: Arc::new(config),
+        audit_log_path: audit_logs,
+        auth,
+    };
+
+    serve(&bind, state).await?;
     Ok(())
 }
 
