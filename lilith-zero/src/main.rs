@@ -26,6 +26,19 @@ enum Transport {
     Http,
 }
 
+/// Hook output format: controls how decisions are signalled to the caller.
+///
+/// Claude Code and GitHub Copilot use different protocols for allow/deny:
+/// - `claude`: exit code 0 = allow, exit code 2 = deny (no JSON to stdout).
+/// - `copilot`: always exit 0, write `{"permissionDecision":"allow"|"deny",...}` to stdout.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum HookFormat {
+    /// Claude Code format: decision via exit code (default).
+    Claude,
+    /// GitHub Copilot format: decision via JSON on stdout, exit code always 0.
+    Copilot,
+}
+
 /// Lilith Zero — deterministic MCP security middleware.
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -125,12 +138,21 @@ enum Commands {
         cmd_args: Vec<String>,
     },
 
-    /// Claude Code hook integration.
+    /// Agent hook integration (Claude Code and GitHub Copilot).
     ///
-    /// Reads JSON from stdin and enforces security policies.
+    /// Reads a JSON event from stdin, evaluates it against the active policy,
+    /// and signals the decision to the caller via the selected format.
+    ///
+    /// Claude Code (default):
+    ///   lilith-zero hook --policy policy.yaml
+    ///
+    /// GitHub Copilot (VS Code / JetBrains):
+    ///   lilith-zero hook --format copilot --event preToolUse --policy policy.yaml
     Hook {
-        /// Name of the hook event (e.g. "PreToolUse", "PostToolUse").
-        /// Inferred from JSON if omitted.
+        /// Name of the hook event.
+        /// Claude Code: "PreToolUse" | "PostToolUse" (inferred from JSON when omitted).
+        /// Copilot:     "preToolUse" | "postToolUse" | "sessionStart" | "sessionEnd"
+        ///              (must be supplied via --event since Copilot omits it from JSON).
         #[arg(short, long)]
         event: Option<String>,
 
@@ -141,6 +163,11 @@ enum Commands {
         /// Path for audit log output.
         #[arg(long)]
         audit_logs: Option<PathBuf>,
+
+        /// Output format: how the allow/deny decision is communicated.
+        /// `claude` (default) uses exit codes; `copilot` writes JSON to stdout.
+        #[arg(long, value_enum, default_value = "claude")]
+        format: HookFormat,
     },
 }
 
@@ -217,10 +244,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             event,
             policy,
             audit_logs,
+            format,
         }) => {
             let config = build_config(policy)?;
             init_tracing(&config)?;
-            run_hook(event, audit_logs, config).await?;
+            run_hook(event, audit_logs, config, format).await?;
         }
 
         // --- Backward-compatible flat-arg middleware mode ---
@@ -273,28 +301,153 @@ async fn run_hook(
     event_override: Option<String>,
     audit_logs: Option<PathBuf>,
     config: Config,
+    format: HookFormat,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    use lilith_zero::hook::copilot::{
+        derive_session_id, is_output_ignored_event, normalize_event_name, CopilotHookInput,
+        CopilotHookOutput,
+    };
     use lilith_zero::hook::{HookHandler, HookInput};
     use std::io::Read;
 
     let mut buffer = String::new();
     std::io::stdin().read_to_string(&mut buffer)?;
 
-    if buffer.trim().is_empty() {
-        return Err("No input received on stdin".into());
+    match format {
+        // ----------------------------------------------------------------
+        // Claude Code format — existing behaviour, unchanged.
+        // Decision: exit code 0 (allow) or 2 (deny).
+        // ----------------------------------------------------------------
+        HookFormat::Claude => {
+            if buffer.trim().is_empty() {
+                return Err("No input received on stdin".into());
+            }
+            let mut input: HookInput =
+                serde_json::from_str(&buffer).map_err(|e| format!("Invalid hook JSON: {e}"))?;
+            if let Some(ev) = event_override {
+                input.hook_event_name = ev;
+            }
+            let mut handler = HookHandler::new(Arc::new(config), audit_logs)?;
+            let exit_code = handler.handle(input).await?;
+            std::process::exit(exit_code);
+        }
+
+        // ----------------------------------------------------------------
+        // GitHub Copilot format — JSON on stdout, exit code always 0.
+        // Decision: {"permissionDecision":"allow"|"deny",...}
+        // ----------------------------------------------------------------
+        HookFormat::Copilot => {
+            // Fail-closed: empty stdin is a security violation, not an error to propagate.
+            if buffer.trim().is_empty() {
+                println!(
+                    "{}",
+                    CopilotHookOutput::deny("no input received on stdin").to_json_line()
+                );
+                return Ok(());
+            }
+
+            // Fail-closed: malformed JSON must deny, never allow.
+            let copilot_input: CopilotHookInput = match serde_json::from_str(&buffer) {
+                Ok(v) => v,
+                Err(e) => {
+                    println!(
+                        "{}",
+                        CopilotHookOutput::deny(format!("JSON parse error: {e}")).to_json_line()
+                    );
+                    return Ok(());
+                }
+            };
+
+            // Determine the event from --event flag, or auto-detect from payload shape.
+            let event_name: &str = match event_override.as_deref() {
+                Some(ev) => ev,
+                None => infer_copilot_event(&copilot_input),
+            };
+
+            let normalized = normalize_event_name(event_name);
+
+            // For events whose output Copilot ignores (sessionStart, sessionEnd, etc.),
+            // run no policy evaluation and return allow. We still write a response so
+            // logs are consistent and future Copilot versions can act on the output.
+            if is_output_ignored_event(normalized) {
+                println!("{}", CopilotHookOutput::allow().to_json_line());
+                return Ok(());
+            }
+
+            // Derive stable session ID from the workspace path.
+            let session_id = derive_session_id(&copilot_input.cwd);
+
+            // Decode toolArgs from the Copilot double-encoded JSON string.
+            let tool_args = copilot_input.decoded_tool_args();
+
+            // Build the tool output for postToolUse events.
+            let tool_output = copilot_input.tool_result.as_ref().map(|r| {
+                serde_json::json!({
+                    "resultType": r.result_type,
+                    "text": r.text_result
+                })
+            });
+
+            // Normalise into the internal HookInput format used by HookHandler.
+            let hook_input = HookInput {
+                session_id,
+                hook_event_name: normalized.to_string(),
+                tool_name: copilot_input.tool_name.clone(),
+                tool_input: if normalized == "PreToolUse" {
+                    Some(tool_args)
+                } else {
+                    None
+                },
+                tool_output: if normalized == "PostToolUse" {
+                    tool_output
+                } else {
+                    None
+                },
+            };
+
+            let mut handler = HookHandler::new(Arc::new(config), audit_logs)?;
+            let exit_code = match handler.handle(hook_input).await {
+                Ok(code) => code,
+                Err(e) => {
+                    // Fail-closed: handler errors must deny.
+                    println!(
+                        "{}",
+                        CopilotHookOutput::deny(format!("handler error: {e}")).to_json_line()
+                    );
+                    return Ok(());
+                }
+            };
+
+            // Translate the internal exit code to a Copilot JSON response.
+            let output = if exit_code == 0 {
+                CopilotHookOutput::allow()
+            } else {
+                CopilotHookOutput::deny("blocked by Lilith Zero security policy")
+            };
+            println!("{}", output.to_json_line());
+            // Always exit 0 for Copilot — the decision is in the JSON, not the exit code.
+        }
     }
 
-    let mut input: HookInput =
-        serde_json::from_str(&buffer).map_err(|e| format!("Invalid hook JSON: {e}"))?;
+    Ok(())
+}
 
-    if let Some(ev) = event_override {
-        input.hook_event_name = ev;
+/// Infer the Copilot event name from the payload shape when `--event` is omitted.
+///
+/// This is a best-effort heuristic. Callers should prefer `--event` for
+/// correctness; auto-detection is provided as a convenience for testing.
+fn infer_copilot_event(input: &lilith_zero::hook::copilot::CopilotHookInput) -> &'static str {
+    if input.tool_name.is_some() && input.tool_result.is_some() {
+        "postToolUse"
+    } else if input.tool_name.is_some() {
+        "preToolUse"
+    } else if input.source.is_some() {
+        "sessionStart"
+    } else if input.reason.is_some() {
+        "sessionEnd"
+    } else {
+        "unknown"
     }
-
-    let mut handler = HookHandler::new(Arc::new(config), audit_logs)?;
-    let exit_code = handler.handle(input).await?;
-
-    std::process::exit(exit_code);
 }
 
 // ---------------------------------------------------------------------------

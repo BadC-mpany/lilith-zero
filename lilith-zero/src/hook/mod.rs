@@ -2,6 +2,9 @@
 // Licensed under the Apache License, Version 2.0 (the "License");
 //     http://www.apache.org/licenses/LICENSE-2.0
 
+/// GitHub Copilot hook format: types, session ID derivation, event normalization.
+pub mod copilot;
+
 use crate::config::Config;
 use crate::engine_core::events::{SecurityDecision, SecurityEvent};
 use crate::engine_core::persistence::PersistenceLayer;
