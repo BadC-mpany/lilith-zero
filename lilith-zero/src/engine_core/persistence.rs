@@ -6,6 +6,7 @@ use crate::engine_core::security_core::SessionState;
 use anyhow::{Context, Result};
 use fs2::FileExt;
 use std::fs;
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::PathBuf;
 
 /// Manager for persisting session state to disk.
@@ -14,6 +15,13 @@ pub struct PersistenceLayer {
 }
 
 /// RAII guard representing a cross-process lock on a session state file.
+///
+/// Reads and writes go through this guard's file handle, which is the same
+/// handle that holds the `LockFileEx` lock. On Windows, only the locking
+/// process can access byte-range-locked regions; opening a second handle and
+/// calling `ReadFile` from a different process would return
+/// `ERROR_LOCK_VIOLATION`. By using a single handle for both locking and I/O
+/// we avoid that entirely.
 pub struct SessionLock {
     file: fs::File,
 }
@@ -32,52 +40,22 @@ impl PersistenceLayer {
         Self::new(PathBuf::from(home).join(".lilith").join("sessions"))
     }
 
-    /// Save state for a session.
-    pub fn save(&self, session_id: &str, state: &SessionState) -> Result<()> {
+    /// Acquire an exclusive cross-process lock on the session state file.
+    ///
+    /// Creates the storage directory and file if they do not exist. Blocks
+    /// until the lock is available. Use [`SessionLock::load`] and
+    /// [`SessionLock::save`] to read and write state through the locked handle.
+    pub fn lock(&self, session_id: &str) -> Result<SessionLock> {
         if !self.storage_dir.exists() {
             fs::create_dir_all(&self.storage_dir)
                 .with_context(|| format!("Failed to create storage dir: {:?}", self.storage_dir))?;
         }
-
-        let file_path = self.get_file_path(session_id);
-        let json =
-            serde_json::to_string_pretty(state).context("Failed to serialize session state")?;
-
-        fs::write(&file_path, json)
-            .with_context(|| format!("Failed to write state to {:?}", file_path))?;
-
-        Ok(())
-    }
-
-    /// Load state for a session. Use a default if not found.
-    pub fn load(&self, session_id: &str) -> Result<Option<SessionState>> {
-        let file_path = self.get_file_path(session_id);
-        if !file_path.exists() {
-            return Ok(None);
-        }
-
-        let json = fs::read_to_string(&file_path)
-            .with_context(|| format!("Failed to read state from {:?}", file_path))?;
-
-        if json.trim().is_empty() {
-            return Ok(None);
-        }
-
-        let state: SessionState = serde_json::from_str(&json)
-            .with_context(|| format!("Failed to deserialize state from {:?}", file_path))?;
-
-        Ok(Some(state))
-    }
-
-    /// Acquire an exclusive lock on the session state file.
-    /// This blocks until the lock is acquired.
-    pub fn lock(&self, session_id: &str) -> Result<SessionLock> {
-        if !self.storage_dir.exists() {
-            fs::create_dir_all(&self.storage_dir)?;
-        }
         let file_path = self.get_file_path(session_id);
 
-        // Open or create the file
+        // Open (or create) the session file. We keep this handle open for the
+        // lifetime of the lock and perform all reads/writes through it so that
+        // Windows `LockFileEx` byte-range locking is satisfied: only the handle
+        // that owns the lock can access the locked region from other processes.
         let file = fs::OpenOptions::new()
             .read(true)
             .write(true)
@@ -86,7 +64,6 @@ impl PersistenceLayer {
             .open(&file_path)
             .with_context(|| format!("Failed to open lock file: {:?}", file_path))?;
 
-        // Apply exclusive lock
         file.lock_exclusive()
             .with_context(|| format!("Failed to acquire flock on {:?}", file_path))?;
 
@@ -94,12 +71,56 @@ impl PersistenceLayer {
     }
 
     fn get_file_path(&self, session_id: &str) -> PathBuf {
-        // Sanitize session_id to prevent path traversal
+        // Sanitize session_id to prevent path traversal.
         let safe_id = session_id
             .chars()
             .filter(|c| c.is_alphanumeric() || *c == '-' || *c == '_')
             .collect::<String>();
         self.storage_dir.join(format!("{}.json", safe_id))
+    }
+}
+
+impl SessionLock {
+    /// Read session state through the locked file handle.
+    ///
+    /// Returns `Ok(None)` when the file is empty (new session).
+    pub fn load(&mut self) -> Result<Option<SessionState>> {
+        self.file
+            .seek(SeekFrom::Start(0))
+            .context("Failed to seek session file")?;
+
+        let mut json = String::new();
+        self.file
+            .read_to_string(&mut json)
+            .context("Failed to read session state")?;
+
+        if json.trim().is_empty() {
+            return Ok(None);
+        }
+
+        let state: SessionState =
+            serde_json::from_str(&json).context("Failed to deserialize session state")?;
+        Ok(Some(state))
+    }
+
+    /// Write session state through the locked file handle.
+    pub fn save(&mut self, state: &SessionState) -> Result<()> {
+        let json =
+            serde_json::to_string_pretty(state).context("Failed to serialize session state")?;
+
+        // Truncate first so stale bytes from a larger previous write don't linger.
+        self.file
+            .seek(SeekFrom::Start(0))
+            .context("Failed to seek session file for write")?;
+        self.file
+            .set_len(0)
+            .context("Failed to truncate session file")?;
+        self.file
+            .write_all(json.as_bytes())
+            .context("Failed to write session state")?;
+        self.file.flush().context("Failed to flush session file")?;
+
+        Ok(())
     }
 }
 

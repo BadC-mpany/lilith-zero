@@ -64,11 +64,13 @@ impl HookHandler {
 
     /// Handle a hook input, returning the appropriate process exit code.
     pub async fn handle(&mut self, input: HookInput) -> Result<i32> {
-        // A. Acquire cross-process lock on the session file
-        let _lock = self.persistence.lock(&input.session_id)?;
+        // A. Acquire cross-process lock on the session file.
+        //    All subsequent reads and writes go through the lock's file handle
+        //    so that Windows LockFileEx byte-range locking is respected.
+        let mut lock = self.persistence.lock(&input.session_id)?;
 
-        // B. Load session state
-        let state = self.persistence.load(&input.session_id)?;
+        // B. Load session state through the locked handle.
+        let state = lock.load()?;
         let is_new_session = state.is_none();
 
         if let Some(state) = state {
@@ -91,9 +93,8 @@ impl HookHandler {
             }
         };
 
-        // E. Save session state
-        self.persistence
-            .save(&input.session_id, &self.core.export_state())?;
+        // E. Save session state through the locked handle.
+        lock.save(&self.core.export_state())?;
 
         Ok(exit_code)
     }
