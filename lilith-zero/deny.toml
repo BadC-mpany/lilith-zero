@@ -5,8 +5,12 @@
 db-path = "~/.cargo/advisory-db"
 db-urls = ["https://github.com/rustsec/advisory-db"]
 ignore = [
-    # Add advisory IDs here to suppress specific warnings if needed
-    # "RUSTSEC-XXXX-XXXX",
+    # RUSTSEC-2023-0071: Marvin Attack timing side-channel in rsa crate.
+    # Pulled in by jsonwebtoken for RS256/PS256 JWT signature *verification*
+    # (public-key operation). The Marvin Attack requires RSA *decryption*
+    # with the private key. We never hold an RSA private key; we only verify
+    # inbound tokens against a JWKS public-key set. Not applicable.
+    "RUSTSEC-2023-0071",
 ]
 
 [licenses]
