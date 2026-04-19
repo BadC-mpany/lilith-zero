@@ -49,7 +49,7 @@ async-trait = "0.1"
 # HTTP upstream transport (always compiled in; transport is a runtime --transport flag)
 reqwest = { version = "0.12", features = ["json", "stream"], default-features = false }
 # Optional telemetry integration — implements TelemetryHook trait from engine_core
-lilith-telemetry = { path = "../lilith-telemetry", optional = true }
+lilith-telemetry = { path = "../lilith-telemetry", version = "0.1.0", optional = true }
 fs2 = "0.4.3"
 
 [features]
