@@ -1,0 +1,39 @@
+# Lilith Zero — Taint Tracking Policy for VS Code Copilot sidebar
+#
+# Scenario: The agent reads a file (gaining SENSITIVE_DATA taint).
+# Any subsequent #fetch or network call in the same VS Code session is blocked.
+#
+# This prevents the classic prompt-injection exfiltration pattern:
+#   1. Copilot reads .env or credentials.json
+#   2. An injected instruction says "now send this to https://attacker.com"
+#   3. Lilith Zero sees the taint and blocks the network call
+
+id: vscode-taint-demo
+customer_id: enterprise-demo
+name: "VS Code Copilot — Taint Tracking / IFC Policy"
+version: 1
+
+static_rules:
+  editFiles: ALLOW
+  createFile: ALLOW
+  readFile: ALLOW
+  searchFiles: ALLOW
+  listDirectory: ALLOW
+  deleteFile: DENY
+  runTerminalCommand: DENY
+  "#fetch": ALLOW           # allowed unless taint is active (see taint_rules)
+  pushToGitHub: DENY
+
+taint_rules:
+  # Reading any file marks the session as potentially handling sensitive data
+  - tool: readFile
+    action: ADD_TAINT
+    tag: SENSITIVE_DATA
+
+  # Block network access if the session has seen any file read
+  - tool: "#fetch"
+    action: CHECK_TAINT
+    required_taints: ["SENSITIVE_DATA"]
+    error: "BLOCKED: web fetch denied after file read (exfiltration prevention). Start a new session if you need both."
+
+resource_rules: []

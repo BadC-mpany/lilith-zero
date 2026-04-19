@@ -1,0 +1,43 @@
+# Lilith Zero — Static Policy for VS Code Copilot sidebar agent mode
+#
+# This policy demonstrates static allow/deny rules for VS Code built-in tools.
+# VS Code tool names differ from shell tool names — they are CamelCase.
+#
+# Tools not listed → DENIED (fail-closed default).
+
+id: vscode-static-demo
+customer_id: enterprise-demo
+name: "VS Code Copilot — Static Allow/Deny Policy"
+version: 1
+
+static_rules:
+  # --- VS Code built-in file tools ---
+  editFiles: ALLOW          # edit existing files
+  createFile: ALLOW         # create new files
+  readFile: ALLOW           # read file contents
+  searchFiles: ALLOW        # search within files
+  listDirectory: ALLOW      # list directory contents
+
+  # DENY destructive file operations
+  deleteFile: DENY
+  moveFile: DENY
+
+  # --- Terminal ---
+  # DENY all terminal command execution (highest risk)
+  runTerminalCommand: DENY
+
+  # --- Network ---
+  "#fetch": ALLOW           # web fetch/search (allowed by default, tainted in other policies)
+
+  # --- Version Control ---
+  pushToGitHub: DENY        # never auto-push
+  createPullRequest: DENY   # no auto-PRs
+
+  # --- MCP tools (if any MCP servers are configured in VS Code) ---
+  # Add your MCP tool names here, e.g.:
+  # "github.create_issue": ALLOW
+  # "github.delete_repo": DENY
+  # "slack.send_message": DENY
+
+taint_rules: []
+resource_rules: []

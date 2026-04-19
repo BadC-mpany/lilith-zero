@@ -1,0 +1,65 @@
+{
+  "_usage": [
+    "Point VS Code at this file via:",
+    "  settings.json → 'chat.hookFilesLocations': ['/absolute/path/to/examples/vscode/hooks.json']",
+    "  and:           'chat.useCustomAgentHooks': true",
+    "",
+    "OR copy .github/hooks/hooks.json to your project root's .github/hooks/ directory.",
+    "",
+    "Event names use PascalCase (PreToolUse, PostToolUse) for VS Code Copilot sidebar.",
+    "Output uses the hookSpecificOutput wrapper (--format vscode).",
+    "",
+    "Set LILITH_ZERO_BIN to the absolute path of your built binary before use."
+  ],
+  "version": 1,
+  "hooks": {
+    "PreToolUse": [
+      {
+        "type": "command",
+        "command": "examples/vscode/hook-wrapper.sh",
+        "windows": "examples\\vscode\\hook-wrapper.ps1",
+        "env": {
+          "LILITH_ZERO_FORMAT": "vscode",
+          "LILITH_ZERO_POLICY": "examples/vscode/policy-static.yaml"
+        },
+        "timeout": 10
+      }
+    ],
+    "PostToolUse": [
+      {
+        "type": "command",
+        "command": "examples/vscode/hook-wrapper.sh",
+        "windows": "examples\\vscode\\hook-wrapper.ps1",
+        "env": {
+          "LILITH_ZERO_FORMAT": "vscode",
+          "LILITH_ZERO_POLICY": "examples/vscode/policy-static.yaml"
+        },
+        "timeout": 10
+      }
+    ],
+    "SessionStart": [
+      {
+        "type": "command",
+        "command": "examples/vscode/hook-wrapper.sh",
+        "windows": "examples\\vscode\\hook-wrapper.ps1",
+        "env": {
+          "LILITH_ZERO_FORMAT": "vscode",
+          "LILITH_ZERO_POLICY": "examples/vscode/policy-static.yaml"
+        },
+        "timeout": 5
+      }
+    ],
+    "SessionEnd": [
+      {
+        "type": "command",
+        "command": "examples/vscode/hook-wrapper.sh",
+        "windows": "examples\\vscode\\hook-wrapper.ps1",
+        "env": {
+          "LILITH_ZERO_FORMAT": "vscode",
+          "LILITH_ZERO_POLICY": "examples/vscode/policy-static.yaml"
+        },
+        "timeout": 5
+      }
+    ]
+  }
+}
