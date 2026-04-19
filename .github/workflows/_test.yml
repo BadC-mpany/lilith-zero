@@ -41,6 +41,35 @@ jobs:
         run: cargo test --locked --no-default-features --${{ inputs.cargo_profile }}
 
   # --------------------------------------------------------------------------
+  # Webhook Feature Tests (Ubuntu only — Linux is the primary server platform)
+  # --------------------------------------------------------------------------
+  test-webhook:
+    name: Webhook Feature (ubuntu)
+    runs-on: ubuntu-latest
+    needs: [test-core]
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+        with:
+          persist-credentials: false
+
+      - name: Install Rust Toolchain
+        uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@400e7407cfd7a091e5fbb6afec01ec146c432b7c # v2.7.3
+        with:
+          workspaces: lilith-zero -> target
+
+      - name: Webhook Unit + Integration Tests
+        working-directory: lilith-zero
+        run: cargo test --locked --features webhook
+
+      - name: Webhook Shell Integration Tests
+        working-directory: lilith-zero
+        run: bash tests/verify_copilot_hooks.sh 2>/dev/null
+
+  # --------------------------------------------------------------------------
   # Miri Undefined Behavior Check (Nightly)
   # --------------------------------------------------------------------------
   miri:

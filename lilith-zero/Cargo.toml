@@ -38,6 +38,7 @@ jsonwebtoken = { version = "10.3", features = ["rust_crypto"] }
 schemars = { version = "0.8", optional = true }
 # Webhook server (Copilot Studio integration) — compiled only with --features webhook
 axum = { version = "0.7", features = ["macros"], optional = true }
+tower = { version = "0.4", features = ["timeout"], optional = true }
 tower-http = { version = "0.5", features = ["trace", "request-id", "util"], optional = true }
 tokio-util = { version = "0.7", features = ["codec"] }
 bytes = "1.11.1"
@@ -57,7 +58,7 @@ schema = ["dep:schemars"]
 # webhook: adds the Copilot Studio REST webhook server (POST /validate + /analyze-tool-execution).
 # Pulls in axum, tower-http, and enables TLS on reqwest for JWKS fetching.
 # Build with: cargo build --features webhook
-webhook = ["dep:axum", "dep:tower-http", "reqwest/rustls-tls"]
+webhook = ["dep:axum", "dep:tower", "dep:tower-http", "reqwest/rustls-tls"]
 # telemetry: implemented via dependency inversion — lilith-telemetry depends on
 # lilith-zero (not vice versa) and ships its own lilith-zero-telemetry binary.
 # See: https://github.com/BadC-mpany/lilith-telemetry

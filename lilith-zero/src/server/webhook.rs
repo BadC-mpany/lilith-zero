@@ -10,45 +10,81 @@
 //!
 //! # Security invariants
 //! - Every request must carry a valid Bearer JWT (configurable auth mode).
-//! - Malformed request bodies return HTTP 400 (error response), never allow.
-//! - Auth failures return HTTP 401, never allow.
-//! - Internal errors return HTTP 500 with `blockAction: true` embedded — the
-//!   error path is fail-closed, not fail-open.
+//! - Malformed request bodies → HTTP 400, never allow.
+//! - Auth failures → HTTP 401, never allow.
+//! - Internal errors → HTTP 500, block implied (fail-closed).
+//! - Bodies exceeding [`REQUEST_BODY_LIMIT_BYTES`] → HTTP 413 (no allow).
+//! - Evaluations exceeding [`EVALUATION_TIMEOUT_MS`] → HTTP 503 (Copilot Studio
+//!   may default to "allow" on timeout — document this limitation explicitly).
 //!
-//! # Response time
-//! The Copilot Studio spec requires a response within 1 000 ms. On timeout,
-//! Copilot Studio defaults to "allow". Our latency budget is therefore
-//! critical — security evaluation is sub-millisecond; JWT validation (cached
-//! after the first call) adds < 5 ms.
+//! # `x-ms-correlation-id`
+//! The MS spec includes an `x-ms-correlation-id` header for request tracing.
+//! We extract it from every incoming request, include it in the tracing span,
+//! and echo it back as a response header so Copilot Studio can correlate entries
+//! across its logs and ours.
+//!
+//! # Response-time budget
+//! Copilot Studio defaults to "allow" if the webhook doesn't respond within
+//! 1 000 ms. We enforce a 900 ms server-side timeout (100 ms margin). If *our*
+//! timeout fires, we return 503 and log a warning; Copilot Studio will have
+//! already received the response within 900 ms and will default to allow.
+//! This is a known limitation of client-side hook architectures — document it
+//! in the ITRisk/ITSec section and enforce defence-in-depth at the MCP proxy layer.
 
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 
 use axum::{
-    extract::State,
-    http::{HeaderMap, StatusCode},
-    response::IntoResponse,
+    error_handling::HandleErrorLayer,
+    extract::{DefaultBodyLimit, State},
+    http::{HeaderMap, HeaderValue, StatusCode},
+    response::{IntoResponse, Response},
     routing::post,
-    Json, Router,
+    BoxError, Json, Router,
 };
+use tower::timeout::TimeoutLayer;
+use tower::ServiceBuilder;
 
 use super::auth::{extract_bearer_token, AuthError, Authenticator};
 use super::copilot_studio::{
     error_codes, reason_codes, AnalyzeToolExecutionRequest, AnalyzeToolExecutionResponse,
     ValidationResponse, WebhookErrorResponse,
 };
-use crate::config::Config;
 use crate::hook::{HookHandler, HookInput};
 
 // ---------------------------------------------------------------------------
-// Shared server state (injected into every handler via axum State extractor)
+// Hardening constants
+// ---------------------------------------------------------------------------
+
+/// Maximum accepted request body size.
+///
+/// Copilot Studio payloads include conversation history and tool definitions
+/// but should never exceed this in practice. Bodies larger than this are
+/// rejected with HTTP 413 before reaching any handler.
+const REQUEST_BODY_LIMIT_BYTES: usize = 1024 * 1024; // 1 MiB
+
+/// Server-side evaluation timeout (milliseconds).
+///
+/// Copilot Studio defaults to "allow" if the webhook doesn't respond within
+/// 1 000 ms. We use 900 ms to leave a 100 ms network/processing margin.
+/// When this fires we return 503; Copilot Studio may allow the action.
+///
+/// # ITRisk note
+/// A 503 from this endpoint means Copilot Studio ALLOWS the tool call.
+/// Ensure the MCP proxy layer (lilith-zero run) provides defence-in-depth
+/// so a webhook timeout doesn't become a security bypass.
+const EVALUATION_TIMEOUT_MS: u64 = 900;
+
+// ---------------------------------------------------------------------------
+// Shared server state
 // ---------------------------------------------------------------------------
 
 /// Immutable state shared across all webhook handler invocations.
 #[derive(Clone)]
 pub struct WebhookState {
     /// Runtime configuration (policy path, security level, etc.).
-    pub config: Arc<Config>,
+    pub config: Arc<crate::config::Config>,
     /// Optional audit log file path forwarded to [`HookHandler`].
     pub audit_log_path: Option<PathBuf>,
     /// JWT authenticator (no-auth / shared-secret / Entra ID).
@@ -59,7 +95,12 @@ pub struct WebhookState {
 // Router construction
 // ---------------------------------------------------------------------------
 
-/// Build the axum [`Router`] with all Copilot Studio webhook routes.
+/// Build the hardened axum [`Router`] with all Copilot Studio webhook routes.
+///
+/// Layers applied (outermost → innermost):
+/// 1. [`HandleErrorLayer`] — converts tower errors (timeout) to JSON responses.
+/// 2. [`TimeoutLayer`] — enforces [`EVALUATION_TIMEOUT_MS`] per request.
+/// 3. [`DefaultBodyLimit`] — rejects bodies > [`REQUEST_BODY_LIMIT_BYTES`].
 pub fn build_router(state: WebhookState) -> Router {
     Router::new()
         .route("/validate", post(handle_validate))
@@ -68,23 +109,68 @@ pub fn build_router(state: WebhookState) -> Router {
             post(handle_analyze_tool_execution),
         )
         .with_state(state)
+        .layer(
+            ServiceBuilder::new()
+                .layer(HandleErrorLayer::new(handle_layer_error))
+                .layer(TimeoutLayer::new(Duration::from_millis(
+                    EVALUATION_TIMEOUT_MS,
+                )))
+                .layer(DefaultBodyLimit::max(REQUEST_BODY_LIMIT_BYTES)),
+        )
+}
+
+/// Convert tower layer errors (timeout, body-limit overflow) into JSON responses.
+async fn handle_layer_error(err: BoxError) -> Response {
+    if err.is::<tower::timeout::error::Elapsed>() {
+        tracing::warn!(
+            "Webhook evaluation exceeded {}ms timeout. \
+             Copilot Studio may have defaulted to allow.",
+            EVALUATION_TIMEOUT_MS
+        );
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(WebhookErrorResponse::new(
+                error_codes::INTERNAL_ERROR,
+                format!(
+                    "security evaluation timed out (>{}ms): \
+                     Copilot Studio has defaulted to allow for this request",
+                    EVALUATION_TIMEOUT_MS
+                ),
+                503,
+            )),
+        )
+            .into_response();
+    }
+    tracing::error!("Unhandled layer error: {err}");
+    (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        Json(WebhookErrorResponse::new(
+            error_codes::INTERNAL_ERROR,
+            "internal server error",
+            500,
+        )),
+    )
+        .into_response()
 }
 
 // ---------------------------------------------------------------------------
 // POST /validate
 // ---------------------------------------------------------------------------
 
-/// Health check endpoint.
+/// Health check: validates JWT and returns `{"isSuccessful":true,"status":"OK"}`.
 ///
-/// Validates the JWT (to confirm auth is wired up correctly) and returns a
-/// fixed success body. Called by Copilot Studio during initial configuration.
-async fn handle_validate(
-    State(state): State<WebhookState>,
-    headers: HeaderMap,
-) -> impl IntoResponse {
+/// Copilot Studio calls this during initial configuration to verify the
+/// endpoint is reachable and auth is correctly wired.
+async fn handle_validate(State(state): State<WebhookState>, headers: HeaderMap) -> Response {
+    let cid = extract_correlation_id(&headers);
+
+    let resp = do_validate(&state, &headers).await;
+    with_correlation_header(resp, cid.as_deref())
+}
+
+async fn do_validate(state: &WebhookState, headers: &HeaderMap) -> Response {
     let auth_header = headers.get("authorization").and_then(|v| v.to_str().ok());
 
-    // Validate JWT — return 401 on failure.
     if let Err(e) = authenticate(&state.auth, auth_header).await {
         return auth_error_response(e);
     }
@@ -96,20 +182,29 @@ async fn handle_validate(
 // POST /analyze-tool-execution
 // ---------------------------------------------------------------------------
 
-/// Tool execution evaluation endpoint.
+/// Tool execution evaluation: parses request, runs policy engine, returns allow/block.
 ///
-/// Parses the Copilot Studio request, evaluates it against the policy engine,
-/// and returns an allow or block decision. All error paths are fail-closed:
-/// parse errors return HTTP 400 (block implied), internal errors return HTTP
-/// 500 with `blockAction: true`.
+/// All error paths are fail-closed: parse errors return HTTP 400, auth failures
+/// 401, internal errors 500, engine errors produce `blockAction: true`.
 async fn handle_analyze_tool_execution(
     State(state): State<WebhookState>,
     headers: HeaderMap,
     body: axum::body::Bytes,
-) -> impl IntoResponse {
+) -> Response {
+    let cid = extract_correlation_id(&headers);
+
+    let resp = do_analyze(&state, &headers, body, cid.as_deref()).await;
+    with_correlation_header(resp, cid.as_deref())
+}
+
+async fn do_analyze(
+    state: &WebhookState,
+    headers: &HeaderMap,
+    body: axum::body::Bytes,
+    correlation_id: Option<&str>,
+) -> Response {
     // 1. Authenticate.
     let auth_header = headers.get("authorization").and_then(|v| v.to_str().ok());
-
     if let Err(e) = authenticate(&state.auth, auth_header).await {
         return auth_error_response(e);
     }
@@ -137,6 +232,13 @@ async fn handle_analyze_tool_execution(
         .clone()
         .unwrap_or_else(|| "unknown".to_string());
 
+    tracing::info!(
+        tool_name = %tool_name,
+        conversation_id = %request.conversation_metadata.conversation_id,
+        correlation_id = correlation_id.unwrap_or("-"),
+        "evaluating tool execution request"
+    );
+
     // 4. Evaluate through the security engine.
     let mut handler = match HookHandler::new(state.config.clone(), state.audit_log_path.clone()) {
         Ok(h) => h,
@@ -157,8 +259,11 @@ async fn handle_analyze_tool_execution(
     let exit_code = match handler.handle(hook_input).await {
         Ok(code) => code,
         Err(e) => {
-            tracing::error!("HookHandler evaluation error for tool '{tool_name}': {e}");
-            // Fail-closed: any handler error → block.
+            tracing::error!(
+                tool_name = %tool_name,
+                correlation_id = correlation_id.unwrap_or("-"),
+                "HookHandler evaluation error: {e}"
+            );
             return (
                 StatusCode::OK,
                 Json(AnalyzeToolExecutionResponse::block(
@@ -174,8 +279,6 @@ async fn handle_analyze_tool_execution(
     let response = if exit_code == 0 {
         AnalyzeToolExecutionResponse::allow()
     } else {
-        // The exit code is 2 (deny). We pick a generic reason code here;
-        // richer reason codes can be added when SecurityDecision carries them.
         AnalyzeToolExecutionResponse::block(
             reason_codes::STATIC_DENY,
             "blocked by Lilith Zero security policy",
@@ -189,25 +292,44 @@ async fn handle_analyze_tool_execution(
 // Helpers
 // ---------------------------------------------------------------------------
 
+/// Extract the `x-ms-correlation-id` header value, if present.
+fn extract_correlation_id(headers: &HeaderMap) -> Option<String> {
+    headers
+        .get("x-ms-correlation-id")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string())
+}
+
+/// Add `x-ms-correlation-id` response header if a correlation ID was supplied.
+///
+/// Copilot Studio uses this header to correlate request/response pairs across
+/// its own logs and the external security provider's logs.
+fn with_correlation_header(mut resp: Response, correlation_id: Option<&str>) -> Response {
+    if let Some(cid) = correlation_id {
+        if let Ok(val) = HeaderValue::from_str(cid) {
+            resp.headers_mut().insert("x-ms-correlation-id", val);
+        }
+    }
+    resp
+}
+
 /// Authenticate a request, extracting and validating the Bearer token.
 async fn authenticate(
     auth: &Arc<dyn Authenticator>,
     auth_header: Option<&str>,
 ) -> Result<(), AuthError> {
-    // In no-auth mode the header is optional; other modes require it.
     match extract_bearer_token(auth_header) {
         Ok(token) => auth.validate_token(token).await,
         Err(e @ AuthError::MissingAuthHeader) => {
-            // Allow no-auth mode to proceed without a header.
-            // For all other modes, missing header is an immediate 401.
+            // No-auth mode accepts requests without a header.
             auth.validate_token("").await.map_err(|_| e)
         }
         Err(e) => Err(e),
     }
 }
 
-/// Convert an [`AuthError`] to an HTTP 401 response.
-fn auth_error_response(e: AuthError) -> axum::response::Response {
+/// Convert an [`AuthError`] to an HTTP 401 JSON response.
+fn auth_error_response(e: AuthError) -> Response {
     (
         StatusCode::UNAUTHORIZED,
         Json(WebhookErrorResponse::new(
@@ -224,13 +346,13 @@ fn auth_error_response(e: AuthError) -> axum::response::Response {
 // ---------------------------------------------------------------------------
 
 /// Start the webhook server and block until the listener exits.
-///
-/// `bind_addr` — e.g. `"0.0.0.0:8080"`.
 pub async fn serve(bind_addr: &str, state: WebhookState) -> anyhow::Result<()> {
     tracing::info!(
-        "Lilith Zero webhook server starting on {} (auth: {})",
+        "Lilith Zero webhook server starting on {} (auth: {}, timeout: {}ms, body_limit: {}KiB)",
         bind_addr,
-        state.auth.description()
+        state.auth.description(),
+        EVALUATION_TIMEOUT_MS,
+        REQUEST_BODY_LIMIT_BYTES / 1024,
     );
 
     let app = build_router(state);

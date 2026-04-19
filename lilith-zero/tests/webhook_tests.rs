@@ -725,3 +725,137 @@ async fn test_webhook_concurrent_requests_same_conversation_return_valid_json() 
 
     cleanup_session_file(&conv_id);
 }
+
+// ---------------------------------------------------------------------------
+// Hardening: body size limit
+// ---------------------------------------------------------------------------
+
+/// Bodies larger than 1 MiB must be rejected with HTTP 413 before reaching
+/// any handler. This prevents DoS via oversized payloads and ensures the
+/// timeout budget is not consumed reading junk data.
+#[tokio::test]
+async fn test_webhook_analyze_oversized_body_returns_413() {
+    let policy = write_temp_policy(default_policy_yaml());
+    let state = test_state_no_auth(policy.path());
+    let base = start_test_server(state).await;
+    let client = Client::new();
+
+    // 2 MiB — double the 1 MiB limit
+    let oversized = "x".repeat(2 * 1024 * 1024);
+
+    let resp = client
+        .post(format!("{base}/analyze-tool-execution"))
+        .header("Content-Type", "application/json")
+        .body(oversized)
+        .send()
+        .await
+        .expect("HTTP request failed");
+
+    assert_eq!(
+        resp.status(),
+        413,
+        "body exceeding 1 MiB limit must return HTTP 413 Payload Too Large"
+    );
+}
+
+// Note: /validate is NOT tested for oversized bodies because it has no body
+// extractor — axum's DefaultBodyLimit only fires when a body is extracted by
+// a handler. The MS spec mandates an empty body for /validate, so a large
+// body there is not a realistic attack vector. The important protection is on
+// /analyze-tool-execution which does parse the body.
+
+// ---------------------------------------------------------------------------
+// Hardening: x-ms-correlation-id passthrough
+// ---------------------------------------------------------------------------
+
+/// Copilot Studio sends an `x-ms-correlation-id` header for distributed tracing.
+/// The webhook must echo it back in the response so Copilot Studio can correlate
+/// its logs with the security provider's logs.
+#[tokio::test]
+async fn test_webhook_analyze_correlation_id_echoed_in_response() {
+    let policy = write_temp_policy(default_policy_yaml());
+    let state = test_state_no_auth(policy.path());
+    let base = start_test_server(state).await;
+    let client = Client::new();
+
+    let body = analyze_request("conv-corr-1", "allowed_tool", json!({}));
+    let resp = client
+        .post(format!("{base}/analyze-tool-execution"))
+        .header("Content-Type", "application/json")
+        .header(
+            "x-ms-correlation-id",
+            "fbac57f1-3b19-4a2b-b69f-a1f2f2c5cc3c",
+        )
+        .json(&body)
+        .send()
+        .await
+        .expect("HTTP request failed");
+
+    assert_eq!(resp.status(), 200);
+    let echoed = resp
+        .headers()
+        .get("x-ms-correlation-id")
+        .and_then(|v| v.to_str().ok());
+    assert_eq!(
+        echoed,
+        Some("fbac57f1-3b19-4a2b-b69f-a1f2f2c5cc3c"),
+        "x-ms-correlation-id must be echoed back in the response header"
+    );
+}
+
+/// /validate must also echo the correlation ID back.
+#[tokio::test]
+async fn test_webhook_validate_correlation_id_echoed_in_response() {
+    let policy = write_temp_policy(default_policy_yaml());
+    let state = test_state_no_auth(policy.path());
+    let base = start_test_server(state).await;
+    let client = Client::new();
+
+    let resp = client
+        .post(format!("{base}/validate"))
+        .header("Content-Type", "application/json")
+        .header("x-ms-correlation-id", "test-trace-id-9876")
+        .body("")
+        .send()
+        .await
+        .expect("HTTP request failed");
+
+    assert_eq!(resp.status(), 200);
+    let echoed = resp
+        .headers()
+        .get("x-ms-correlation-id")
+        .and_then(|v| v.to_str().ok());
+    assert_eq!(
+        echoed,
+        Some("test-trace-id-9876"),
+        "/validate must echo x-ms-correlation-id back in the response"
+    );
+}
+
+/// Requests without x-ms-correlation-id must work normally (the header is optional).
+#[tokio::test]
+async fn test_webhook_analyze_missing_correlation_id_is_not_required() {
+    let policy = write_temp_policy(default_policy_yaml());
+    let state = test_state_no_auth(policy.path());
+    let base = start_test_server(state).await;
+    let client = Client::new();
+
+    let body = analyze_request("conv-no-corr", "allowed_tool", json!({}));
+    let resp = post_json(
+        &client,
+        &format!("{base}/analyze-tool-execution"),
+        None,
+        Some(body),
+    )
+    .await;
+
+    assert_eq!(
+        resp.status(),
+        200,
+        "requests without correlation ID must succeed"
+    );
+    assert!(
+        resp.headers().get("x-ms-correlation-id").is_none(),
+        "response must not include x-ms-correlation-id if the request had none"
+    );
+}
