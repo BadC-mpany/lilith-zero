@@ -1,0 +1,65 @@
+{
+  "_comment": "Lilith Zero — GitHub Copilot hooks.json template",
+  "_instructions": [
+    "Copy this file to .github/hooks/hooks.json in your repository.",
+    "Copy hook-wrapper.sh (Linux/Mac) or hook-wrapper.ps1 (Windows) to .github/hooks/.",
+    "Create a lilith-policy.yaml in .github/hooks/ with your security rules.",
+    "Set LILITH_ZERO_BIN to the absolute path of your lilith-zero binary,",
+    "  OR add lilith-zero to PATH on all developer machines / CI runners.",
+    "",
+    "Security note: Deploy via enterprise image / managed endpoint to prevent",
+    "  developers from disabling or replacing this file on their local machines.",
+    "  Hooks are client-side — server-side enforcement requires the MCP proxy mode."
+  ],
+  "version": 1,
+  "hooks": {
+    "preToolUse": [
+      {
+        "type": "command",
+        "bash": ".github/hooks/hook-wrapper.sh",
+        "powershell": ".github/hooks/hook-wrapper.ps1",
+        "env": {
+          "LILITH_ZERO_EVENT": "preToolUse",
+          "LILITH_ZERO_POLICY": ".github/hooks/lilith-policy.yaml"
+        },
+        "timeoutSec": 10
+      }
+    ],
+    "postToolUse": [
+      {
+        "type": "command",
+        "bash": ".github/hooks/hook-wrapper.sh",
+        "powershell": ".github/hooks/hook-wrapper.ps1",
+        "env": {
+          "LILITH_ZERO_EVENT": "postToolUse",
+          "LILITH_ZERO_POLICY": ".github/hooks/lilith-policy.yaml"
+        },
+        "timeoutSec": 10
+      }
+    ],
+    "sessionStart": [
+      {
+        "type": "command",
+        "bash": ".github/hooks/hook-wrapper.sh",
+        "powershell": ".github/hooks/hook-wrapper.ps1",
+        "env": {
+          "LILITH_ZERO_EVENT": "sessionStart",
+          "LILITH_ZERO_POLICY": ".github/hooks/lilith-policy.yaml"
+        },
+        "timeoutSec": 5
+      }
+    ],
+    "sessionEnd": [
+      {
+        "type": "command",
+        "bash": ".github/hooks/hook-wrapper.sh",
+        "powershell": ".github/hooks/hook-wrapper.ps1",
+        "env": {
+          "LILITH_ZERO_EVENT": "sessionEnd",
+          "LILITH_ZERO_POLICY": ".github/hooks/lilith-policy.yaml"
+        },
+        "timeoutSec": 5
+      }
+    ]
+  }
+}
