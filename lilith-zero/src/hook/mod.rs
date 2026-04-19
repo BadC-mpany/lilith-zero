@@ -47,8 +47,9 @@ impl HookHandler {
             tracing::info!("Loading hook policy from {:?}", path);
             let content = std::fs::read_to_string(path)
                 .map_err(|e| anyhow::anyhow!("Failed to read policy file {:?}: {}", path, e))?;
-            let policy: crate::engine_core::models::PolicyDefinition = serde_yaml_ng::from_str(&content)
-                .map_err(|e| anyhow::anyhow!("Failed to parse policy YAML: {}", e))?;
+            let policy: crate::engine_core::models::PolicyDefinition =
+                serde_yaml_ng::from_str(&content)
+                    .map_err(|e| anyhow::anyhow!("Failed to parse policy YAML: {}", e))?;
             core.set_policy(policy);
         }
         let persistence = PersistenceLayer::default_local();
