@@ -1,0 +1,6 @@
+{
+    "timestamp": 1704614600000,
+    "cwd": "/home/user/project",
+    "toolName": "forbidden_tool",
+    "toolArgs": "{\"arg1\":\"val1\"}"
+}
