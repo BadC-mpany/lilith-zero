@@ -380,20 +380,11 @@ impl SecurityCore {
     }
 
     fn classify_tool(&self, name: &str) -> Vec<String> {
-        if name.starts_with("read_") || name.starts_with("get_") {
-            vec!["READ".to_string()]
-        } else if name.starts_with("write_") || name.starts_with("delete_") {
-            vec!["WRITE".to_string()]
-        } else if matches!(name, "curl" | "wget" | "fetch" | "requests" | "http") {
-            warn!(
-                tool = %name,
-                "Tool looks like a network egress tool; add an explicit EXFILTRATION \
-                 policy rule rather than relying on heuristic classification"
-            );
-            vec!["NETWORK".to_string()]
-        } else {
-            vec![]
-        }
+        self.policy
+            .as_ref()
+            .and_then(|p| p.tool_classes.get(name))
+            .cloned()
+            .unwrap_or_default()
     }
 
     fn process_evaluator_decision(

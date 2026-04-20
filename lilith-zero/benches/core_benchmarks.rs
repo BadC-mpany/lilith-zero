@@ -43,6 +43,7 @@ fn bench_policy_validator(c: &mut Criterion) {
         taint_rules: vec![rule],
         created_at: None,
         protect_lethal_trifecta: false,
+        tool_classes: Default::default(),
     };
 
     c.bench_function("policy_validation_single", |b| {

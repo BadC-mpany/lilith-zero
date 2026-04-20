@@ -89,6 +89,7 @@ fn create_test_policy(protect_trifecta: bool) -> PolicyDefinition {
             },
         ],
         protect_lethal_trifecta: protect_trifecta,
+        tool_classes: Default::default(),
     }
 }
 

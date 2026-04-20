@@ -257,6 +257,17 @@ pub struct PolicyDefinition {
     /// When `true`, auto-inject the lethal-trifecta EXFILTRATION protection rule.
     #[serde(alias = "protect_lethal_trifecta", default)]
     pub protect_lethal_trifecta: bool,
+    /// Explicit tool-class assignments: tool name → list of class labels (e.g. `["EXFILTRATION"]`).
+    ///
+    /// This is the *only* source of tool classification. Lilith Zero performs no heuristic
+    /// inference. Tools not listed here carry no class labels and are not matched by
+    /// class-based taint rules (including the auto-injected lethal-trifecta rule).
+    #[serde(
+        alias = "tool_classes",
+        default,
+        skip_serializing_if = "std::collections::HashMap::is_empty"
+    )]
+    pub tool_classes: std::collections::HashMap<String, Vec<String>>,
 }
 
 /// A rule governing access to MCP resources identified by URI.

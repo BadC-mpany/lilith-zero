@@ -548,6 +548,7 @@ mod tests {
             }],
             created_at: Some("2024-01-01T00:00:00Z".to_string()),
             protect_lethal_trifecta: false,
+            tool_classes: Default::default(),
         };
 
         assert!(PolicyValidator::validate_policy(&policy).is_ok());
@@ -577,6 +578,7 @@ mod tests {
             }],
             created_at: Some("2024-01-01T00:00:00Z".to_string()),
             protect_lethal_trifecta: false,
+            tool_classes: Default::default(),
         };
 
         let result = PolicyValidator::validate_policy(&policy);
@@ -611,6 +613,7 @@ mod tests {
             }],
             created_at: Some("2024-01-01T00:00:00Z".to_string()),
             protect_lethal_trifecta: false,
+            tool_classes: Default::default(),
         };
 
         let result = PolicyValidator::validate_policy(&policy);
@@ -651,6 +654,7 @@ mod tests {
             }],
             created_at: Some("2024-01-01T00:00:00Z".to_string()),
             protect_lethal_trifecta: false,
+            tool_classes: Default::default(),
         };
 
         let result = PolicyValidator::validate_policy(&policy);
@@ -692,6 +696,7 @@ mod tests {
             }],
             created_at: Some("2024-01-01T00:00:00Z".to_string()),
             protect_lethal_trifecta: false,
+            tool_classes: Default::default(),
         };
 
         assert!(PolicyValidator::validate_policy(&policy).is_ok());
@@ -712,6 +717,7 @@ mod tests {
             taint_rules,
             created_at: None,
             protect_lethal_trifecta: false,
+            tool_classes: Default::default(),
         }
     }
 
