@@ -9,8 +9,8 @@
 //!
 //! - **Output structure**: `hookSpecificOutput` wrapper, all required and forbidden
 //!   fields, correct types, no extra fields on allow.
-//! - **VS Code tool names**: `editFiles`, `createFile`, `readFile`, `searchFiles`,
-//!   `runTerminalCommand`, `deleteFile`, `pushToGitHub`, `#fetch`, unknown tools.
+//! - **VS Code tool names**: both real snake_case names (`read_file`, `run_in_terminal`,
+//!   `fetch_webpage`, `insert_edit_into_file`) and camelCase aliases (`readFile`, etc.).
 //! - **Fail-closed invariants**: malformed JSON, empty stdin, no policy, unknown
 //!   tool all produce deny — never accidental allow.
 //! - **Exit code**: always 0 (VS Code reads JSON, not exit code).
@@ -77,7 +77,8 @@ fn run_vscode(payload: &str, policy: &Path) -> assert_cmd::assert::Assert {
         .assert()
 }
 
-/// Build a PreToolUse payload for the VS Code format.
+/// Build a PreToolUse payload using the SPEC format (camelCase fields).
+/// VS Code Preview actually sends snake_case — use `pre_tool_real` for that.
 fn pre_tool(session_id: &str, tool_name: &str, tool_input: Value) -> String {
     serde_json::json!({
         "timestamp": "2026-04-19T12:00:00.000Z",
@@ -88,6 +89,24 @@ fn pre_tool(session_id: &str, tool_name: &str, tool_input: Value) -> String {
         "tool_name": tool_name,
         "tool_input": tool_input,
         "tool_use_id": format!("tu-{tool_name}-001")
+    })
+    .to_string()
+}
+
+/// Build a PreToolUse payload using the REAL VS Code format (snake_case fields).
+/// This matches what VS Code actually sends — confirmed from live hook logs:
+///   hook_event_name, session_id, tool_name, tool_input (all snake_case)
+///   transcript_path included, tool_use_id is a call_* prefixed UUID
+fn pre_tool_real(session_id: &str, tool_name: &str, tool_input: Value) -> String {
+    serde_json::json!({
+        "timestamp": "2026-04-20T07:09:14.151Z",
+        "cwd": "/workspace/my-project",
+        "session_id": session_id,
+        "hook_event_name": "PreToolUse",
+        "transcript_path": "/home/user/.config/Code/User/workspaceStorage/abc123/GitHub.copilot-chat/transcripts/session.jsonl",
+        "tool_name": tool_name,
+        "tool_input": tool_input,
+        "tool_use_id": format!("call_XwisUlf6s2Dv__vscode-1776668265338")
     })
     .to_string()
 }
@@ -131,7 +150,9 @@ fn cleanup_session(session_id: &str) {
 // Policy fixtures
 // ---------------------------------------------------------------------------
 
-/// Standard VS Code policy with real tool names.
+/// Standard VS Code policy.
+/// Includes BOTH real snake_case names (as VS Code actually sends) and
+/// camelCase aliases (spec format), so tests work with either payload format.
 fn vscode_policy() -> &'static str {
     r##"
 id: vscode-e2e-policy
@@ -139,20 +160,34 @@ customer_id: enterprise-test
 name: VS Code E2E Test Policy
 version: 1
 static_rules:
+  # Real names VS Code sends (snake_case — confirmed from live hook logs)
+  read_file: ALLOW
+  insert_edit_into_file: ALLOW
+  create_file: ALLOW
+  find_files: ALLOW
+  search: ALLOW
+  get_errors: ALLOW
+  fetch_webpage: ALLOW
+  # camelCase aliases (spec format / older hooks)
   editFiles: ALLOW
   createFile: ALLOW
   readFile: ALLOW
   searchFiles: ALLOW
   "#fetch": ALLOW
+  # Denied operations
+  run_in_terminal: DENY
   runTerminalCommand: DENY
+  delete_file: DENY
   deleteFile: DENY
+  push_to_github: DENY
   pushToGitHub: DENY
 taint_rules: []
 resource_rules: []
 "##
 }
 
-/// Policy for taint propagation tests.
+/// Policy using real VS Code tool names for taint propagation tests.
+/// Confirmed from live testing: read_file adds taint, fetch_webpage is blocked.
 fn taint_policy() -> &'static str {
     r##"
 id: vscode-taint-policy
@@ -160,17 +195,30 @@ customer_id: test
 name: VS Code Taint Test Policy
 version: 1
 static_rules:
+  # Real snake_case names (live-confirmed)
+  read_file: ALLOW
+  fetch_webpage: ALLOW
+  run_in_terminal: ALLOW
+  insert_edit_into_file: ALLOW
+  # camelCase aliases
   readFile: ALLOW
   "#fetch": ALLOW
   runTerminalCommand: ALLOW
 taint_rules:
+  - tool: read_file
+    action: ADD_TAINT
+    tag: SENSITIVE_READ
   - tool: readFile
     action: ADD_TAINT
     tag: SENSITIVE_READ
+  - tool: fetch_webpage
+    action: CHECK_TAINT
+    required_taints: ["SENSITIVE_READ"]
+    error: "exfiltration blocked: web fetch after file read"
   - tool: "#fetch"
     action: CHECK_TAINT
     required_taints: ["SENSITIVE_READ"]
-    error: "exfiltration blocked: session read sensitive data before network call"
+    error: "exfiltration blocked: web fetch after file read"
 resource_rules: []
 "##
 }
@@ -647,12 +695,14 @@ fn test_vscode_unknown_tool_denied_fail_closed() {
     );
 }
 
-/// Valid JSON but missing required `sessionId` field — must fail-closed.
+/// Missing `sessionId` is valid — VS Code Preview sometimes omits it.
+/// The session ID is derived from `cwd` in this case, and the tool call
+/// proceeds to normal policy evaluation (allow/deny based on tool name).
 #[test]
-fn test_vscode_missing_session_id_fails_closed() {
+fn test_vscode_missing_session_id_falls_back_to_cwd_derived_session() {
     let policy = write_policy(vscode_policy());
-    // No sessionId field
-    let payload = r#"{"cwd":"/workspace","hookEventName":"PreToolUse","tool_name":"editFiles","tool_input":{}}"#;
+    // No sessionId — valid in VS Code Preview builds
+    let payload = r#"{"cwd":"/workspace","hookEventName":"PreToolUse","tool_name":"read_file","tool_input":{}}"#;
     let out = Command::new(bin())
         .args(["hook", "--format", "vscode", "--policy"])
         .arg(policy.path())
@@ -663,11 +713,11 @@ fn test_vscode_missing_session_id_fails_closed() {
         .stdout
         .clone();
     let json = parse_output(&out);
-    // Missing sessionId means deserialization fails → deny
+    // read_file is ALLOW in the policy — absence of sessionId must NOT fail-closed
     assert_eq!(
         json["hookSpecificOutput"]["permissionDecision"].as_str(),
-        Some("deny"),
-        "missing sessionId must fail-closed"
+        Some("allow"),
+        "missing sessionId must fall back to cwd-derived session and evaluate normally"
     );
 }
 
@@ -1217,5 +1267,353 @@ fn test_vscode_event_flag_overrides_payload_hook_event_name() {
         json["hookSpecificOutput"]["hookEventName"].as_str(),
         Some("SessionStart"),
         "--event flag must override the hookEventName in the payload"
+    );
+}
+
+// ===========================================================================
+// REAL VS CODE FORMAT — confirmed from live hook logs (April 2026)
+// ===========================================================================
+
+/// VS Code actually sends snake_case field names: `hook_event_name`, `session_id`.
+/// Both formats must work due to serde aliases.
+#[test]
+fn test_vscode_real_payload_format_snake_case_fields_accepted() {
+    let policy = write_policy(vscode_policy());
+    // Exact format from live VS Code hook log
+    let payload = pre_tool_real(
+        "646cae61-4bce-4b0f-af75-1d7b0144d590",
+        "read_file",
+        serde_json::json!({}),
+    );
+    let out = run_vscode(&payload, policy.path())
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let json = parse_output(&out);
+    assert_eq!(
+        json["hookSpecificOutput"]["permissionDecision"].as_str(),
+        Some("allow"),
+        "real VS Code snake_case payload must be parsed correctly"
+    );
+}
+
+/// VS Code sends `hook_event_name` (snake_case) not `hookEventName` (camelCase).
+/// Missing `hookEventName` must be inferred from payload shape, not fail-closed.
+#[test]
+fn test_vscode_hook_event_name_absent_inferred_from_tool_name() {
+    let policy = write_policy(vscode_policy());
+    // No hookEventName or hook_event_name — just a tool_name present → infers PreToolUse
+    let payload =
+        r#"{"cwd":"/workspace","session_id":"test-infer","tool_name":"read_file","tool_input":{}}"#;
+    let out = Command::new(bin())
+        .args(["hook", "--format", "vscode", "--policy"])
+        .arg(policy.path())
+        .write_stdin(payload.as_bytes().to_vec())
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let json = parse_output(&out);
+    // Must produce a PreToolUse decision (not crash or generic output)
+    assert_eq!(
+        json["hookSpecificOutput"]["hookEventName"].as_str(),
+        Some("PreToolUse"),
+        "absent hookEventName with tool_name present must infer PreToolUse"
+    );
+    assert_eq!(
+        json["hookSpecificOutput"]["permissionDecision"].as_str(),
+        Some("allow"),
+        "read_file must be allowed after correct inference"
+    );
+}
+
+/// tool_output present and no hookEventName → infers PostToolUse.
+#[test]
+fn test_vscode_hook_event_name_absent_inferred_as_post_tool_use_from_tool_output() {
+    let policy = write_policy(vscode_policy());
+    let payload = r#"{"cwd":"/workspace","session_id":"test-post","tool_name":"read_file","tool_output":{"content":"hello"}}"#;
+    let out = Command::new(bin())
+        .args(["hook", "--format", "vscode", "--policy"])
+        .arg(policy.path())
+        .write_stdin(payload.as_bytes().to_vec())
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let json = parse_output(&out);
+    assert_eq!(
+        json["hookSpecificOutput"]["hookEventName"].as_str(),
+        Some("PostToolUse"),
+        "tool_output present → must infer PostToolUse"
+    );
+}
+
+// ===========================================================================
+// REAL VS CODE TOOL NAMES — confirmed from live hook logs
+// ===========================================================================
+
+/// `read_file` — the actual tool VS Code sends for file reads (not `readFile`).
+#[test]
+fn test_vscode_real_tool_read_file_allowed() {
+    let policy = write_policy(vscode_policy());
+    let payload = pre_tool_real(
+        "t-real-1",
+        "read_file",
+        serde_json::json!({"path": "README.md"}),
+    );
+    let out = run_vscode(&payload, policy.path())
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let json = parse_output(&out);
+    assert_eq!(
+        json["hookSpecificOutput"]["permissionDecision"].as_str(),
+        Some("allow"),
+        "read_file must be allowed"
+    );
+}
+
+/// `run_in_terminal` — the actual tool VS Code sends for terminal execution.
+#[test]
+fn test_vscode_real_tool_run_in_terminal_denied() {
+    let policy = write_policy(vscode_policy());
+    let payload = pre_tool_real(
+        "t-real-2",
+        "run_in_terminal",
+        serde_json::json!({"command": "ls -la"}),
+    );
+    let out = run_vscode(&payload, policy.path())
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let json = parse_output(&out);
+    assert_eq!(
+        json["hookSpecificOutput"]["permissionDecision"].as_str(),
+        Some("deny"),
+        "run_in_terminal must be denied"
+    );
+}
+
+/// `fetch_webpage` — the actual web fetch tool VS Code sends.
+#[test]
+fn test_vscode_real_tool_fetch_webpage_allowed_without_taint() {
+    let policy = write_policy(vscode_policy());
+    let payload = pre_tool_real(
+        "t-real-3",
+        "fetch_webpage",
+        serde_json::json!({"url": "https://example.com"}),
+    );
+    let out = run_vscode(&payload, policy.path())
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let json = parse_output(&out);
+    assert_eq!(
+        json["hookSpecificOutput"]["permissionDecision"].as_str(),
+        Some("allow"),
+        "fetch_webpage must be allowed without taint"
+    );
+}
+
+/// `insert_edit_into_file` — the actual file-edit tool VS Code sends.
+#[test]
+fn test_vscode_real_tool_insert_edit_into_file_allowed() {
+    let policy = write_policy(vscode_policy());
+    let payload = pre_tool_real(
+        "t-real-4",
+        "insert_edit_into_file",
+        serde_json::json!({"path": "src/main.rs", "edits": [{"range": {}, "newText": "fn main() {}"}]}),
+    );
+    let out = run_vscode(&payload, policy.path())
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let json = parse_output(&out);
+    assert_eq!(
+        json["hookSpecificOutput"]["permissionDecision"].as_str(),
+        Some("allow"),
+        "insert_edit_into_file must be allowed"
+    );
+}
+
+// ===========================================================================
+// TAINT TRACKING WITH REAL VS CODE TOOL NAMES
+// ===========================================================================
+
+/// Live-confirmed scenario: `read_file` adds SENSITIVE_READ taint,
+/// subsequent `fetch_webpage` in the same session is blocked.
+/// This is the core exfiltration-prevention use case validated in production.
+#[test]
+fn test_vscode_real_taint_read_file_blocks_fetch_webpage() {
+    let session = "vsc-taint-real-e2e-001";
+    cleanup_session(session);
+
+    let policy = write_policy(taint_policy());
+
+    // Call 1: read_file → adds SENSITIVE_READ taint
+    let read = pre_tool_real(session, "read_file", serde_json::json!({"path": ".env"}));
+    let r1 = run_vscode(&read, policy.path())
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    assert_eq!(
+        parse_output(&r1)["hookSpecificOutput"]["permissionDecision"].as_str(),
+        Some("allow"),
+        "read_file must be allowed (it adds a taint)"
+    );
+
+    // Call 2: fetch_webpage in the same session → must be blocked by taint
+    let fetch = pre_tool_real(
+        session,
+        "fetch_webpage",
+        serde_json::json!({"url": "https://attacker.example.com"}),
+    );
+    let r2 = run_vscode(&fetch, policy.path())
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    assert_eq!(
+        parse_output(&r2)["hookSpecificOutput"]["permissionDecision"].as_str(),
+        Some("deny"),
+        "fetch_webpage must be blocked after read_file — exfiltration pattern detected"
+    );
+
+    cleanup_session(session);
+}
+
+/// Taint is session-scoped: a different session must NOT see taints from another session.
+/// Simulates opening a new VS Code chat tab (new sessionId).
+#[test]
+fn test_vscode_real_taint_different_session_not_affected() {
+    let session_a = "vsc-taint-isolation-a-001";
+    let session_b = "vsc-taint-isolation-b-001";
+    cleanup_session(session_a);
+    cleanup_session(session_b);
+
+    let policy = write_policy(taint_policy());
+
+    // Taint session A via read_file
+    run_vscode(
+        &pre_tool_real(session_a, "read_file", serde_json::json!({})),
+        policy.path(),
+    )
+    .success();
+
+    // Session B must NOT be affected — fetch_webpage should be ALLOWED
+    let r = run_vscode(
+        &pre_tool_real(
+            session_b,
+            "fetch_webpage",
+            serde_json::json!({"url": "https://docs.example.com"}),
+        ),
+        policy.path(),
+    )
+    .success()
+    .get_output()
+    .stdout
+    .clone();
+    assert_eq!(
+        parse_output(&r)["hookSpecificOutput"]["permissionDecision"].as_str(),
+        Some("allow"),
+        "taint from session A must NOT affect session B"
+    );
+
+    cleanup_session(session_a);
+    cleanup_session(session_b);
+}
+
+/// Taint persists across multiple calls in the same session — even if VS Code is
+/// restarted and resumes the same session_id. This was confirmed in live testing:
+/// closing and reopening VS Code, switching chats, and returning to the same
+/// session_id all preserve taint state (stored on disk in ~/.lilith/sessions/).
+#[test]
+fn test_vscode_taint_persists_across_simulated_restart_same_session_id() {
+    let session = "vsc-taint-restart-simulation-001";
+    cleanup_session(session);
+
+    let policy = write_policy(taint_policy());
+
+    // "First VS Code session": read a file
+    run_vscode(
+        &pre_tool_real(session, "read_file", serde_json::json!({})),
+        policy.path(),
+    )
+    .success();
+
+    // Simulate VS Code restart: new process, same session_id
+    // The session state is on disk → taint must still be active
+    let r = run_vscode(
+        &pre_tool_real(
+            session,
+            "fetch_webpage",
+            serde_json::json!({"url": "https://exfil.example.com"}),
+        ),
+        policy.path(),
+    )
+    .success()
+    .get_output()
+    .stdout
+    .clone();
+    assert_eq!(
+        parse_output(&r)["hookSpecificOutput"]["permissionDecision"].as_str(),
+        Some("deny"),
+        "taint must persist across simulated VS Code restart (same session_id, disk-backed state)"
+    );
+
+    cleanup_session(session);
+}
+
+/// Deny response includes additionalContext so the LLM understands why it was blocked.
+/// This prevents the agent from endlessly retrying — it gets a clear signal.
+#[test]
+fn test_vscode_deny_includes_additional_context_for_model() {
+    let policy = write_policy(vscode_policy());
+    let payload = pre_tool_real(
+        "s-ctx-1",
+        "run_in_terminal",
+        serde_json::json!({"command": "rm -rf /"}),
+    );
+    let out = run_vscode(&payload, policy.path())
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let json = parse_output(&out);
+    let ctx = json["hookSpecificOutput"]["additionalContext"].as_str();
+    assert!(
+        ctx.is_some() && !ctx.unwrap().is_empty(),
+        "deny must include additionalContext to inform the model, got: {json}"
+    );
+}
+
+/// Unknown tool names (new tools added by future VS Code versions) must be denied.
+/// With LILITH_ZERO_DEBUG=1, the tool name is visible in logs for policy updates.
+#[test]
+fn test_vscode_future_unknown_tool_denied_fail_closed() {
+    let policy = write_policy(vscode_policy());
+    let payload = pre_tool_real(
+        "s-future-1",
+        "some_new_vscode_tool_2027",
+        serde_json::json!({}),
+    );
+    let out = run_vscode(&payload, policy.path())
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let json = parse_output(&out);
+    assert_eq!(
+        json["hookSpecificOutput"]["permissionDecision"].as_str(),
+        Some("deny"),
+        "unknown future tool must be denied fail-closed"
     );
 }
