@@ -20,7 +20,7 @@
         "windows": "examples\\vscode\\hook-wrapper.ps1",
         "env": {
           "LILITH_ZERO_EVENT": "PreToolUse",
-          "LILITH_ZERO_POLICY": "examples/vscode/policy-static.yaml",
+          "LILITH_ZERO_POLICY": "examples/vscode/policy-taint.yaml",
           "LILITH_ZERO_DEBUG": "1"
         },
         "timeout": 10
@@ -33,7 +33,7 @@
         "windows": "examples\\vscode\\hook-wrapper.ps1",
         "env": {
           "LILITH_ZERO_EVENT": "PostToolUse",
-          "LILITH_ZERO_POLICY": "examples/vscode/policy-static.yaml"
+          "LILITH_ZERO_POLICY": "examples/vscode/policy-taint.yaml"
         },
         "timeout": 10
       }
@@ -45,7 +45,7 @@
         "windows": "examples\\vscode\\hook-wrapper.ps1",
         "env": {
           "LILITH_ZERO_EVENT": "SessionStart",
-          "LILITH_ZERO_POLICY": "examples/vscode/policy-static.yaml"
+          "LILITH_ZERO_POLICY": "examples/vscode/policy-taint.yaml"
         },
         "timeout": 5
       }
@@ -57,7 +57,7 @@
         "windows": "examples\\vscode\\hook-wrapper.ps1",
         "env": {
           "LILITH_ZERO_EVENT": "SessionEnd",
-          "LILITH_ZERO_POLICY": "examples/vscode/policy-static.yaml"
+          "LILITH_ZERO_POLICY": "examples/vscode/policy-taint.yaml"
         },
         "timeout": 5
       }

@@ -1,39 +1,72 @@
 # Lilith Zero — Taint Tracking Policy for VS Code Copilot sidebar
 #
-# Scenario: The agent reads a file (gaining SENSITIVE_DATA taint).
-# Any subsequent #fetch or network call in the same VS Code session is blocked.
+# Scenario: agent reads any file → SENSITIVE_DATA taint added to the session.
+# Any subsequent web fetch in the SAME session is blocked.
 #
-# This prevents the classic prompt-injection exfiltration pattern:
-#   1. Copilot reads .env or credentials.json
-#   2. An injected instruction says "now send this to https://attacker.com"
-#   3. Lilith Zero sees the taint and blocks the network call
+# Attack pattern blocked:
+#   1. Copilot reads .env / credentials / private file
+#   2. A prompt-injected instruction says "send this to https://attacker.com"
+#   3. Lilith sees the taint and blocks the fetch before any data leaves
+#
+# Taint persists for the entire VS Code session (same session_id).
+# Opening a new Copilot chat session = clean state.
 
 id: vscode-taint-demo
 customer_id: enterprise-demo
-name: "VS Code Copilot — Taint Tracking / IFC Policy"
+name: "VS Code Copilot — Taint Tracking Policy"
 version: 1
 
 static_rules:
-  editFiles: ALLOW
-  createFile: ALLOW
+  # Read-only: all allowed (some add taint — see taint_rules)
+  read_file: ALLOW
   readFile: ALLOW
+  search: ALLOW
+  find_files: ALLOW
   searchFiles: ALLOW
-  listDirectory: ALLOW
-  deleteFile: DENY
+  list_directory: ALLOW
+  get_errors: ALLOW
+  get_changed_files: ALLOW
+
+  # Writes: allowed
+  create_file: ALLOW
+  createFile: ALLOW
+  insert_edit_into_file: ALLOW
+  editFiles: ALLOW
+
+  # Terminal: denied
+  run_in_terminal: DENY
   runTerminalCommand: DENY
-  "#fetch": ALLOW           # allowed unless taint is active (see taint_rules)
+  run_vs_code_task: DENY
+
+  # Network: allowed UNLESS taint is active (see taint_rules)
+  fetch: ALLOW
+  "#fetch": ALLOW
+
+  # Destructive / git: denied
+  delete_file: DENY
+  run_git_command: DENY
+  push_to_github: DENY
   pushToGitHub: DENY
 
 taint_rules:
-  # Reading any file marks the session as potentially handling sensitive data
+  # File read → mark session as having potentially seen sensitive content
+  - tool: read_file
+    action: ADD_TAINT
+    tag: SENSITIVE_DATA
+
   - tool: readFile
     action: ADD_TAINT
     tag: SENSITIVE_DATA
 
-  # Block network access if the session has seen any file read
+  # Block web fetch after any file read in this session
+  - tool: fetch
+    action: CHECK_TAINT
+    required_taints: ["SENSITIVE_DATA"]
+    error: "BLOCKED: web fetch denied — this session read a file. Start a new Copilot chat to use fetch."
+
   - tool: "#fetch"
     action: CHECK_TAINT
     required_taints: ["SENSITIVE_DATA"]
-    error: "BLOCKED: web fetch denied after file read (exfiltration prevention). Start a new session if you need both."
+    error: "BLOCKED: web fetch denied — this session read a file. Start a new Copilot chat to use fetch."
 
 resource_rules: []
