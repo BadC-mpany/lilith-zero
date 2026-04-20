@@ -191,10 +191,23 @@ This ensures non-repudiation. Even if the log file is tampered with, the signatu
 **Telemetry Grouping**
 Lilith Zero integrates directly with the `lilith-telemetry` system. When run with a Flock telemetry link (e.g., `--telemetry-link`), it enables cross-process span propagation. This allows all multi-tool interactions originating from a single LLM reasoning step to be accurately traced and grouped into unified, logical context spans within your dashboard.
 
-### 6. Examples
+### 6. IDE & CLI Agent Hooks
+
+Lilith Zero can intercept every tool call made by coding agents directly in your IDE or terminal — no MCP proxy required. Hooks fire before each tool execution and enforce the same policy engine.
+
+| Integration | Hook format | Session scope |
+| :--- | :--- | :--- |
+| **VS Code Copilot** (agent mode) | `--format vscode` | Per VS Code session — taint persists across chat reloads and restarts |
+| **gh copilot CLI** | `--format copilot` | Per CLI invocation — taint persists within a session |
+| **Claude Code** | `--format claude` | Per session |
+
+See **[examples/SETUP.md](examples/SETUP.md)** for step-by-step setup and **[examples/vscode/TOOLS.md](examples/vscode/TOOLS.md)** / **[examples/gh-copilot/TOOLS.md](examples/gh-copilot/TOOLS.md)** for the tool name reference.
+
+### 7. Examples
 Full integration examples are available in the `examples/` directory:
-- **[LangChain Agent](examples/langchain_agent)**: Complete ReAct agent demonstrating static rules, taint tracking, and logic exceptions.
-- **[ReAct Agent](examples/react_agent_demo)**: Minimalist demonstration of security middleware.
+- **[VS Code Copilot](examples/vscode)**: Agent mode hooks with static and taint-tracking policies.
+- **[gh copilot CLI](examples/gh-copilot)**: Terminal agent hooks with lethal-trifecta protection.
+- **[LangChain Agent](examples/python/langchain)**: Complete ReAct agent demonstrating static rules, taint tracking, and logic exceptions.
 
 ---
 
