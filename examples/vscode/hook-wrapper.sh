@@ -22,13 +22,15 @@ log_debug() { [ "$DEBUG" = "1" ] && printf '[lilith-zero] %s\n' "$*" >&2 || true
 
 deny() {
     local reason="${1:-internal error}"
+    local event="${LILITH_ZERO_EVENT:-PreToolUse}"  # use validated event name, not hardcoded
     local escaped; escaped=$(printf '%s' "$reason" | sed 's/\\/\\\\/g; s/"/\\"/g')
-    printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"%s"}}\n' "$escaped"
+    printf '{"hookSpecificOutput":{"hookEventName":"%s","permissionDecision":"deny","permissionDecisionReason":"%s"}}\n' "$event" "$escaped"
     exit 0
 }
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-GIT_ROOT="$(cd "$SCRIPT_DIR" && git rev-parse --show-toplevel 2>/dev/null || echo "$SCRIPT_DIR/../..")"
+# Use pwd for a canonical absolute path even when git is unavailable
+GIT_ROOT="$(cd "$SCRIPT_DIR" && git rev-parse --show-toplevel 2>/dev/null || (cd "$SCRIPT_DIR/../.." && pwd))"
 
 # --- Find binary ---
 LILITH_BIN="${LILITH_ZERO_BIN:-}"

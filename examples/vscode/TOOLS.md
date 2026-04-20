@@ -77,7 +77,7 @@ Enable debug in `examples/vscode/hooks.json`:
 "LILITH_ZERO_DEBUG": "1"
 ```
 Then check **VS Code Output → GitHub Copilot** panel. Every hook invocation logs:
-```
+```text
 [lilith-zero] DEBUG event=PreToolUse tool=<EXACT_NAME> session=...
 [lilith-zero] DEBUG stdin: {"tool_name":"<EXACT_NAME>", ...}
 ```

@@ -569,17 +569,8 @@ async fn run_hook(
                 }
             };
 
-            // Event priority: --event flag > hookEventName in payload > inferred from shape.
-            let inferred = vscode_input.hook_event_name.as_deref().unwrap_or_else(|| {
-                if vscode_input.tool_output.is_some() {
-                    "PostToolUse"
-                } else if vscode_input.tool_name.is_some() {
-                    "PreToolUse"
-                } else {
-                    "SessionStart"
-                }
-            });
-            let event = event_override.as_deref().unwrap_or(inferred);
+            // Single source of truth: event priority = --event flag > hookEventName > inferred.
+            let event = vscode_input.resolve_event(event_override.as_deref());
 
             if debug {
                 eprintln!(

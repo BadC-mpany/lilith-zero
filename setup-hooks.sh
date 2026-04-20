@@ -21,9 +21,11 @@ echo ""; echo "━━━ Lilith Zero Hook Setup ━━━"; echo ""
 
 # 1. Build
 echo "Step 1/4  Build"
-(cd "$CRATE_DIR" && cargo build 2>&1) | grep -E "^(   Compiling|    Finished|error)" || true
+if ! (cd "$CRATE_DIR" && cargo build 2>&1 | grep -E "^(   Compiling|    Finished|error)"); then
+    echo "Build failed"; exit 1
+fi
 BINARY="$CRATE_DIR/target/debug/lilith-zero"
-[ ! -x "$BINARY" ] && { echo "Build failed"; exit 1; }
+[ ! -x "$BINARY" ] && { echo "Build produced no binary"; exit 1; }
 ok "Built: $BINARY"
 
 # 2. Install to PATH
@@ -90,7 +92,8 @@ if [ -f "$COPILOT_CONFIG" ]; then
 import json
 with open("$COPILOT_CONFIG") as f: config = json.load(f)
 w = "$HOOKS_DIR/hook-wrapper.sh"
-h = lambda ev: {"type":"command","bash":w,"env":{"LILITH_ZERO_EVENT":ev},"timeoutSec":10}
+p = "$POLICY_DEST"
+h = lambda ev: {"type":"command","bash":w,"env":{"LILITH_ZERO_EVENT":ev,"LILITH_ZERO_POLICY":p},"timeoutSec":10}
 config["hooks"] = {"preToolUse":[h("preToolUse")],"postToolUse":[h("postToolUse")]}
 with open("$COPILOT_CONFIG","w") as f: json.dump(config,f,indent=2)
 PYEOF

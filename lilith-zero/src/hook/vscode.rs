@@ -98,13 +98,18 @@ impl VsCodeHookInput {
     /// Normalize to internal [`super::HookInput`].
     /// Fills in missing `sessionId` and `hookEventName` using fallbacks.
     pub fn to_hook_input(&self) -> super::HookInput {
+        // Filter out empty strings before falling back — VS Code may send "" for omitted fields.
         let session_id = self
             .session_id
-            .clone()
+            .as_deref()
+            .filter(|s| !s.trim().is_empty())
+            .map(|s| s.to_string())
             .unwrap_or_else(|| super::copilot::derive_session_id(&self.cwd));
         let hook_event_name = self
             .hook_event_name
-            .clone()
+            .as_deref()
+            .filter(|s| !s.trim().is_empty())
+            .map(|s| s.to_string())
             .unwrap_or_else(|| self.infer_event_name().to_string());
         super::HookInput {
             session_id,
@@ -116,7 +121,7 @@ impl VsCodeHookInput {
     }
 
     /// Infer event type from payload shape when `hookEventName` is absent.
-    fn infer_event_name(&self) -> &'static str {
+    pub fn infer_event_name(&self) -> &'static str {
         if self.tool_output.is_some() {
             "PostToolUse"
         } else if self.tool_name.is_some() {
@@ -124,6 +129,18 @@ impl VsCodeHookInput {
         } else {
             "SessionStart"
         }
+    }
+
+    /// Resolve the effective event name: `--event` override → payload field → inferred.
+    /// Single source of truth used by both `to_hook_input` and the `main.rs` dispatch.
+    pub fn resolve_event<'a>(&'a self, event_override: Option<&'a str>) -> &'a str {
+        if let Some(ev) = event_override {
+            return ev;
+        }
+        self.hook_event_name
+            .as_deref()
+            .filter(|s| !s.trim().is_empty())
+            .unwrap_or_else(|| self.infer_event_name())
     }
 }
 

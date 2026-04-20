@@ -1,16 +1,4 @@
 {
-  "_usage": [
-    "Point VS Code at this file via:",
-    "  settings.json → 'chat.hookFilesLocations': ['/absolute/path/to/examples/vscode/hooks.json']",
-    "  and:           'chat.useCustomAgentHooks': true",
-    "",
-    "OR copy .github/hooks/hooks.json to your project root's .github/hooks/ directory.",
-    "",
-    "Event names use PascalCase (PreToolUse, PostToolUse) for VS Code Copilot sidebar.",
-    "Output uses the hookSpecificOutput wrapper (--format vscode).",
-    "",
-    "Set LILITH_ZERO_BIN to the absolute path of your built binary before use."
-  ],
   "version": 1,
   "hooks": {
     "PreToolUse": [
@@ -19,9 +7,7 @@
         "command": "examples/vscode/hook-wrapper.sh",
         "windows": "examples\\vscode\\hook-wrapper.ps1",
         "env": {
-          "LILITH_ZERO_EVENT": "PreToolUse",
-          "LILITH_ZERO_POLICY": "examples/vscode/policy-taint.yaml",
-          "LILITH_ZERO_DEBUG": "1"
+          "LILITH_ZERO_EVENT": "PreToolUse"
         },
         "timeout": 10
       }
@@ -32,8 +18,7 @@
         "command": "examples/vscode/hook-wrapper.sh",
         "windows": "examples\\vscode\\hook-wrapper.ps1",
         "env": {
-          "LILITH_ZERO_EVENT": "PostToolUse",
-          "LILITH_ZERO_POLICY": "examples/vscode/policy-taint.yaml"
+          "LILITH_ZERO_EVENT": "PostToolUse"
         },
         "timeout": 10
       }
@@ -44,8 +29,7 @@
         "command": "examples/vscode/hook-wrapper.sh",
         "windows": "examples\\vscode\\hook-wrapper.ps1",
         "env": {
-          "LILITH_ZERO_EVENT": "SessionStart",
-          "LILITH_ZERO_POLICY": "examples/vscode/policy-taint.yaml"
+          "LILITH_ZERO_EVENT": "SessionStart"
         },
         "timeout": 5
       }
@@ -56,8 +40,7 @@
         "command": "examples/vscode/hook-wrapper.sh",
         "windows": "examples\\vscode\\hook-wrapper.ps1",
         "env": {
-          "LILITH_ZERO_EVENT": "SessionEnd",
-          "LILITH_ZERO_POLICY": "examples/vscode/policy-taint.yaml"
+          "LILITH_ZERO_EVENT": "SessionEnd"
         },
         "timeout": 5
       }
