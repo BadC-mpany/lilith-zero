@@ -23,16 +23,16 @@
 
 Lilith Zero is a high-performance security runtime that mitigates data exfiltration and unauthorized tool invocation in LLM-based agent systems. It interposes at the transport layer, enforcing security invariants through deterministic policy evaluation and strictly framed execution.
 
-OS, framework, and language agnostic — uniform security primitives across all implementation environments.
+OS, framework, and language agnostic: uniform security primitives across all implementation environments.
 
 ---
 
 ## Technical Fundamentals
 
-- **Fail-Closed Architecture** — defaults to `DENY`. Missing policy, parse error, or internal fault → all traffic blocked.
-- **Zero-Trust Transport** — stdio and network payloads treated as potentially malicious; strict `Content-Length` framing prevents JSON smuggling.
-- **Type-Safe Invariants** — Rust type system makes invalid security states (e.g. unverified taint propagation) unrepresentable at compile time.
-- **Deterministic Classification** — tool classes are declared explicitly in policy; no runtime heuristics.
+- **Fail-Closed Architecture**: defaults to `DENY`. Missing policy, parse error, or internal fault → all traffic blocked.
+- **Zero-Trust Transport**: stdio and network payloads treated as potentially malicious; strict `Content-Length` framing prevents JSON smuggling.
+- **Type-Safe Invariants**: Rust type system makes invalid security states (e.g. unverified taint propagation) unrepresentable at compile time.
+- **Deterministic Classification**: tool classes are declared explicitly in policy; no runtime heuristics.
 
 ---
 
@@ -66,11 +66,11 @@ graph LR
         Coord --> Proc["Process Supervisor"]
     end
 
-    Proc -->|stdio| Tool["MCP Tool Server"]
-    Agent -.->|Streamable HTTP| Tool
+    Proc -->|stdio| ToolLocal["MCP Server &lpar;local&rpar;"]
+    Coord -.->|Streamable HTTP| ToolRemote["MCP Server &lpar;remote&rpar;"]
 ```
 
-**Data flow (stdio mode):** Agent → Codec (framing + size limits) → Session Coordinator → Policy Engine → allow: forward to child / deny: JSON-RPC error back to agent. Downstream responses pass through `OutputTransforms` before reaching the agent.
+The agent always communicates with Lilith Zero over stdio: the transport setting only changes how Lilith Zero connects *upstream*: spawning a local child process (stdio mode) or acting as an HTTP client to a remote MCP server (Streamable HTTP mode). Policy enforcement, taint tracking, and audit logging apply in both cases.
 
 ### Components
 
@@ -87,7 +87,7 @@ graph LR
 
 ## Agent Integrations
 
-All adapters share the same policy engine, taint tracker, and audit layer — only the I/O contract differs.
+All adapters share the same policy engine, taint tracker, and audit layer: only the I/O contract differs.
 
 ### Claude Code
 
@@ -121,7 +121,7 @@ See `examples/gh-copilot/` for complete policy examples (`bash`, `view`, `rg`, `
 
 ### VS Code Copilot Sidebar
 
-Event type is inferred from the payload — no `--event` flag required.
+Event type is inferred from the payload: no `--event` flag required.
 
 **`.vscode/settings.json`**:
 ```json
@@ -140,10 +140,10 @@ See `examples/vscode/` (`editFiles`, `runTerminalCommand`, `#fetch`, `#codebase`
 REST server implementing the Microsoft Copilot Studio External Threat Detection API.
 
 ```bash
-# Dev — no auth
+# Dev: no auth
 lilith-zero serve --bind 127.0.0.1:8080 --auth-mode none --policy policy.yaml
 
-# Production — Microsoft Entra ID (RS256)
+# Production: Microsoft Entra ID (RS256)
 lilith-zero serve --bind 0.0.0.0:8443 \
   --auth-mode entra \
   --entra-tenant-id <TENANT_GUID> \
@@ -233,7 +233,7 @@ version: 1
 
 protect_lethal_trifecta: true   # auto-blocks ACCESS_PRIVATE + UNTRUSTED_SOURCE → EXFILTRATION
 
-# Declare tool classes explicitly — Lilith performs no heuristic inference.
+# Declare tool classes explicitly: Lilith performs no heuristic inference.
 tool_classes:
   curl:         [EXFILTRATION]
   send_email:   [EXFILTRATION]
@@ -255,12 +255,12 @@ taint_rules:
 resource_rules: []
 ```
 
-`protect_lethal_trifecta: true` injects a rule that blocks any tool declared as `EXFILTRATION` class when both `ACCESS_PRIVATE` **and** `UNTRUSTED_SOURCE` taints are simultaneously active. Tool class assignments are always explicit in the policy — no name-based inference.
+`protect_lethal_trifecta: true` injects a rule that blocks any tool declared as `EXFILTRATION` class when both `ACCESS_PRIVATE` **and** `UNTRUSTED_SOURCE` taints are simultaneously active. Tool class assignments are always explicit in the policy: no name-based inference.
 
 ### 3. Wire it to your agent
 
 ```bash
-# Claude Code — one-liner setup
+# Claude Code: one-liner setup
 echo '{"hooks":{"PreToolUse":[{"matcher":"","hooks":[{"type":"command","command":"lilith-zero hook --policy $(pwd)/policy.yaml"}]}]}}' \
   > .claude/settings.json
 ```
@@ -269,9 +269,9 @@ echo '{"hooks":{"PreToolUse":[{"matcher":"","hooks":[{"type":"command","command"
 
 | Variable | Description | Default |
 | :--- | :--- | :--- |
-| `LILITH_ZERO_FORCE_LETHAL_TRIFECTA` | Global override — enforces trifecta protection regardless of policy. | `false` |
+| `LILITH_ZERO_FORCE_LETHAL_TRIFECTA` | Global override: enforces trifecta protection regardless of policy. | `false` |
 | `LILITH_ZERO_SECURITY_LEVEL` | `audit_only` or `block_params`. | `block_params` |
-| `LILITH_ZERO_JWT_SECRET` | HMAC secret for external audience token verification. | — |
+| `LILITH_ZERO_JWT_SECRET` | HMAC secret for external audience token verification. |: |
 | `LOG_LEVEL` | `debug` / `info` / `warn` / `error`. | `info` |
 
 ---
@@ -280,7 +280,7 @@ echo '{"hooks":{"PreToolUse":[{"matcher":"","hooks":[{"type":"command","command"
 
 ### Audit Logs
 
-Every decision — ALLOW and DENY — emits a tamper-evident JSONL line to stderr:
+Every decision: ALLOW and DENY: emits a tamper-evident JSONL line to stderr:
 
 ```
 [AUDIT] <HMAC-SHA256-base64url> {"session_id":"…","timestamp":…,"event_type":"Decision","details":{"decision":"DENY","tool_name":"curl"}}
@@ -315,10 +315,10 @@ Multi-tool interactions from a single LLM reasoning step are grouped into unifie
 
 | Layer | Implementation | Status |
 | :--- | :--- | :--- |
-| **Formal Verification** | Kani Rust Verifier proofs — taint sanitization, overflow safety, session entropy | **Verified** |
-| **Fuzz Testing** | Cargo Fuzz — JSON-RPC codec and policy parser | **Active** |
+| **Formal Verification** | Kani Rust Verifier proofs: taint sanitization, overflow safety, session entropy | **Verified** |
+| **Fuzz Testing** | Cargo Fuzz: JSON-RPC codec and policy parser | **Active** |
 | **Static Analysis** | Clippy `-D warnings` + Cargo Audit supply chain | **Passing** |
-| **Red Teaming** | Python SDK hermetic test suite — prompt injection, payload malformation, policy bypass | **Passing** |
+| **Red Teaming** | Python SDK hermetic test suite: prompt injection, payload malformation, policy bypass | **Passing** |
 | **Type Safety** | Rust (memory safety) + `mypy --strict` (Python SDK) | **Enforced** |
 
 [View full SECURITY.md](SECURITY.md) for proof harnesses and audit logs.
