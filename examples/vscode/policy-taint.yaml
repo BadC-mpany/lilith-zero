@@ -41,6 +41,7 @@ static_rules:
   # Network: allowed UNLESS taint is active (see taint_rules)
   fetch: ALLOW
   "#fetch": ALLOW
+  fetch_webpage: ALLOW
 
   # Destructive / git: denied
   delete_file: DENY
@@ -65,6 +66,11 @@ taint_rules:
     error: "BLOCKED: web fetch denied — this session read a file. Start a new Copilot chat to use fetch."
 
   - tool: "#fetch"
+    action: CHECK_TAINT
+    required_taints: ["SENSITIVE_DATA"]
+    error: "BLOCKED: web fetch denied — this session read a file. Start a new Copilot chat to use fetch."
+
+  - tool: fetch_webpage
     action: CHECK_TAINT
     required_taints: ["SENSITIVE_DATA"]
     error: "BLOCKED: web fetch denied — this session read a file. Start a new Copilot chat to use fetch."

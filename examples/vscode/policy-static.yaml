@@ -1,64 +1,62 @@
-# Lilith Zero — Static Policy for VS Code Copilot sidebar agent mode
+# Lilith Zero — VS Code Copilot Static Policy
+# See TOOLS.md for the full tool name reference.
 #
-# ACTUAL tool names sent by VS Code (confirmed from hook logs — snake_case):
-#   read_file             — read file contents
-#   create_file           — create new file
-#   insert_edit_into_file — edit/patch existing file
-#   run_in_terminal       — run a terminal command
-#   run_vs_code_task      — run a VS Code task
-#   search                — text search in workspace
-#   find_files            — find files by name/pattern
-#   get_errors            — get linter/compiler errors
-#   fetch                 — web fetch
-#   #fetch                — alternative web fetch name
+# Tool names are snake_case as sent by VS Code (e.g. read_file, not readFile).
+# Both confirmed and documented variants are listed for robustness.
 #
-# NOTE: VS Code documentation says camelCase (readFile, editFiles) but the
-# ACTUAL payload uses snake_case. Both are listed here for compatibility.
-#
-# Tools not listed → DENIED (fail-closed default).
+# Unrecognised tools → DENIED (fail-closed default).
+# Add "LILITH_ZERO_DEBUG": "1" to hooks.json to discover new tool names.
 
-id: vscode-static-demo
-customer_id: enterprise-demo
-name: "VS Code Copilot — Static Allow/Deny Policy"
+id: vscode-static
+customer_id: enterprise
+name: "VS Code Copilot — Static Policy"
 version: 1
 
 static_rules:
-  # --- Read-only: always allow ---
-  read_file: ALLOW          # confirmed from logs
-  readFile: ALLOW           # camelCase alias (docs format)
-  search: ALLOW
+  # ── READ-ONLY ──────────────────────────────────────────────────────────────
+  read_file: ALLOW
+  readFile: ALLOW           # camelCase alias (spec format)
   find_files: ALLOW
-  searchFiles: ALLOW
+  file_search: ALLOW
+  search: ALLOW
+  grep_search: ALLOW
+  semantic_search: ALLOW
   list_directory: ALLOW
   listDirectory: ALLOW
   get_errors: ALLOW
+  get_diagnostics: ALLOW
   get_changed_files: ALLOW
 
-  # --- File writes: allow ---
-  create_file: ALLOW
-  createFile: ALLOW
+  # ── FILE WRITES ────────────────────────────────────────────────────────────
   insert_edit_into_file: ALLOW
-  editFiles: ALLOW
-  write_file: ALLOW
+  editFiles: ALLOW          # camelCase alias
+  edit_file: ALLOW
+  create_file: ALLOW
+  createFile: ALLOW         # camelCase alias
+  create_directory: ALLOW
 
-  # --- Terminal: DENY ---
-  run_in_terminal: DENY
-  runTerminalCommand: DENY
-  run_vs_code_task: DENY
-
-  # --- Destructive: DENY ---
+  # ── FILE DELETES (destructive — deny) ─────────────────────────────────────
   delete_file: DENY
   deleteFile: DENY
 
-  # --- Network: allow (tainted in other policies) ---
+  # ── TERMINAL (deny — highest risk) ────────────────────────────────────────
+  run_in_terminal: DENY
+  runTerminalCommand: DENY  # camelCase alias
+  run_vs_code_task: DENY
+
+  # ── NETWORK ────────────────────────────────────────────────────────────────
+  fetch_webpage: ALLOW
   fetch: ALLOW
   "#fetch": ALLOW
 
-  # --- Git/GitHub: DENY ---
+  # ── GIT / VERSION CONTROL (deny) ──────────────────────────────────────────
   run_git_command: DENY
   push_to_github: DENY
   pushToGitHub: DENY
   create_pull_request: DENY
+
+  # ── BROWSER (experimental, deny by default) ───────────────────────────────
+  browser_action: DENY
 
 taint_rules: []
 resource_rules: []

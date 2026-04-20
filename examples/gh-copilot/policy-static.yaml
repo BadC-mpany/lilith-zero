@@ -1,30 +1,41 @@
-# Lilith Zero — Static Policy for gh copilot CLI
+# Lilith Zero — gh copilot CLI Static Policy
+# See TOOLS.md for the full tool name reference.
 #
-# Complete tool names used by gh copilot CLI (confirmed by observation):
+# gh copilot CLI routes almost ALL operations through `bash`:
+#   file writes, curl, git push, rm -rf — everything.
+# Denying bash = safe read-only mode.
 #
-#   bash          — ALL shell execution (ls, curl, git, writes, find, everything)
-#   view          — dedicated file read tool
-#   rg            — dedicated ripgrep search
-#   glob          — directory listing / glob-based search (fallback when bash blocked)
-#   report_intent — announces intent before acting (informational, no side effects)
-#
-# Strategy: allow safe read-only tools, deny all shell execution.
-# This blocks: file writes, curl/wget, git push, arbitrary commands.
+# Unrecognised tools → DENIED (fail-closed default).
 
-id: gh-copilot-static-demo
-customer_id: enterprise-demo
-name: "gh copilot — Static Allow/Deny Policy"
+id: gh-copilot-static
+customer_id: enterprise
+name: "gh copilot CLI — Static Policy"
 version: 1
 
 static_rules:
-  # Safe read-only tools — always allow
-  view:          ALLOW   # read file contents
-  rg:            ALLOW   # ripgrep search
-  glob:          ALLOW   # directory listing (fallback when bash blocked)
-  report_intent: ALLOW   # informational only
+  # ── READ-ONLY: always allow ────────────────────────────────────────────────
+  view:          ALLOW   # read file contents (confirmed)
+  rg:            ALLOW   # ripgrep search (confirmed)
+  glob:          ALLOW   # directory listing (confirmed)
+  grep:          ALLOW   # text search (alternative to rg)
+  report_intent: ALLOW   # informational only, no side effects (confirmed)
+  think:         ALLOW   # internal reasoning, no external effect
 
-  # Shell execution — deny everything that runs in a shell
-  bash:          DENY    # blocks ls, curl, git, file writes, and everything else
+  # ── SHELL: deny (blocks ALL destructive ops) ──────────────────────────────
+  bash:          DENY    # ls, curl, git, file writes — everything (confirmed)
+  powershell:    DENY    # Windows equivalent
+
+  # ── FILE OPS (dedicated tools, rarely used — bash handles most) ───────────
+  edit:          DENY
+  create:        DENY
+  apply_patch:   DENY
+
+  # ── NETWORK ────────────────────────────────────────────────────────────────
+  web_fetch:     DENY    # deny by default; ALLOW if web access is required
+
+  # ── AGENT / TASK ───────────────────────────────────────────────────────────
+  task:          DENY    # sub-agent delegation — deny unless explicitly needed
+  ask_user:      ALLOW   # asking questions is safe
 
 taint_rules: []
 resource_rules: []
