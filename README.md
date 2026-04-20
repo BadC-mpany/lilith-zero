@@ -8,7 +8,7 @@
 
 [![CI](https://github.com/BadC-mpany/lilith-zero/actions/workflows/ci.yml/badge.svg)](https://github.com/BadC-mpany/lilith-zero/actions)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-0.1.3-green.svg)](https://github.com/BadC-mpany/lilith-zero/releases)
+[![Version](https://img.shields.io/badge/Version-0.2.0-green.svg)](https://github.com/BadC-mpany/lilith-zero/releases)
 
 <br/>
 
@@ -80,6 +80,132 @@ graph TD
 - **Session Coordinator**: An asynchronous actor based on the Tokio runtime, responsible for session state management and HMAC-signed token verification.
 - **Hardened Codec**: A framing layer implementing LSP-style headers to ensure unambiguous message boundaries across stdio streams.
 - **Policy Engine**: A deterministic evaluator that processes serialized policy definitions without the non-determinism of probabilistic models.
+
+---
+
+## Agent Integrations
+
+Lilith Zero ships purpose-built adapters for each major coding agent platform. All adapters share the same policy engine, taint tracker, and audit layer — only the I/O contract differs.
+
+### Claude Code
+
+Claude Code fires hooks on every tool call. Lilith Zero reads the JSON event from stdin, evaluates it against your policy, and signals the decision via exit code (`0` = allow, `2` = block).
+
+**`~/.claude/settings.json`** (or project `.claude/settings.json`):
+```json
+{
+  "hooks": {
+    "PreToolUse": [{
+      "matcher": "",
+      "hooks": [{"type": "command", "command": "lilith-zero hook --policy /path/to/policy.yaml"}]
+    }],
+    "PostToolUse": [{
+      "matcher": "",
+      "hooks": [{"type": "command", "command": "lilith-zero hook --policy /path/to/policy.yaml"}]
+    }]
+  }
+}
+```
+
+See `scripts/hooks.json` for a ready-to-use template.
+
+### GitHub Copilot CLI / Cloud Coding Agent
+
+Copilot passes events via stdin and reads a `{"permissionDecision":"allow"|"deny"}` JSON line from stdout. Exit code is always `0`; the decision is communicated through the JSON payload.
+
+**`~/.config/github-copilot/hooks.json`**:
+```json
+{
+  "preToolUse": {"command": "lilith-zero hook --format copilot --event preToolUse --policy /path/to/policy.yaml"},
+  "postToolUse": {"command": "lilith-zero hook --format copilot --event postToolUse --policy /path/to/policy.yaml"}
+}
+```
+
+See `examples/gh-copilot/` for complete policy examples using the real Copilot tool names (`bash`, `view`, `rg`, `glob`, `report_intent`).
+
+### VS Code Copilot Sidebar (Agent Mode)
+
+VS Code agent mode uses a `hookSpecificOutput` wrapper. Event type is inferred from the JSON payload — no `--event` flag required.
+
+**`.vscode/settings.json`** (workspace) or User Settings:
+```json
+{
+  "github.copilot.chat.agent.hooks": {
+    "PreToolUse": {"command": "lilith-zero hook --format vscode --policy /path/to/policy.yaml"},
+    "PostToolUse": {"command": "lilith-zero hook --format vscode --policy /path/to/policy.yaml"}
+  }
+}
+```
+
+See `examples/vscode/` for complete setup including all built-in VS Code tool names (`editFiles`, `runTerminalCommand`, `#fetch`, `#codebase`, MCP tools).
+
+### Copilot Studio Webhook
+
+For enterprise deployments, Lilith Zero can run as a REST webhook server implementing the Microsoft Copilot Studio External Threat Detection API.
+
+```bash
+# Development (no auth)
+lilith-zero serve --bind 127.0.0.1:8080 --auth-mode none --policy policy.yaml
+
+# Production with Microsoft Entra ID
+lilith-zero serve --bind 0.0.0.0:8443 \
+  --auth-mode entra \
+  --entra-tenant-id <TENANT_GUID> \
+  --entra-audience https://security.contoso.com \
+  --policy policy.yaml
+```
+
+Endpoints: `POST /validate` (health check), `POST /analyze-tool-execution` (policy evaluation).
+
+### Session Persistence
+
+Hook mode maintains taint state **across invocations** within a session. State is stored in `~/.lilith/sessions/<session-id>.json` with cross-process file locking, so taints accumulated during one tool call are visible to the next — even if the binary is restarted between calls.
+
+---
+
+## Transports
+
+### stdio (default)
+Wraps a child MCP server process. Lilith Zero sits between the agent and the server on stdin/stdout.
+
+```bash
+lilith-zero run --upstream-cmd "python mcp_server.py" --policy policy.yaml
+# or short form (backward compatible):
+lilith-zero --upstream-cmd "python mcp_server.py" --policy policy.yaml
+```
+
+### Streamable HTTP (MCP 2025-11-25)
+Connects to a remote MCP server over Streamable HTTP. No child process is spawned.
+
+```bash
+lilith-zero run --transport http --upstream-url http://localhost:9000/mcp --policy policy.yaml
+```
+
+---
+
+## SDKs
+
+### Python SDK
+```bash
+pip install lilith-zero          # auto-downloads the correct binary for your platform
+```
+```python
+from lilith_zero import Lilith
+
+async with Lilith("python mcp_server.py", policy="policy.yaml") as lz:
+    result = await lz.call_tool("read_file", {"path": "/data/report.txt"})
+```
+
+### TypeScript / Node.js SDK
+```bash
+npm install @badcompany/lilith-zero
+```
+```typescript
+import { Lilith } from "@badcompany/lilith-zero";
+
+await using lz = new Lilith({ upstream: "node mcp_server.js", policy: "policy.yaml" });
+const result = await lz.callTool("read_file", { path: "/data/report.txt" });
+```
 
 ---
 
