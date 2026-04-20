@@ -348,7 +348,10 @@ async fn test_wildcard_resource_access() {
 
 // ─── Rate Limiting ──────────────────────────────────────────────────────────
 
-fn make_policy_with_rate_limit(max_session: Option<u32>, max_per_min: Option<u32>) -> PolicyDefinition {
+fn make_policy_with_rate_limit(
+    max_session: Option<u32>,
+    max_per_min: Option<u32>,
+) -> PolicyDefinition {
     let mut static_rules = HashMap::new();
     static_rules.insert("ping".to_string(), "ALLOW".to_string());
     PolicyDefinition {
@@ -399,7 +402,11 @@ async fn test_rate_limit_session_cap() {
     let ev = tool_event_id("ping", "3", "sess");
     match core.evaluate(ev).await {
         SecurityDecision::Deny { reason, .. } => {
-            assert!(reason.contains("Session call limit exceeded"), "got: {}", reason);
+            assert!(
+                reason.contains("Session call limit exceeded"),
+                "got: {}",
+                reason
+            );
         }
         d => panic!("Expected deny on session limit, got {:?}", d),
     }
@@ -420,7 +427,11 @@ async fn test_rate_limit_per_minute_cap() {
     let ev = tool_event_id("ping", "4", "sess");
     match core.evaluate(ev).await {
         SecurityDecision::Deny { reason, .. } => {
-            assert!(reason.contains("Per-minute call limit exceeded"), "got: {}", reason);
+            assert!(
+                reason.contains("Per-minute call limit exceeded"),
+                "got: {}",
+                reason
+            );
         }
         d => panic!("Expected per-minute deny, got {:?}", d),
     }
@@ -563,7 +574,11 @@ async fn test_resource_path_arg_blocks_etc() {
     let ev = tool_event_with_path("read_file", "/etc/passwd");
     match core.evaluate(ev).await {
         SecurityDecision::Deny { reason, .. } => {
-            assert!(reason.contains("blocked by resource rule"), "got: {}", reason);
+            assert!(
+                reason.contains("blocked by resource rule"),
+                "got: {}",
+                reason
+            );
         }
         d => panic!("Expected deny for /etc/passwd, got {:?}", d),
     }
@@ -578,7 +593,11 @@ async fn test_resource_path_arg_blocks_dotenv() {
     let ev = tool_event_with_path("read_file", "/home/user/project/.env");
     match core.evaluate(ev).await {
         SecurityDecision::Deny { reason, .. } => {
-            assert!(reason.contains("blocked by resource rule"), "got: {}", reason);
+            assert!(
+                reason.contains("blocked by resource rule"),
+                "got: {}",
+                reason
+            );
         }
         d => panic!("Expected deny for .env, got {:?}", d),
     }
@@ -593,7 +612,11 @@ async fn test_resource_path_arg_strips_file_uri_prefix() {
     let ev = tool_event_with_path("read_file", "file:///etc/shadow");
     match core.evaluate(ev).await {
         SecurityDecision::Deny { reason, .. } => {
-            assert!(reason.contains("blocked by resource rule"), "got: {}", reason);
+            assert!(
+                reason.contains("blocked by resource rule"),
+                "got: {}",
+                reason
+            );
         }
         d => panic!("Expected deny for file:///etc/shadow, got {:?}", d),
     }
@@ -607,6 +630,9 @@ async fn test_resource_path_arg_allows_home() {
 
     let ev = tool_event_with_path("read_file", "/home/user/report.txt");
     if let SecurityDecision::Deny { reason, .. } = core.evaluate(ev).await {
-        panic!("Expected allow for /home/user/report.txt, got deny: {}", reason);
+        panic!(
+            "Expected allow for /home/user/report.txt, got deny: {}",
+            reason
+        );
     }
 }

@@ -103,16 +103,10 @@ impl OpenClawHookInput {
             .session_id
             .as_deref()
             .filter(|s| !s.trim().is_empty())
-            .or_else(|| {
-                self.session_id
-                    .as_deref()
-                    .filter(|s| !s.trim().is_empty())
-            })
+            .or_else(|| self.session_id.as_deref().filter(|s| !s.trim().is_empty()))
             .map(|s| s.to_string())
             .unwrap_or_else(|| {
-                super::copilot::derive_session_id(
-                    self.cwd.as_deref().unwrap_or("openclaw-default"),
-                )
+                super::copilot::derive_session_id(self.cwd.as_deref().unwrap_or("openclaw-default"))
             })
     }
 
@@ -169,10 +163,9 @@ mod tests {
 
     #[test]
     fn test_session_id_fallback_to_top_level() {
-        let input: OpenClawHookInput = serde_json::from_str(
-            r#"{"sessionId":"top123","toolName":"read_file","toolInput":{}}"#,
-        )
-        .unwrap();
+        let input: OpenClawHookInput =
+            serde_json::from_str(r#"{"sessionId":"top123","toolName":"read_file","toolInput":{}}"#)
+                .unwrap();
         assert_eq!(input.resolve_session_id(), "top123");
     }
 

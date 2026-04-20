@@ -201,8 +201,18 @@ impl PolicyEvaluator {
         }
 
         const PATH_KEYS: &[&str] = &[
-            "path", "file", "uri", "url", "filename", "filepath",
-            "dir", "directory", "source", "dest", "destination", "target",
+            "path",
+            "file",
+            "uri",
+            "url",
+            "filename",
+            "filepath",
+            "dir",
+            "directory",
+            "source",
+            "dest",
+            "destination",
+            "target",
         ];
 
         let mut paths: Vec<String> = Vec::new();

@@ -126,9 +126,10 @@ impl HookHandler {
         // Unique per-invocation ID for replay nonce tracking.  Prefer the adapter-supplied
         // tool_use_id (e.g. OpenClaw's `toolUseId`); fall back to current nanosecond timestamp
         // so that replay protection never blocks legitimate sequential hook calls.
-        let req_id = input.request_id.clone().unwrap_or_else(|| {
-            crate::utils::time::now_ms().to_string()
-        });
+        let req_id = input
+            .request_id
+            .clone()
+            .unwrap_or_else(|| crate::utils::time::now_ms().to_string());
 
         let event = SecurityEvent::ToolRequest {
             request_id: serde_json::Value::String(req_id),

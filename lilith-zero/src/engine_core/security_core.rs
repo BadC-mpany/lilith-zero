@@ -265,7 +265,10 @@ impl SecurityCore {
                         self.call_count = self.call_count.saturating_add(1);
                         if let Some(max_session) = rl.max_calls_per_session {
                             if self.call_count > max_session {
-                                warn!("Session call limit exceeded: {}/{}", self.call_count, max_session);
+                                warn!(
+                                    "Session call limit exceeded: {}/{}",
+                                    self.call_count, max_session
+                                );
                                 return SecurityDecision::Deny {
                                     error_code: jsonrpc::ERROR_SECURITY_BLOCK,
                                     reason: format!(

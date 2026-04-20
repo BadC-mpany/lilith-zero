@@ -116,9 +116,7 @@ fn test_openclaw_denied_tool_exits_two() {
     let payload = r#"{"event":"preToolUse","sessionId":"oc-e2e-deny-1","toolName":"bash","toolInput":{"cmd":"id"}}"#;
     let _ = std::fs::remove_file(session_file("oc-e2e-deny-1"));
 
-    run_openclaw(payload, policy.path())
-        .failure()
-        .code(2);
+    run_openclaw(payload, policy.path()).failure().code(2);
 }
 
 /// An unknown tool must exit 2 (fail-closed — not in static_rules → DENY).
@@ -128,9 +126,7 @@ fn test_openclaw_unknown_tool_fail_closed() {
     let payload = r#"{"event":"preToolUse","sessionId":"oc-e2e-unknown-1","toolName":"unknown_mystery_tool","toolInput":{}}"#;
     let _ = std::fs::remove_file(session_file("oc-e2e-unknown-1"));
 
-    run_openclaw(payload, policy.path())
-        .failure()
-        .code(2);
+    run_openclaw(payload, policy.path()).failure().code(2);
 }
 
 // ── Resource path arg enforcement ─────────────────────────────────────────────
@@ -143,9 +139,7 @@ fn test_openclaw_path_traversal_etc_blocked() {
     let payload = r#"{"event":"preToolUse","sessionId":"oc-e2e-path-etc","toolName":"read_file","toolInput":{"path":"/etc/passwd"}}"#;
     let _ = std::fs::remove_file(session_file("oc-e2e-path-etc"));
 
-    run_openclaw(payload, policy.path())
-        .failure()
-        .code(2);
+    run_openclaw(payload, policy.path()).failure().code(2);
 }
 
 /// A tool call with a path argument ending in `.env` must exit 2.
@@ -156,9 +150,7 @@ fn test_openclaw_dotenv_path_blocked() {
     let payload = r#"{"event":"preToolUse","sessionId":"oc-e2e-path-env","toolName":"read_file","toolInput":{"path":"/home/user/project/.env"}}"#;
     let _ = std::fs::remove_file(session_file("oc-e2e-path-env"));
 
-    run_openclaw(payload, policy.path())
-        .failure()
-        .code(2);
+    run_openclaw(payload, policy.path()).failure().code(2);
 }
 
 /// A `file:///etc/shadow` URI is normalised to `/etc/shadow` and then blocked.
@@ -169,9 +161,7 @@ fn test_openclaw_file_uri_prefix_stripped_and_blocked() {
     let payload = r#"{"event":"preToolUse","sessionId":"oc-e2e-file-uri","toolName":"read_file","toolInput":{"path":"file:///etc/shadow"}}"#;
     let _ = std::fs::remove_file(session_file("oc-e2e-file-uri"));
 
-    run_openclaw(payload, policy.path())
-        .failure()
-        .code(2);
+    run_openclaw(payload, policy.path()).failure().code(2);
 }
 
 /// A safe path under /home/ must exit 0 (no resource rule blocks it).
@@ -289,9 +279,7 @@ fn test_openclaw_sessions_are_isolated() {
     let p_a4 = format!(
         r#"{{"event":"preToolUse","sessionId":"{session_a}","toolName":"list_directory","toolInput":{{"path":"/home/user/a4"}}}}"#
     );
-    run_openclaw(&p_a4, policy.path())
-        .failure()
-        .code(2);
+    run_openclaw(&p_a4, policy.path()).failure().code(2);
 
     // Session B call 1 → still allowed (fresh session, independent counter).
     let p_b1 = format!(

@@ -287,10 +287,18 @@ pub struct PolicyDefinition {
 #[serde(rename_all = "camelCase")]
 pub struct RateLimit {
     /// Maximum number of tool calls for the entire session lifetime.
-    #[serde(alias = "max_calls_per_session", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        alias = "max_calls_per_session",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub max_calls_per_session: Option<u32>,
     /// Maximum number of tool calls within any rolling 60-second window.
-    #[serde(alias = "max_calls_per_minute", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        alias = "max_calls_per_minute",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub max_calls_per_minute: Option<u32>,
 }
 
