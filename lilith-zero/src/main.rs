@@ -538,7 +538,12 @@ async fn run_hook(
         // Covers all VS Code tools: editFiles, runTerminalCommand, #fetch, MCP, …
         // ----------------------------------------------------------------
         HookFormat::VsCode => {
+            let debug = std::env::var("LILITH_ZERO_DEBUG").as_deref() == Ok("1");
+
             if buffer.trim().is_empty() {
+                if debug {
+                    eprintln!("[lilith-zero] DEBUG: empty stdin");
+                }
                 println!(
                     "{}",
                     VsCodePreToolOutput::deny("no input received on stdin").to_json_line()
@@ -546,9 +551,16 @@ async fn run_hook(
                 return Ok(());
             }
 
+            if debug {
+                eprintln!("[lilith-zero] DEBUG stdin: {buffer}");
+            }
+
             let vscode_input: VsCodeHookInput = match serde_json::from_str(&buffer) {
                 Ok(v) => v,
                 Err(e) => {
+                    if debug {
+                        eprintln!("[lilith-zero] DEBUG parse error: {e}");
+                    }
                     println!(
                         "{}",
                         VsCodePreToolOutput::deny(format!("JSON parse error: {e}")).to_json_line()
@@ -557,10 +569,25 @@ async fn run_hook(
                 }
             };
 
-            // --event overrides the hookEventName in the payload if provided.
-            let event = event_override
-                .as_deref()
-                .unwrap_or(&vscode_input.hook_event_name);
+            // Event priority: --event flag > hookEventName in payload > inferred from shape.
+            let inferred = vscode_input.hook_event_name.as_deref().unwrap_or_else(|| {
+                if vscode_input.tool_output.is_some() {
+                    "PostToolUse"
+                } else if vscode_input.tool_name.is_some() {
+                    "PreToolUse"
+                } else {
+                    "SessionStart"
+                }
+            });
+            let event = event_override.as_deref().unwrap_or(inferred);
+
+            if debug {
+                eprintln!(
+                    "[lilith-zero] DEBUG event={event} tool={} session={}",
+                    vscode_input.tool_name.as_deref().unwrap_or("-"),
+                    vscode_input.session_id.as_deref().unwrap_or("(derived)")
+                );
+            }
 
             // Non-tool events: VS Code ignores our output but we write a valid response.
             let is_pre_tool = event == "PreToolUse";

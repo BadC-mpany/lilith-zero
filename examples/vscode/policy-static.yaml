@@ -1,7 +1,19 @@
 # Lilith Zero — Static Policy for VS Code Copilot sidebar agent mode
 #
-# This policy demonstrates static allow/deny rules for VS Code built-in tools.
-# VS Code tool names differ from shell tool names — they are CamelCase.
+# ACTUAL tool names sent by VS Code (confirmed from hook logs — snake_case):
+#   read_file             — read file contents
+#   create_file           — create new file
+#   insert_edit_into_file — edit/patch existing file
+#   run_in_terminal       — run a terminal command
+#   run_vs_code_task      — run a VS Code task
+#   search                — text search in workspace
+#   find_files            — find files by name/pattern
+#   get_errors            — get linter/compiler errors
+#   fetch                 — web fetch
+#   #fetch                — alternative web fetch name
+#
+# NOTE: VS Code documentation says camelCase (readFile, editFiles) but the
+# ACTUAL payload uses snake_case. Both are listed here for compatibility.
 #
 # Tools not listed → DENIED (fail-closed default).
 
@@ -11,33 +23,42 @@ name: "VS Code Copilot — Static Allow/Deny Policy"
 version: 1
 
 static_rules:
-  # --- VS Code built-in file tools ---
-  editFiles: ALLOW          # edit existing files
-  createFile: ALLOW         # create new files
-  readFile: ALLOW           # read file contents
-  searchFiles: ALLOW        # search within files
-  listDirectory: ALLOW      # list directory contents
+  # --- Read-only: always allow ---
+  read_file: ALLOW          # confirmed from logs
+  readFile: ALLOW           # camelCase alias (docs format)
+  search: ALLOW
+  find_files: ALLOW
+  searchFiles: ALLOW
+  list_directory: ALLOW
+  listDirectory: ALLOW
+  get_errors: ALLOW
+  get_changed_files: ALLOW
 
-  # DENY destructive file operations
-  deleteFile: DENY
-  moveFile: DENY
+  # --- File writes: allow ---
+  create_file: ALLOW
+  createFile: ALLOW
+  insert_edit_into_file: ALLOW
+  editFiles: ALLOW
+  write_file: ALLOW
 
-  # --- Terminal ---
-  # DENY all terminal command execution (highest risk)
+  # --- Terminal: DENY ---
+  run_in_terminal: DENY
   runTerminalCommand: DENY
+  run_vs_code_task: DENY
 
-  # --- Network ---
-  "#fetch": ALLOW           # web fetch/search (allowed by default, tainted in other policies)
+  # --- Destructive: DENY ---
+  delete_file: DENY
+  deleteFile: DENY
 
-  # --- Version Control ---
-  pushToGitHub: DENY        # never auto-push
-  createPullRequest: DENY   # no auto-PRs
+  # --- Network: allow (tainted in other policies) ---
+  fetch: ALLOW
+  "#fetch": ALLOW
 
-  # --- MCP tools (if any MCP servers are configured in VS Code) ---
-  # Add your MCP tool names here, e.g.:
-  # "github.create_issue": ALLOW
-  # "github.delete_repo": DENY
-  # "slack.send_message": DENY
+  # --- Git/GitHub: DENY ---
+  run_git_command: DENY
+  push_to_github: DENY
+  pushToGitHub: DENY
+  create_pull_request: DENY
 
 taint_rules: []
 resource_rules: []
