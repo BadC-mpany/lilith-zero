@@ -55,19 +55,19 @@ OS, framework, and language agnostic — uniform security primitives across all 
 ## System Architecture
 
 ```mermaid
-flowchart LR
-    A(["AI Agent / LLM"]) -- "stdio / HTTP" --> B
+graph LR
+    Agent["AI Agent / LLM"] -->|stdio| Codec
 
-    subgraph lz ["Lilith Zero (Rust)"]
-        B["Hardened Codec\n(LSP framing)"] --> C["Session Coordinator\n(Tokio actor)"]
-        C --> D["Policy Engine\n(deterministic)"]
-        C --> E["Taint Tracker\n(type-safe IFC)"]
-        C --> F["Audit Logger\n(HMAC-SHA256)"]
-        C --> G["Process Supervisor\n(OS-level)"]
+    subgraph lz["Lilith Zero &lpar;Rust&rpar;"]
+        Codec["Hardened Codec"] --> Coord["Session Coordinator"]
+        Coord --> Policy["Policy Engine"]
+        Coord --> Taint["Taint Tracker"]
+        Coord --> Audit["Audit Logger"]
+        Coord --> Proc["Process Supervisor"]
     end
 
-    G -- "stdio" --> H(["MCP Tool Server"])
-    A -. "Streamable HTTP" .-> H
+    Proc -->|stdio| Tool["MCP Tool Server"]
+    Agent -.->|Streamable HTTP| Tool
 ```
 
 **Data flow (stdio mode):** Agent → Codec (framing + size limits) → Session Coordinator → Policy Engine → allow: forward to child / deny: JSON-RPC error back to agent. Downstream responses pass through `OutputTransforms` before reaching the agent.
@@ -179,7 +179,8 @@ Connects to a remote MCP server; no child process spawned.
 
 ### Python
 ```bash
-pip install lilith-zero          # auto-downloads the correct binary for your platform
+uv add lilith-zero          # auto-downloads the correct binary for your platform
+# or: pip install lilith-zero
 ```
 ```python
 from lilith_zero import Lilith
@@ -190,12 +191,13 @@ async with Lilith("python mcp_server.py", policy="policy.yaml") as lz:
 
 ### TypeScript / Node.js
 ```bash
-npm install @badcompany/lilith-zero
+bun add @badcompany/lilith-zero
+# or: npm install @badcompany/lilith-zero
 ```
 ```typescript
 import { Lilith } from "@badcompany/lilith-zero";
 
-await using lz = new Lilith({ upstream: "node mcp_server.js", policy: "policy.yaml" });
+await using lz = new Lilith({ upstream: "bun mcp_server.ts", policy: "policy.yaml" });
 const result = await lz.callTool("read_file", { path: "/data/report.txt" });
 ```
 
@@ -207,7 +209,8 @@ const result = await lz.callTool("read_file", { path: "/data/report.txt" });
 
 **Python SDK** (manages the binary automatically):
 ```bash
-pip install lilith-zero
+uv add lilith-zero
+# or: pip install lilith-zero
 ```
 
 **Shell (Unix/macOS)**:
@@ -270,56 +273,6 @@ echo '{"hooks":{"PreToolUse":[{"matcher":"","hooks":[{"type":"command","command"
 | `LILITH_ZERO_SECURITY_LEVEL` | `audit_only` or `block_params`. | `block_params` |
 | `LILITH_ZERO_JWT_SECRET` | HMAC secret for external audience token verification. | — |
 | `LOG_LEVEL` | `debug` / `info` / `warn` / `error`. | `info` |
-        try:
-            # Authorized call
-            await az.call_tool("calculator", {"expression": "2+2"})
-            
-            # Blocked by Taint Tracking
-            data = await az.call_tool("read_customer_data", {"id": "123"})
-            await az.call_tool("export_analytics", {"data": data})
-            
-        except PolicyViolationError as e:
-            # Handle security interception
-            print(f"Policy Violation: {e}")
-
-if __name__ == "__main__":
-    import asyncio
-    asyncio.run(main())
-```
-
-### 5. Observability & Auditing
-
-**Audit Logs**
-Lilith Zero emits **cryptographically signed** audit logs to `stderr` (visible in agent logs).
-
-**Format**: `[AUDIT] <HMAC-SHA256 Signature> <JSON Payload>`
-
-**Example**:
-```log
-[AUDIT] 8f3...a1b {"session_id": "uuid", "event": "Decision", "decision": "DENY", "details": {...}}
-```
-This ensures non-repudiation. Even if the log file is tampered with, the signature will fail verification against the session's ephemeral secret (or a configured shared secret).
-
-**Telemetry Grouping**
-Lilith Zero integrates directly with the `lilith-telemetry` system. When run with a Flock telemetry link (e.g., `--telemetry-link`), it enables cross-process span propagation. This allows all multi-tool interactions originating from a single LLM reasoning step to be accurately traced and grouped into unified, logical context spans within your dashboard.
-
-### 6. IDE & CLI Agent Hooks
-
-Lilith Zero can intercept every tool call made by coding agents directly in your IDE or terminal — no MCP proxy required. Hooks fire before each tool execution and enforce the same policy engine.
-
-| Integration | Hook format | Session scope |
-| :--- | :--- | :--- |
-| **VS Code Copilot** (agent mode) | `--format vscode` | Per VS Code session — taint persists across chat reloads and restarts |
-| **gh copilot CLI** | `--format copilot` | Per CLI invocation — taint persists within a session |
-| **Claude Code** | `--format claude` | Per session |
-
-See **[examples/SETUP.md](examples/SETUP.md)** for step-by-step setup and **[examples/vscode/TOOLS.md](examples/vscode/TOOLS.md)** / **[examples/gh-copilot/TOOLS.md](examples/gh-copilot/TOOLS.md)** for the tool name reference.
-
-### 7. Examples
-Full integration examples are available in the `examples/` directory:
-- **[VS Code Copilot](examples/vscode)**: Agent mode hooks with static and taint-tracking policies.
-- **[gh copilot CLI](examples/gh-copilot)**: Terminal agent hooks with lethal-trifecta protection.
-- **[LangChain Agent](examples/python/langchain)**: Complete ReAct agent demonstrating static rules, taint tracking, and logic exceptions.
 
 ---
 
@@ -396,7 +349,7 @@ cargo build && cargo test --all-features
 cargo clippy --all-targets --all-features -- -D warnings
 
 # Python SDK (from sdk/)
-uv pip install -e ".[dev]" && python -m pytest tests -v
+uv venv && uv pip install -e ".[dev]" && uv run pytest tests -v
 ```
 
 ---
