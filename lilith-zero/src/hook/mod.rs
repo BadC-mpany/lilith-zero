@@ -4,6 +4,8 @@
 
 /// GitHub Copilot CLI / cloud agent hook adapter.
 pub mod copilot;
+/// OpenClaw agent hook adapter (forward-looking; based on openclaw/openclaw#60943).
+pub mod openclaw;
 /// VS Code Copilot sidebar agent hook adapter.
 pub mod vscode;
 
@@ -30,6 +32,11 @@ pub struct HookInput {
     pub tool_input: Option<serde_json::Value>,
     /// Output returned by the tool (PostToolUse only).
     pub tool_output: Option<serde_json::Value>,
+    /// Per-invocation unique ID used for replay nonce protection.
+    /// If absent, a timestamp-based value is used so replay nonce
+    /// does not block legitimate sequential hook calls.
+    #[serde(default)]
+    pub request_id: Option<String>,
 }
 
 /// Handler for Claude Code hooks, mapping JSON events to security core evaluations.
@@ -116,8 +123,15 @@ impl HookHandler {
         let tool_name = input.tool_name.as_deref().unwrap_or("unknown");
         let tool_args = input.tool_input.clone().unwrap_or(serde_json::Value::Null);
 
+        // Unique per-invocation ID for replay nonce tracking.  Prefer the adapter-supplied
+        // tool_use_id (e.g. OpenClaw's `toolUseId`); fall back to current nanosecond timestamp
+        // so that replay protection never blocks legitimate sequential hook calls.
+        let req_id = input.request_id.clone().unwrap_or_else(|| {
+            crate::utils::time::now_ms().to_string()
+        });
+
         let event = SecurityEvent::ToolRequest {
-            request_id: serde_json::Value::String("hook-pre".to_string()),
+            request_id: serde_json::Value::String(req_id),
             tool_name: TaintedString::new(tool_name.to_string()),
             arguments: Tainted::new(tool_args, vec![]),
             session_token: Some(input.session_id.clone()),

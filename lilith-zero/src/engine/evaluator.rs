@@ -41,6 +41,11 @@ impl PolicyEvaluator {
             });
         }
 
+        // Resource rule check on tool argument paths (path traversal / workspace boundary).
+        if let Some(denied) = Self::evaluate_path_args(&policy.resource_rules, tool_args) {
+            return Ok(denied);
+        }
+
         let mut taints_to_add = Vec::new();
         let mut taints_to_remove = Vec::new();
 
@@ -177,6 +182,80 @@ impl PolicyEvaluator {
                 taints_to_remove,
             })
         }
+    }
+
+    /// Check tool call arguments for path traversal against `resource_rules`.
+    ///
+    /// Extracts string values from well-known path-like argument keys and matches them against
+    /// each `ResourceRule`. First BLOCK match returns `Decision::Denied`; ALLOW rules are
+    /// non-terminal (they add taints but don't terminate evaluation here). Returns `None` if
+    /// no resource rules exist or no path arguments are present.
+    ///
+    /// Path normalization: strips `file://` and `file:///` URI prefixes before matching.
+    fn evaluate_path_args(
+        resource_rules: &[crate::engine_core::models::ResourceRule],
+        tool_args: &Value,
+    ) -> Option<Decision> {
+        if resource_rules.is_empty() {
+            return None;
+        }
+
+        const PATH_KEYS: &[&str] = &[
+            "path", "file", "uri", "url", "filename", "filepath",
+            "dir", "directory", "source", "dest", "destination", "target",
+        ];
+
+        let mut paths: Vec<String> = Vec::new();
+        if let Some(obj) = tool_args.as_object() {
+            for key in PATH_KEYS {
+                if let Some(val) = obj.get(*key).and_then(|v| v.as_str()) {
+                    // Strip scheme only (file:// → keep third slash which is the path root).
+                    let normalized = val.strip_prefix("file://").unwrap_or(val).to_string();
+                    paths.push(normalized);
+                }
+            }
+        }
+
+        if paths.is_empty() {
+            return None;
+        }
+
+        for path in &paths {
+            for rule in resource_rules {
+                if Self::match_glob(path, &rule.uri_pattern) {
+                    if rule.action == "BLOCK" {
+                        return Some(Decision::Denied {
+                            reason: format!(
+                                "Path '{}' is blocked by resource rule: {}",
+                                path, rule.uri_pattern
+                            ),
+                        });
+                    }
+                    // ALLOW rules are non-terminal for path arg checks;
+                    // taint side effects are applied by the resource URI handler separately.
+                    break;
+                }
+            }
+        }
+        None
+    }
+
+    /// Simple glob matching — supports `*` as a wildcard anywhere in the pattern.
+    /// Mirrors `SecurityCore::match_resource_pattern` without requiring `self`.
+    fn match_glob(uri: &str, pattern: &str) -> bool {
+        if pattern == "*" {
+            return true;
+        }
+        if let Some(prefix) = pattern.strip_suffix('*') {
+            return uri.starts_with(prefix);
+        }
+        if let Some(suffix) = pattern.strip_prefix('*') {
+            return uri.ends_with(suffix);
+        }
+        if let Some((prefix, suffix)) = pattern.split_once('*') {
+            return uri.starts_with(prefix) && uri.ends_with(suffix);
+        }
+        uri == pattern
     }
 
     async fn check_exceptions(

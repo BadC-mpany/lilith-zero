@@ -7,7 +7,7 @@
 // See the License for the specific language governing permissions and
 
 use serde_json::json;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tracing::{info, warn};
@@ -25,12 +25,23 @@ use crate::engine_core::audit::AuditLogger;
 use crate::engine_core::telemetry::TelemetryHook;
 
 /// Representative state of a security session, used for persistence.
-#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, Default)]
 pub struct SessionState {
     /// Set of active security taints for the session.
+    #[serde(default)]
     pub taints: HashSet<String>,
     /// Sequential history of tool executions and security decisions.
+    #[serde(default)]
     pub history: Vec<HistoryEntry>,
+    /// Total tool calls made in this session lifetime (rate limiting).
+    #[serde(default)]
+    pub call_count: u32,
+    /// Timestamps (epoch ms) of recent tool calls for sliding-window rate limiting.
+    #[serde(default)]
+    pub call_timestamps_ms: Vec<u64>,
+    /// Seen request IDs with arrival timestamp (epoch ms) for replay nonce detection.
+    #[serde(default)]
+    pub seen_request_ids: HashMap<String, u64>,
 }
 
 /// Per-session security state: holds the active policy, taint set, history, and crypto signer.
@@ -45,6 +56,9 @@ pub struct SecurityCore {
     pub policy: Option<PolicyDefinition>,
     taints: HashSet<String>,
     history: Vec<HistoryEntry>,
+    call_count: u32,
+    call_timestamps_ms: Vec<u64>,
+    seen_request_ids: HashMap<String, u64>,
     /// Whether to strictly validate session HMAC signatures.
     pub validate_session_tokens: bool,
     telemetry: Option<Arc<dyn TelemetryHook>>,
@@ -69,6 +83,9 @@ impl SecurityCore {
             policy: None,
             taints: HashSet::new(),
             history: Vec::new(),
+            call_count: 0,
+            call_timestamps_ms: Vec::new(),
+            seen_request_ids: HashMap::new(),
             validate_session_tokens: true,
             telemetry: None,
         })
@@ -114,11 +131,14 @@ impl SecurityCore {
         self.audit.log(&self.session_id, event_type, details);
     }
 
-    /// Export the current session state (taints and history).
+    /// Export the current session state (taints, history, rate-limit counters, replay nonces).
     pub fn export_state(&self) -> SessionState {
         SessionState {
             taints: self.taints.clone(),
             history: self.history.clone(),
+            call_count: self.call_count,
+            call_timestamps_ms: self.call_timestamps_ms.clone(),
+            seen_request_ids: self.seen_request_ids.clone(),
         }
     }
 
@@ -126,6 +146,9 @@ impl SecurityCore {
     pub fn import_state(&mut self, state: SessionState) {
         self.taints = state.taints;
         self.history = state.history;
+        self.call_count = state.call_count;
+        self.call_timestamps_ms = state.call_timestamps_ms;
+        self.seen_request_ids = state.seen_request_ids;
     }
 
     /// Evaluate a [`SecurityEvent`] against the loaded policy and session state.
@@ -180,7 +203,7 @@ impl SecurityCore {
                 tool_name,
                 arguments,
                 session_token,
-                ..
+                request_id,
             } => {
                 if self.validate_session_tokens {
                     match session_token {
@@ -210,6 +233,68 @@ impl SecurityCore {
                                 error_code: jsonrpc::ERROR_AUTH,
                                 reason: "Missing Session ID".to_string(),
                             };
+                        }
+                    }
+                }
+
+                // --- Replay nonce check ---
+                if let Some(policy) = &self.policy {
+                    if policy.replay_window_secs > 0 {
+                        let id_key = request_id.to_string();
+                        let now = crate::utils::time::now_ms();
+                        let window_ms = policy.replay_window_secs * 1_000;
+                        // Evict expired entries first.
+                        self.seen_request_ids
+                            .retain(|_, ts| now.saturating_sub(*ts) < window_ms);
+                        if self.seen_request_ids.contains_key(&id_key) {
+                            warn!("Replayed request ID: {}", id_key);
+                            return SecurityDecision::Deny {
+                                error_code: jsonrpc::ERROR_AUTH,
+                                reason: format!("Replayed request id: {}", id_key),
+                            };
+                        }
+                        self.seen_request_ids.insert(id_key, now);
+                    }
+                }
+
+                // --- Rate limit check ---
+                if let Some(policy) = &self.policy {
+                    if let Some(ref rl) = policy.rate_limit {
+                        let now_ms = crate::utils::time::now_ms();
+
+                        self.call_count = self.call_count.saturating_add(1);
+                        if let Some(max_session) = rl.max_calls_per_session {
+                            if self.call_count > max_session {
+                                warn!("Session call limit exceeded: {}/{}", self.call_count, max_session);
+                                return SecurityDecision::Deny {
+                                    error_code: jsonrpc::ERROR_SECURITY_BLOCK,
+                                    reason: format!(
+                                        "Session call limit exceeded ({}/{})",
+                                        self.call_count, max_session
+                                    ),
+                                };
+                            }
+                        }
+                        if let Some(max_per_min) = rl.max_calls_per_minute {
+                            self.call_timestamps_ms.push(now_ms);
+                            // Keep only the last 60 seconds.
+                            self.call_timestamps_ms
+                                .retain(|ts| now_ms.saturating_sub(*ts) < 60_000);
+                            if self.call_timestamps_ms.len() as u32 > max_per_min {
+                                warn!(
+                                    "Per-minute call limit exceeded: {}/{}",
+                                    self.call_timestamps_ms.len(),
+                                    max_per_min
+                                );
+                                return SecurityDecision::Deny {
+                                    error_code: jsonrpc::ERROR_SECURITY_BLOCK,
+                                    reason: format!(
+                                        "Per-minute call limit exceeded ({}/{})",
+                                        self.call_timestamps_ms.len(),
+                                        max_per_min
+                                    ),
+                                };
+                            }
                         }
                     }
                 }

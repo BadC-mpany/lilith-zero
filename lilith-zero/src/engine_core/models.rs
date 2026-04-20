@@ -268,6 +268,30 @@ pub struct PolicyDefinition {
         skip_serializing_if = "std::collections::HashMap::is_empty"
     )]
     pub tool_classes: std::collections::HashMap<String, Vec<String>>,
+    /// Optional rate limiting. Enforced before policy evaluation; fail-closed on breach.
+    #[serde(alias = "rate_limit", default, skip_serializing_if = "Option::is_none")]
+    pub rate_limit: Option<RateLimit>,
+    /// Replay nonce window in seconds. Duplicate request IDs within this window are denied.
+    /// `0` (default) disables replay protection.
+    #[serde(alias = "replay_window_secs", default)]
+    pub replay_window_secs: u64,
+    /// Rug-pull pin mode: `"audit"` (log only) or `"enforce"` (block on description change).
+    /// Overrides the `LILITH_ZERO_PIN_MODE` env var when set in the policy file.
+    #[serde(alias = "pin_mode", default, skip_serializing_if = "Option::is_none")]
+    pub pin_mode: Option<String>,
+}
+
+/// Per-session call-rate limits. Both limits are enforced independently when present.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct RateLimit {
+    /// Maximum number of tool calls for the entire session lifetime.
+    #[serde(alias = "max_calls_per_session", default, skip_serializing_if = "Option::is_none")]
+    pub max_calls_per_session: Option<u32>,
+    /// Maximum number of tool calls within any rolling 60-second window.
+    #[serde(alias = "max_calls_per_minute", default, skip_serializing_if = "Option::is_none")]
+    pub max_calls_per_minute: Option<u32>,
 }
 
 /// A rule governing access to MCP resources identified by URI.

@@ -1,0 +1,66 @@
+# Lilith Zero — OpenClaw Paranoid Policy
+#
+# Maximum restriction. Only explicitly listed read-only tools are allowed.
+# All writes, network access, and execution are blocked.
+# Suitable for agents that only need to analyze local files.
+#
+# All CVE mitigations from policy-base.yaml plus:
+#   CVE-2026-32978  approval bypass: no write tools means no approval surface
+#   CVE-2026-24763  command injection: bash/shell/terminal are DENY
+#   CVE-2026-32038  docker network bypass: no network tools
+#   GHSA-xj9w  host RCE via node scope: no execution tools exposed
+
+id: openclaw-paranoid
+customer_id: openclaw-user
+name: "OpenClaw Paranoid Policy"
+version: 1
+
+protect_lethal_trifecta: true
+pin_mode: enforce
+
+rate_limit:
+  max_calls_per_session: 100
+  max_calls_per_minute: 20
+
+replay_window_secs: 300
+
+static_rules:
+  # Only safe read operations are allowed.
+  read_file:      ALLOW
+  list_directory: ALLOW
+  search_files:   ALLOW
+  get_file_info:  ALLOW
+  # Everything else is DENY (fail-closed default covers unlisted tools).
+
+taint_rules:
+  - tool: read_file
+    action: ADD_TAINT
+    tag: ACCESS_PRIVATE
+
+resource_rules:
+  - uri_pattern: "~/.openclaw/*"
+    action: BLOCK
+  - uri_pattern: "/etc/*"
+    action: BLOCK
+  - uri_pattern: "/root/*"
+    action: BLOCK
+  - uri_pattern: "~/.ssh/*"
+    action: BLOCK
+  - uri_pattern: "~/.gnupg/*"
+    action: BLOCK
+  - uri_pattern: "~/.aws/*"
+    action: BLOCK
+  - uri_pattern: "*/.env"
+    action: BLOCK
+  - uri_pattern: "*/.env.*"
+    action: BLOCK
+  - uri_pattern: "*/secrets*"
+    action: BLOCK
+  - uri_pattern: "*/credentials*"
+    action: BLOCK
+  - uri_pattern: "*/id_rsa*"
+    action: BLOCK
+  - uri_pattern: "*/id_ed25519*"
+    action: BLOCK
+  - uri_pattern: "*/.git/config"
+    action: BLOCK

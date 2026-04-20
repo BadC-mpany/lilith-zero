@@ -1,0 +1,138 @@
+# Lilith Zero — OpenClaw Base Policy
+#
+# Conservative baseline for OpenClaw agents. Allows common productivity tools,
+# blocks high-risk operations, and enables rug-pull detection and rate limiting.
+#
+# Integration (stdio run mode — the only MCP transport OpenClaw supports today):
+#
+#   ~/.openclaw/openclaw.json:
+#   {
+#     "mcp": {
+#       "servers": {
+#         "my-server": {
+#           "command": "lilith-zero",
+#           "args": ["run",
+#                    "--upstream-cmd", "npx -y @modelcontextprotocol/server-filesystem",
+#                    "--policy", "/path/to/policy-base.yaml"],
+#           "transport": "stdio"
+#         }
+#       }
+#     }
+#   }
+#
+# CVEs mitigated by this policy:
+#   GHSA-cwq8  fail-closed (security scan failure no longer fail-open)
+#   CVE-2026-28478 / 29609 / 32011  rate_limit blocks DoS tool floods
+#   CVE-2026-33573  resource_rules prevent workspace boundary bypass
+#   GHSA-3qpv / qcj9  resource_rules block .openclaw config path overrides
+#   GHSA-cr8r  resource_rules prevent symlink traversal attacks
+#   ClawHavoc  pin_mode: enforce blocks rug-pulled tool descriptions
+#   GHSA-cwq8  fail-closed default rejects unknown tools
+
+id: openclaw-base
+customer_id: openclaw-user
+name: "OpenClaw Base Policy"
+version: 1
+
+# Blocks exfiltration after private data access + untrusted network access.
+protect_lethal_trifecta: true
+
+# Enforce rug-pull detection: block any tool whose description changes after first seen.
+# Mitigates ClawHavoc-class supply chain attacks (341 malicious ClawHub skills).
+pin_mode: enforce
+
+# Rate limiting — prevents DoS via runaway agent loops.
+# CVE-2026-28478 / CVE-2026-29609 / CVE-2026-32011
+rate_limit:
+  max_calls_per_session: 500
+  max_calls_per_minute: 60
+
+# Replay protection — 5-minute window.
+# GHSA-rfqg / GHSA-37v6 class
+replay_window_secs: 300
+
+# Explicit tool class assignments — no heuristic inference.
+tool_classes:
+  fetch:        [EXFILTRATION, NETWORK]
+  http_request: [EXFILTRATION, NETWORK]
+  web_search:   [NETWORK]
+  send_email:   [EXFILTRATION]
+  send_message: [EXFILTRATION]
+
+# Static per-tool allow/deny.
+# Unknown tools are DENIED by default (fail-closed).
+static_rules:
+  # File system — read-only operations
+  read_file:          ALLOW
+  list_directory:     ALLOW
+  search_files:       ALLOW
+  get_file_info:      ALLOW
+
+  # File system — writes (allowed, taint applied)
+  write_file:         ALLOW
+  create_directory:   ALLOW
+  move_file:          ALLOW
+
+  # File system — high-risk destructive (DENY)
+  delete_file:        DENY
+  delete_directory:   DENY
+
+  # Network tools
+  fetch:              ALLOW   # blocked by trifecta after ACCESS_PRIVATE + UNTRUSTED_SOURCE
+  web_search:         ALLOW
+
+  # Code execution (DENY by default — highest risk)
+  run_terminal:       DENY
+  execute_command:    DENY
+  bash:               DENY
+  shell:              DENY
+
+taint_rules:
+  - tool: read_file
+    action: ADD_TAINT
+    tag: ACCESS_PRIVATE
+
+  - tool: fetch
+    action: ADD_TAINT
+    tag: UNTRUSTED_SOURCE
+
+  - tool: web_search
+    action: ADD_TAINT
+    tag: UNTRUSTED_SOURCE
+
+  - tool: write_file
+    action: ADD_TAINT
+    tag: ACCESS_PRIVATE
+
+# Resource rules — block path traversal and config directory access.
+# CVE-2026-33573, GHSA-cr8r-7g2h-6wr6, GHSA-3qpv-xf3v-mm45, GHSA-qcj9-wwgw-6gm8
+resource_rules:
+  - uri_pattern: "~/.openclaw/*"
+    action: BLOCK
+  - uri_pattern: "/etc/*"
+    action: BLOCK
+  - uri_pattern: "/root/*"
+    action: BLOCK
+  - uri_pattern: "~/.ssh/*"
+    action: BLOCK
+  - uri_pattern: "~/.gnupg/*"
+    action: BLOCK
+  - uri_pattern: "~/.aws/*"
+    action: BLOCK
+  - uri_pattern: "~/.config/github-copilot/*"
+    action: BLOCK
+  - uri_pattern: "*/.env"
+    action: BLOCK
+  - uri_pattern: "*/.env.*"
+    action: BLOCK
+  - uri_pattern: "*/secrets*"
+    action: BLOCK
+  - uri_pattern: "*/credentials*"
+    action: BLOCK
+  # Allow workspace paths with taint marking
+  - uri_pattern: "/tmp/*"
+    action: ALLOW
+    taints_to_add: [ACCESS_PRIVATE]
+  - uri_pattern: "/home/*"
+    action: ALLOW
+    taints_to_add: [ACCESS_PRIVATE]

@@ -135,6 +135,33 @@ Event type is inferred from the payload: no `--event` flag required.
 
 See `examples/vscode/` (`editFiles`, `runTerminalCommand`, `#fetch`, `#codebase`, MCP tools).
 
+### OpenClaw
+
+OpenClaw uses stdio MCP only. Wrap each MCP server via `lilith-zero run` in `~/.openclaw/openclaw.json`:
+
+```json
+{
+  "mcp": {
+    "servers": {
+      "filesystem": {
+        "command": "lilith-zero",
+        "args": ["run",
+                 "--upstream-cmd", "npx -y @modelcontextprotocol/server-filesystem /home/user/projects",
+                 "--policy", "~/.lilith/openclaw-policy.yaml"],
+        "transport": "stdio",
+        "env": {"LILITH_ZERO_PIN_FILE": "~/.lilith/pins/filesystem.json"}
+      }
+    }
+  }
+}
+```
+
+See `examples/openclaw/` for `policy-base.yaml` (conservative) and `policy-paranoid.yaml` (read-only).  
+The `examples/openclaw/CVE-COVERAGE.md` maps all 139 OpenClaw advisories to the corresponding lilith-zero controls.
+
+> **Forward-looking:** once OpenClaw ships its hook system ([#60943](https://github.com/openclaw/openclaw/issues/60943)), replace the `run` wrapper with:  
+> `lilith-zero hook --format openclaw --policy ~/.lilith/openclaw-policy.yaml`
+
 ### Copilot Studio Webhook
 
 REST server implementing the Microsoft Copilot Studio External Threat Detection API.

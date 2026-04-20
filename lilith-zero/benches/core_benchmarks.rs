@@ -44,6 +44,9 @@ fn bench_policy_validator(c: &mut Criterion) {
         created_at: None,
         protect_lethal_trifecta: false,
         tool_classes: Default::default(),
+        rate_limit: None,
+        replay_window_secs: 0,
+        pin_mode: None,
     };
 
     c.bench_function("policy_validation_single", |b| {

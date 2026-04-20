@@ -323,6 +323,7 @@ pub fn to_hook_input(req: &AnalyzeToolExecutionRequest) -> crate::hook::HookInpu
         tool_name: Some(req.tool_definition.name.clone()),
         tool_input: Some(req.input_values.clone()),
         tool_output: None,
+        request_id: None,
     }
 }
 

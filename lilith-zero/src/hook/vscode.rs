@@ -117,6 +117,7 @@ impl VsCodeHookInput {
             tool_name: self.tool_name.clone(),
             tool_input: self.tool_input.clone(),
             tool_output: self.tool_output.clone(),
+            request_id: None,
         }
     }
 

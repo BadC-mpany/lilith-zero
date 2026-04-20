@@ -1,0 +1,32 @@
+{
+  "mcp": {
+    "servers": {
+      "filesystem": {
+        "command": "lilith-zero",
+        "args": [
+          "run",
+          "--upstream-cmd", "npx -y @modelcontextprotocol/server-filesystem /home/user/projects",
+          "--policy", "/home/user/.lilith/openclaw-policy.yaml"
+        ],
+        "transport": "stdio",
+        "env": {
+          "LILITH_ZERO_PIN_FILE": "/home/user/.lilith/pins/filesystem.json",
+          "LOG_LEVEL": "warn"
+        }
+      },
+      "fetch": {
+        "command": "lilith-zero",
+        "args": [
+          "run",
+          "--upstream-cmd", "npx -y @modelcontextprotocol/server-fetch",
+          "--policy", "/home/user/.lilith/openclaw-policy.yaml"
+        ],
+        "transport": "stdio",
+        "env": {
+          "LILITH_ZERO_PIN_FILE": "/home/user/.lilith/pins/fetch.json",
+          "LOG_LEVEL": "warn"
+        }
+      }
+    }
+  }
+}

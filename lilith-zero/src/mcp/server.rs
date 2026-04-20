@@ -174,6 +174,12 @@ impl McpMiddleware {
                                 "Loaded policy from {}",
                                 path.display()
                             );
+                            // Apply pin_mode from policy YAML before handing off.
+                            if let Some(ref mode_str) = p.pin_mode {
+                                self.pin_store.mode =
+                                    crate::config::PinMode::parse(mode_str.as_str());
+                                info!(pin_mode = %mode_str, "Pin mode set from policy");
+                            }
                             self.core.set_policy(p);
                         }
                     }

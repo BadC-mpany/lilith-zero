@@ -549,6 +549,9 @@ mod tests {
             created_at: Some("2024-01-01T00:00:00Z".to_string()),
             protect_lethal_trifecta: false,
             tool_classes: Default::default(),
+            rate_limit: None,
+            replay_window_secs: 0,
+            pin_mode: None,
         };
 
         assert!(PolicyValidator::validate_policy(&policy).is_ok());
@@ -579,6 +582,9 @@ mod tests {
             created_at: Some("2024-01-01T00:00:00Z".to_string()),
             protect_lethal_trifecta: false,
             tool_classes: Default::default(),
+            rate_limit: None,
+            replay_window_secs: 0,
+            pin_mode: None,
         };
 
         let result = PolicyValidator::validate_policy(&policy);
@@ -614,6 +620,9 @@ mod tests {
             created_at: Some("2024-01-01T00:00:00Z".to_string()),
             protect_lethal_trifecta: false,
             tool_classes: Default::default(),
+            rate_limit: None,
+            replay_window_secs: 0,
+            pin_mode: None,
         };
 
         let result = PolicyValidator::validate_policy(&policy);
@@ -655,6 +664,9 @@ mod tests {
             created_at: Some("2024-01-01T00:00:00Z".to_string()),
             protect_lethal_trifecta: false,
             tool_classes: Default::default(),
+            rate_limit: None,
+            replay_window_secs: 0,
+            pin_mode: None,
         };
 
         let result = PolicyValidator::validate_policy(&policy);
@@ -697,6 +709,9 @@ mod tests {
             created_at: Some("2024-01-01T00:00:00Z".to_string()),
             protect_lethal_trifecta: false,
             tool_classes: Default::default(),
+            rate_limit: None,
+            replay_window_secs: 0,
+            pin_mode: None,
         };
 
         assert!(PolicyValidator::validate_policy(&policy).is_ok());
@@ -718,6 +733,9 @@ mod tests {
             created_at: None,
             protect_lethal_trifecta: false,
             tool_classes: Default::default(),
+            rate_limit: None,
+            replay_window_secs: 0,
+            pin_mode: None,
         }
     }
 

@@ -71,6 +71,10 @@ enum HookFormat {
     /// Covers all built-in tools (editFiles, runTerminalCommand, #fetch, …) and MCP tools.
     #[value(name = "vscode")]
     VsCode,
+    /// OpenClaw agent mode (forward-looking; based on openclaw/openclaw#60943).
+    /// Uses exit code 0 (allow) / 2 (deny) — same as Claude Code.
+    #[value(name = "openclaw")]
+    OpenClaw,
 }
 
 /// Lilith Zero — deterministic MCP security middleware.
@@ -509,6 +513,7 @@ async fn run_hook(
                 } else {
                     None
                 },
+                request_id: None,
             };
 
             let mut handler = HookHandler::new(Arc::new(config), audit_logs)?;
@@ -615,6 +620,38 @@ async fn run_hook(
                 println!("{}", VsCodePostToolOutput::allow().to_json_line());
             }
             // Always exit 0 — decision is in the JSON, not the exit code.
+        }
+
+        HookFormat::OpenClaw => {
+            use lilith_zero::hook::openclaw::OpenClawHookInput;
+
+            if buffer.trim().is_empty() {
+                std::process::exit(0);
+            }
+
+            let input: OpenClawHookInput = match serde_json::from_str(&buffer) {
+                Ok(v) => v,
+                Err(e) => {
+                    eprintln!("[lilith-zero] OpenClaw JSON parse error: {e}");
+                    std::process::exit(2);
+                }
+            };
+
+            let event = input.resolve_event();
+            if event != "PreToolUse" && event != "PostToolUse" {
+                std::process::exit(0);
+            }
+
+            let hook_input = input.to_hook_input();
+            let mut handler = HookHandler::new(Arc::new(config), audit_logs)?;
+            let exit_code = match handler.handle(hook_input).await {
+                Ok(code) => code,
+                Err(e) => {
+                    eprintln!("[lilith-zero] handler error: {e}");
+                    2
+                }
+            };
+            std::process::exit(exit_code);
         }
     }
 

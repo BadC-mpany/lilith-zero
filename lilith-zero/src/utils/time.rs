@@ -17,3 +17,13 @@ pub fn now() -> f64 {
         .unwrap_or_default()
         .as_secs_f64()
 }
+
+/// Return the current Unix timestamp in milliseconds.
+///
+/// Used for sliding-window rate limiting and replay nonce expiry.
+pub fn now_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
+}
