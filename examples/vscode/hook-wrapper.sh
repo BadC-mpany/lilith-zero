@@ -1,46 +1,80 @@
 #!/bin/bash
-# Lilith Zero — hook wrapper for VS Code Copilot sidebar agent mode
+# Lilith Zero — VS Code Copilot sidebar hook wrapper
 #
-# Invoked by VS Code for every tool call (PreToolUse, PostToolUse, etc.).
-# VS Code embeds the event name in the JSON payload — no --event flag needed.
+# Called by VS Code for every tool event (PreToolUse, PostToolUse, SessionStart, …).
+# Self-discovers the binary and policy — zero configuration needed if you built
+# with `cargo build` from the repo root or installed to ~/.local/bin.
 #
-# Required env vars (set via hooks.json "env" field or export):
-#   LILITH_ZERO_BIN      Absolute path to the lilith-zero binary.
-#   LILITH_ZERO_POLICY   Path to the policy YAML file.
+# ENV VARS (all optional):
+#   LILITH_ZERO_BIN      Override binary path (absolute).
+#   LILITH_ZERO_POLICY   Override policy file path.
+#   LILITH_ZERO_EVENT    Event name fallback (VS Code Preview sometimes omits hookEventName).
+#   LILITH_ZERO_AUDIT    Path for audit log output.
+#   LILITH_ZERO_DEBUG    Set to "1" to print debug info to stderr.
 #
-# Output format for VS Code: {"hookSpecificOutput": {"hookEventName": "...", "permissionDecision": "..."}}
+# VISIBILITY: add "LILITH_ZERO_DEBUG": "1" to the hooks.json env block,
+# then check VS Code Output panel → GitHub Copilot Hooks.
 
 set -euo pipefail
 
-# Fail-closed: on any error, deny using the VS Code output format
+DEBUG="${LILITH_ZERO_DEBUG:-0}"
+log_debug() { [ "$DEBUG" = "1" ] && printf '[lilith-zero] %s\n' "$*" >&2 || true; }
+
 deny() {
     local reason="${1:-internal error}"
-    local escaped
-    escaped=$(printf '%s' "$reason" | sed 's/\\/\\\\/g; s/"/\\"/g')
-    printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"%s"}}\n' "$escaped"
+    local event="${LILITH_ZERO_EVENT:-PreToolUse}"  # use validated event name, not hardcoded
+    local escaped; escaped=$(printf '%s' "$reason" | sed 's/\\/\\\\/g; s/"/\\"/g')
+    printf '{"hookSpecificOutput":{"hookEventName":"%s","permissionDecision":"deny","permissionDecisionReason":"%s"}}\n' "$event" "$escaped"
     exit 0
 }
 
-# Locate binary
-LILITH_BIN="${LILITH_ZERO_BIN:-$(command -v lilith-zero 2>/dev/null || true)}"
-[ -z "$LILITH_BIN" ] && deny "lilith-zero binary not found — set LILITH_ZERO_BIN"
-[[ "$LILITH_BIN" != /* ]] && deny "LILITH_ZERO_BIN must be an absolute path"
-[ ! -x "$LILITH_BIN" ] && deny "lilith-zero not executable at: $LILITH_BIN"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Use pwd for a canonical absolute path even when git is unavailable
+GIT_ROOT="$(cd "$SCRIPT_DIR" && git rev-parse --show-toplevel 2>/dev/null || (cd "$SCRIPT_DIR/../.." && pwd))"
 
-# Policy args
+# --- Find binary ---
+LILITH_BIN="${LILITH_ZERO_BIN:-}"
+[ -z "$LILITH_BIN" ] && LILITH_BIN="$(command -v lilith-zero 2>/dev/null || true)"
+if [ -z "$LILITH_BIN" ] || [ ! -x "$LILITH_BIN" ]; then
+    for c in \
+        "$HOME/.local/bin/lilith-zero" \
+        "$GIT_ROOT/lilith-zero/target/debug/lilith-zero" \
+        "$GIT_ROOT/lilith-zero/target/release/lilith-zero"; do
+        [ -x "$c" ] && { LILITH_BIN="$c"; break; }
+    done
+fi
+[ -z "$LILITH_BIN" ] || [ ! -x "$LILITH_BIN" ] && \
+    deny "binary not found — run: cd lilith-zero && cargo build"
+[[ "$LILITH_BIN" != /* ]] && deny "LILITH_ZERO_BIN must be absolute"
+
+# --- Find policy ---
+POLICY="${LILITH_ZERO_POLICY:-}"
+if [ -z "$POLICY" ] || [ ! -f "$POLICY" ]; then
+    for c in \
+        "$GIT_ROOT/.github/hooks/lilith-policy.yaml" \
+        "$SCRIPT_DIR/policy-static.yaml"; do
+        [ -f "$c" ] && { POLICY="$c"; break; }
+    done
+fi
 POLICY_ARGS=()
-if [ -n "${LILITH_ZERO_POLICY:-}" ] && [ -f "$LILITH_ZERO_POLICY" ]; then
-    POLICY_ARGS=(--policy "$LILITH_ZERO_POLICY")
+[ -n "$POLICY" ] && [ -f "$POLICY" ] && POLICY_ARGS=(--policy "$POLICY")
+
+# --- Event (belt-and-suspenders: VS Code Preview omits hookEventName from payload) ---
+EVENT_ARGS=()
+if [ -n "${LILITH_ZERO_EVENT:-}" ]; then
+    case "$LILITH_ZERO_EVENT" in
+        PreToolUse|PostToolUse|SessionStart|SessionEnd|UserPromptSubmit|SubagentStart|SubagentStop|Stop|PreCompact) ;;
+        *) LILITH_ZERO_EVENT="PreToolUse" ;;
+    esac
+    EVENT_ARGS=(--event "$LILITH_ZERO_EVENT")
 fi
 
-# Audit log args
 AUDIT_ARGS=()
-if [ -n "${LILITH_ZERO_AUDIT:-}" ]; then
-    AUDIT_ARGS=(--audit-logs "$LILITH_ZERO_AUDIT")
-fi
+[ -n "${LILITH_ZERO_AUDIT:-}" ] && AUDIT_ARGS=(--audit-logs "$LILITH_ZERO_AUDIT")
 
-# VS Code embeds hookEventName in the JSON — no --event flag needed
-exec "$LILITH_BIN" hook \
-    --format vscode \
-    "${POLICY_ARGS[@]}" \
-    "${AUDIT_ARGS[@]}"
+log_debug "binary:   $LILITH_BIN"
+log_debug "policy:   ${POLICY:-<none — fail-closed>}"
+log_debug "event:    ${LILITH_ZERO_EVENT:-<from payload>}"
+log_debug "git-root: $GIT_ROOT"
+
+exec "$LILITH_BIN" hook --format vscode "${EVENT_ARGS[@]}" "${POLICY_ARGS[@]}" "${AUDIT_ARGS[@]}"

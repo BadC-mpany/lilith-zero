@@ -61,15 +61,15 @@ pub struct VsCodeHookInput {
     /// Copilot CLI adapter which derives its session ID from `cwd`).
     pub cwd: String,
 
-    /// Stable identifier for this agent session, provided by VS Code.
-    /// Used directly as the persistence key for taint state.
-    #[serde(rename = "sessionId")]
-    pub session_id: String,
+    /// Session ID. Accepts both `session_id` (actual VS Code) and `sessionId`
+    /// (spec/docs). Falls back to SHA-256 of `cwd` when absent.
+    #[serde(alias = "sessionId", default)]
+    pub session_id: Option<String>,
 
-    /// Hook lifecycle event name in PascalCase: `"PreToolUse"`, `"PostToolUse"`,
-    /// `"SessionStart"`, `"SessionEnd"`, `"UserPromptSubmit"`, etc.
-    #[serde(rename = "hookEventName")]
-    pub hook_event_name: String,
+    /// Hook event name. Accepts both `hook_event_name` (actual VS Code) and
+    /// `hookEventName` (spec/docs). Inferred from payload shape when absent.
+    #[serde(alias = "hookEventName", default)]
+    pub hook_event_name: Option<String>,
 
     /// Path to the agent transcript file (for debugging).
     #[serde(default)]
@@ -95,18 +95,52 @@ pub struct VsCodeHookInput {
 }
 
 impl VsCodeHookInput {
-    /// Normalize this VS Code payload into the internal [`super::HookInput`] format.
-    ///
-    /// The session ID is taken directly from `sessionId` — no derivation needed.
-    /// Tool fields map directly: `tool_name` and `tool_input` are already snake_case.
+    /// Normalize to internal [`super::HookInput`].
+    /// Fills in missing `sessionId` and `hookEventName` using fallbacks.
     pub fn to_hook_input(&self) -> super::HookInput {
+        // Filter out empty strings before falling back — VS Code may send "" for omitted fields.
+        let session_id = self
+            .session_id
+            .as_deref()
+            .filter(|s| !s.trim().is_empty())
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| super::copilot::derive_session_id(&self.cwd));
+        let hook_event_name = self
+            .hook_event_name
+            .as_deref()
+            .filter(|s| !s.trim().is_empty())
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| self.infer_event_name().to_string());
         super::HookInput {
-            session_id: self.session_id.clone(),
-            hook_event_name: self.hook_event_name.clone(),
+            session_id,
+            hook_event_name,
             tool_name: self.tool_name.clone(),
             tool_input: self.tool_input.clone(),
             tool_output: self.tool_output.clone(),
         }
+    }
+
+    /// Infer event type from payload shape when `hookEventName` is absent.
+    pub fn infer_event_name(&self) -> &'static str {
+        if self.tool_output.is_some() {
+            "PostToolUse"
+        } else if self.tool_name.is_some() {
+            "PreToolUse"
+        } else {
+            "SessionStart"
+        }
+    }
+
+    /// Resolve the effective event name: `--event` override → payload field → inferred.
+    /// Single source of truth used by both `to_hook_input` and the `main.rs` dispatch.
+    pub fn resolve_event<'a>(&'a self, event_override: Option<&'a str>) -> &'a str {
+        if let Some(ev) = event_override {
+            return ev;
+        }
+        self.hook_event_name
+            .as_deref()
+            .filter(|s| !s.trim().is_empty())
+            .unwrap_or_else(|| self.infer_event_name())
     }
 }
 
@@ -329,8 +363,8 @@ mod tests {
             "tool_use_id": "tu-001"
         }"#;
         let input: VsCodeHookInput = serde_json::from_str(raw).expect("must deserialize");
-        assert_eq!(input.session_id, "vsc-session-abc-123");
-        assert_eq!(input.hook_event_name, "PreToolUse");
+        assert_eq!(input.session_id.as_deref(), Some("vsc-session-abc-123"));
+        assert_eq!(input.hook_event_name.as_deref(), Some("PreToolUse"));
         assert_eq!(input.tool_name.as_deref(), Some("editFiles"));
         assert_eq!(input.cwd, "/workspace/my-project");
     }
@@ -361,7 +395,7 @@ mod tests {
             "tool_output": {"status": "success"}
         }"#;
         let input: VsCodeHookInput = serde_json::from_str(raw).expect("must deserialize");
-        assert_eq!(input.hook_event_name, "PostToolUse");
+        assert_eq!(input.hook_event_name.as_deref(), Some("PostToolUse"));
         assert!(input.tool_output.is_some());
     }
 
@@ -373,7 +407,7 @@ mod tests {
             "hookEventName": "SessionStart"
         }"#;
         let input: VsCodeHookInput = serde_json::from_str(raw).expect("must deserialize");
-        assert_eq!(input.hook_event_name, "SessionStart");
+        assert_eq!(input.hook_event_name.as_deref(), Some("SessionStart"));
         assert!(input.tool_name.is_none());
     }
 
@@ -382,8 +416,8 @@ mod tests {
         let input = VsCodeHookInput {
             timestamp: None,
             cwd: "/workspace".to_string(),
-            session_id: "vsc-session-xyz".to_string(),
-            hook_event_name: "PreToolUse".to_string(),
+            session_id: Some("vsc-session-xyz".to_string()),
+            hook_event_name: Some("PreToolUse".to_string()),
             transcript_path: None,
             tool_name: Some("editFiles".to_string()),
             tool_input: Some(serde_json::json!({"files": ["a.rs"]})),
