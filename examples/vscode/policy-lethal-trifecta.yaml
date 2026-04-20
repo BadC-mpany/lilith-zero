@@ -1,8 +1,11 @@
 # Lilith Zero — Lethal Trifecta Protection for VS Code Copilot sidebar
 #
 # Automatically blocks the "read private → access untrusted → exfiltrate" pattern.
-# With protect_lethal_trifecta: true, Lilith injects the blocking rule automatically
-# whenever both ACCESS_PRIVATE and UNTRUSTED_SOURCE taints are present.
+# protect_lethal_trifecta: true injects a rule that blocks any tool declared as
+# EXFILTRATION class when BOTH ACCESS_PRIVATE and UNTRUSTED_SOURCE taints are active.
+#
+# Tool class assignments are explicit — Lilith performs no heuristic inference.
+# Declare every tool that can exfiltrate data in tool_classes.
 
 id: vscode-lethal-trifecta
 customer_id: enterprise-demo
@@ -11,16 +14,21 @@ version: 1
 
 protect_lethal_trifecta: true
 
+# Explicit tool class assignments — no heuristics.
+# #fetch is EXFILTRATION because it can send local file content to external URLs.
+tool_classes:
+  "#fetch": [EXFILTRATION]
+
 static_rules:
-  editFiles: ALLOW
-  createFile: ALLOW
-  readFile: ALLOW
-  searchFiles: ALLOW
-  listDirectory: ALLOW
-  deleteFile: DENY
+  editFiles:          ALLOW
+  createFile:         ALLOW
+  readFile:           ALLOW
+  searchFiles:        ALLOW
+  listDirectory:      ALLOW
+  deleteFile:         DENY
   runTerminalCommand: DENY
-  "#fetch": ALLOW           # auto-blocked when both taints are present
-  pushToGitHub: DENY
+  "#fetch":           ALLOW   # blocked when both ACCESS_PRIVATE + UNTRUSTED_SOURCE taints are active
+  pushToGitHub:       DENY
 
 taint_rules:
   - tool: readFile
@@ -31,7 +39,7 @@ taint_rules:
     action: ADD_TAINT
     tag: UNTRUSTED_SOURCE
 
-  # When both ACCESS_PRIVATE + UNTRUSTED_SOURCE are active,
-  # protect_lethal_trifecta auto-blocks #fetch and all NETWORK-class tools.
+  # protect_lethal_trifecta auto-blocks #fetch (EXFILTRATION class, declared above)
+  # when both ACCESS_PRIVATE + UNTRUSTED_SOURCE are simultaneously active.
 
 resource_rules: []

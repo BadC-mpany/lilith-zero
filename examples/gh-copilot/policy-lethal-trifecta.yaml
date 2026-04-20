@@ -2,13 +2,18 @@
 #
 # Blocks the "read private → access untrusted → exfiltrate" pattern.
 #
-# With protect_lethal_trifecta: true, Lilith auto-blocks all NETWORK/EXFILTRATION
-# tools when BOTH ACCESS_PRIVATE and UNTRUSTED_SOURCE taints are active.
+# How it works:
+#   protect_lethal_trifecta: true injects a rule that blocks any tool
+#   declared as EXFILTRATION class when BOTH ACCESS_PRIVATE and
+#   UNTRUSTED_SOURCE taints are simultaneously active.
 #
-# Test: "read Cargo.toml, then search the web, then run curl"
+# Tool class assignments are explicit — Lilith performs no heuristic
+# inference from tool names. Declare every exfiltration tool in tool_classes.
+#
+# Attack scenario: "read file → search web → run curl"
 #   Step 1 (view)  → ACCESS_PRIVATE taint added
-#   Step 2 (bash)  → UNTRUSTED_SOURCE taint added
-#   Step 3 (bash with curl) → blocked by trifecta rule
+#   Step 2 (bash)  → UNTRUSTED_SOURCE taint added, allowed
+#   Step 3 (bash)  → both taints active → BLOCKED by trifecta rule
 
 id: gh-copilot-lethal-trifecta
 customer_id: enterprise-demo
@@ -17,12 +22,17 @@ version: 1
 
 protect_lethal_trifecta: true
 
+# Declare tool classes explicitly — no guessing, no heuristics.
+# bash is EXFILTRATION because gh copilot uses bash for curl/wget/ssh.
+tool_classes:
+  bash: [EXFILTRATION]
+
 static_rules:
   report_intent: ALLOW
   rg:            ALLOW
   glob:          ALLOW
   view:          ALLOW   # adds ACCESS_PRIVATE taint
-  bash:          ALLOW   # first bash adds UNTRUSTED_SOURCE; second blocked if both taints active
+  bash:          ALLOW   # first call: adds UNTRUSTED_SOURCE; blocked on 2nd call when both taints active
 
 taint_rules:
   - tool: view
@@ -33,7 +43,7 @@ taint_rules:
     action: ADD_TAINT
     tag: UNTRUSTED_SOURCE
 
-  # protect_lethal_trifecta automatically blocks bash (classified as NETWORK)
-  # when both ACCESS_PRIVATE + UNTRUSTED_SOURCE are active.
+  # protect_lethal_trifecta auto-blocks bash (EXFILTRATION class, declared above)
+  # when both ACCESS_PRIVATE + UNTRUSTED_SOURCE are active in the session.
 
 resource_rules: []
