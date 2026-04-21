@@ -1,0 +1,137 @@
+id: universal-banger-demo
+customer_id: badcompany-corp
+name: "Lilith Zero — High-Fidelity Universal Policy"
+version: 1
+
+# Automatically block [SENSITIVE] + [UNTRUSTED] -> [EXFILTRATION]
+protect_lethal_trifecta: true
+
+tool_classes:
+  fetch_webpage: [EXFILTRATION]
+  web_fetch: [EXFILTRATION]
+  WebSearch: [EXFILTRATION]
+  curl: [EXFILTRATION]
+  wget: [EXFILTRATION]
+  run_in_terminal: [COMPUTATION]
+  bash: [COMPUTATION]
+  Bash: [COMPUTATION]
+  runCommand: [COMPUTATION]
+
+static_rules:
+  read_file: ALLOW
+  readFile: ALLOW
+  view: ALLOW
+  Read: ALLOW
+  search: ALLOW
+  grep_search: ALLOW
+  rg: ALLOW
+  Grep: ALLOW
+  ls: ALLOW
+  glob: ALLOW
+  Glob: ALLOW
+  create_file: ALLOW
+  edit_file: ALLOW
+  Write: ALLOW
+  run_in_terminal: ALLOW
+  bash: ALLOW
+  Bash: ALLOW
+  runCommand: ALLOW
+  fetch_webpage: ALLOW
+  web_fetch: ALLOW
+  WebSearch: ALLOW
+  manage_todo_list: ALLOW
+  delete_file: DENY
+
+taint_rules:
+  # --- SECRETS & MANIFESTS ---
+  - tool: read_file
+    match_args: { path: ".*(infra/.*\\.env|config/manifest\\.json)" }
+    action: ADD_TAINT
+    tag: SECRET
+  - tool: readFile
+    match_args: { path: ".*(infra/.*\\.env|config/manifest\\.json)" }
+    action: ADD_TAINT
+    tag: SECRET
+  - tool: Read
+    match_args: { path: ".*(infra/.*\\.env|config/manifest\\.json)" }
+    action: ADD_TAINT
+    tag: SECRET
+  - tool: view
+    match_args: { filePath: ".*(infra/.*\\.env|config/manifest\\.json)" }
+    action: ADD_TAINT
+    tag: SECRET
+
+  # --- PII DATA ---
+  - tool: read_file
+    match_args: { path: ".*data/.*\\.csv" }
+    action: ADD_TAINT
+    tag: PII
+  - tool: view
+    match_args: { filePath: ".*data/.*\\.csv" }
+    action: ADD_TAINT
+    tag: PII
+
+  # --- UNTRUSTED DOCUMENTS (The Sync Guide) ---
+  - tool: read_file
+    match_args: { path: ".*(docs/compliance/.*|docs/ops/.*|vendor/.*)" }
+    action: ADD_TAINT
+    tag: UNTRUSTED_DOC
+  - tool: readFile
+    match_args: { path: ".*(docs/compliance/.*|docs/ops/.*|vendor/.*)" }
+    action: ADD_TAINT
+    tag: UNTRUSTED_DOC
+  - tool: view
+    match_args: { filePath: ".*(docs/compliance/.*|docs/ops/.*|vendor/.*)" }
+    action: ADD_TAINT
+    tag: UNTRUSTED_DOC
+  - tool: Read
+    match_args: { path: ".*(docs/compliance/.*|docs/ops/.*|vendor/.*)" }
+    action: ADD_TAINT
+    tag: UNTRUSTED_DOC
+
+  # --- TRIFECTA: BLOCK NETWORK EXFILTRATION ---
+  - tool: fetch_webpage
+    action: CHECK_TAINT
+    required_taints: ["SECRET", "UNTRUSTED_DOC"]
+    error: "SECURITY VIOLATION: Lethal Trifecta Detected. Exfiltration blocked after reading Infrastructure Secrets and Untrusted Compliance Documents."
+  - tool: fetch_webpage
+    action: CHECK_TAINT
+    required_taints: ["PII", "UNTRUSTED_DOC"]
+    error: "SECURITY VIOLATION: Lethal Trifecta Detected. Exfiltration blocked after reading Customer PII and Untrusted Documents."
+  - tool: web_fetch
+    action: CHECK_TAINT
+    required_taints: ["SECRET", "UNTRUSTED_DOC"]
+    error: "SECURITY VIOLATION: Lethal Trifecta Detected."
+  - tool: WebSearch
+    action: CHECK_TAINT
+    required_taints: ["SECRET", "UNTRUSTED_DOC"]
+    error: "SECURITY VIOLATION: Lethal Trifecta Detected."
+
+  # --- TRIFECTA: BLOCK TERMINAL EXFILTRATION (curl/wget) ---
+  - tool: run_in_terminal
+    match_args: { command: ".*(curl|wget|http).*" }
+    action: CHECK_TAINT
+    required_taints: ["SECRET", "UNTRUSTED_DOC"]
+    error: "SECURITY VIOLATION: Terminal Exfiltration Blocked."
+  - tool: run_in_terminal
+    match_args: { command: ".*(curl|wget|http).*" }
+    action: CHECK_TAINT
+    required_taints: ["PII", "UNTRUSTED_DOC"]
+    error: "SECURITY VIOLATION: Terminal Exfiltration Blocked."
+  - tool: bash
+    match_args: { command: ".*(curl|wget|http).*" }
+    action: CHECK_TAINT
+    required_taints: ["SECRET", "UNTRUSTED_DOC"]
+    error: "SECURITY VIOLATION: Terminal Exfiltration Blocked."
+  - tool: Bash
+    match_args: { command: ".*(curl|wget|http).*" }
+    action: CHECK_TAINT
+    required_taints: ["SECRET", "UNTRUSTED_DOC"]
+    error: "SECURITY VIOLATION: Terminal Exfiltration Blocked."
+  - tool: runCommand
+    match_args: { command: ".*(curl|wget|http).*" }
+    action: CHECK_TAINT
+    required_taints: ["SECRET", "UNTRUSTED_DOC"]
+    error: "SECURITY VIOLATION: Terminal Exfiltration Blocked."
+
+resource_rules: []

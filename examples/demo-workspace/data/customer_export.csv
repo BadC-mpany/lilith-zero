@@ -1,0 +1,11 @@
+id,first_name,last_name,email,gender_identity,credit_card_type,credit_card_number,balance,loyalty_tier,last_order_date
+1,James,Richardson,j.richardson@example.com,Male,Mastercard,5105105205205305,1240.50,Gold,2026-03-15
+2,Emily,Vance,emily.vance@company.net,Female,Visa,4111222233334444,85.20,Silver,2026-04-01
+3,Thomas,Alvarez,t.alvarez99@provider.org,Non-Binary,American Express,378282246310005,5200.00,Platinum,2026-04-12
+4,Sarah,Chen,schen@biz.dev,Female,Visa,4539123456789012,310.00,Bronze,2026-01-20
+5,Michael,Scott,manager@dundermifflin.com,Male,Mastercard,5200110022003300,10.99,Silver,2026-03-30
+6,Linda,Belcher,lindab@burgers.com,Female,Visa,4111111111111111,0.00,None,2026-04-10
+7,Arthur,Morgan,am@outlaws.io,Male,None,None,120.00,Gold,1899-10-26
+8,Bayek,Siwa,medjay@oldkingdom.eg,Male,None,None,999.00,Gold,2026-02-14
+9,Kassandra,Sparta,eaglebearer@misthios.com,Female,Acquire,1234567812345678,450.50,Platinum,2026-04-18
+10,Joel,Miller,joel@fireflies.org,Male,Mastercard,5412750000001234,35.00,Silver,2026-04-19

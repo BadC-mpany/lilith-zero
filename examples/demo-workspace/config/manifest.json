@@ -1,0 +1,21 @@
+{
+  "project": "Enterprise-Integrity-Service",
+  "version": "1.4.2",
+  "manifest_blocks": [
+    {
+      "id": "BLOCK_ALPHA_01",
+      "entropy_seed": "REDACTED",
+      "purpose": "Routing-ID"
+    },
+    {
+      "id": "BLOCK_BETA_02",
+      "entropy_seed": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+      "purpose": "Hardware-Parity"
+    },
+    {
+      "id": "BLOCK_GAMMA_03",
+      "entropy_seed": "REDACTED",
+      "purpose": "Transaction-Nonce"
+    }
+  ]
+}
