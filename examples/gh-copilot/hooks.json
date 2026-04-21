@@ -17,12 +17,11 @@
     "preToolUse": [
       {
         "type": "command",
-        "bash": "examples/gh-copilot/hook-wrapper.sh",
-        "powershell": "examples\\gh-copilot\\hook-wrapper.ps1",
+        "bash": "/home/grego/Documents/BadCompany/lilith-zero/examples/pretty-hook.sh",
+        "powershell": "examples\\pretty-hook.ps1",
         "env": {
           "LILITH_ZERO_FORMAT": "copilot",
-          "LILITH_ZERO_EVENT": "preToolUse",
-          "LILITH_ZERO_POLICY": "examples/gh-copilot/policy-static.yaml"
+          "LILITH_ZERO_POLICY": "/home/grego/Documents/BadCompany/lilith-zero/examples/policy-banger.yaml"
         },
         "timeoutSec": 10
       }
@@ -30,12 +29,11 @@
     "postToolUse": [
       {
         "type": "command",
-        "bash": "examples/gh-copilot/hook-wrapper.sh",
-        "powershell": "examples\\gh-copilot\\hook-wrapper.ps1",
+        "bash": "/home/grego/Documents/BadCompany/lilith-zero/examples/pretty-hook.sh",
+        "powershell": "examples\\pretty-hook.ps1",
         "env": {
           "LILITH_ZERO_FORMAT": "copilot",
-          "LILITH_ZERO_EVENT": "postToolUse",
-          "LILITH_ZERO_POLICY": "examples/gh-copilot/policy-static.yaml"
+          "LILITH_ZERO_POLICY": "/home/grego/Documents/BadCompany/lilith-zero/examples/policy-banger.yaml"
         },
         "timeoutSec": 10
       }
@@ -43,12 +41,11 @@
     "sessionStart": [
       {
         "type": "command",
-        "bash": "examples/gh-copilot/hook-wrapper.sh",
-        "powershell": "examples\\gh-copilot\\hook-wrapper.ps1",
+        "bash": "/home/grego/Documents/BadCompany/lilith-zero/examples/pretty-hook.sh",
+        "powershell": "examples\\pretty-hook.ps1",
         "env": {
           "LILITH_ZERO_FORMAT": "copilot",
-          "LILITH_ZERO_EVENT": "sessionStart",
-          "LILITH_ZERO_POLICY": "examples/gh-copilot/policy-static.yaml"
+          "LILITH_ZERO_POLICY": "/home/grego/Documents/BadCompany/lilith-zero/examples/policy-banger.yaml"
         },
         "timeoutSec": 5
       }

@@ -1,11 +1,34 @@
 {
   "version": 1,
   "hooks": {
+    "preToolUse": [
+      {
+        "type": "command",
+        "command": "/home/grego/Documents/BadCompany/lilith-zero/examples/pretty-hook.sh",
+        "bash": "/home/grego/Documents/BadCompany/lilith-zero/examples/pretty-hook.sh",
+        "env": {
+          "LILITH_ZERO_FORMAT": "copilot",
+          "LILITH_ZERO_POLICY": "/home/grego/Documents/BadCompany/lilith-zero/examples/policy-banger.yaml"
+        },
+        "timeoutSec": 10
+      }
+    ],
+    "postToolUse": [
+      {
+        "type": "command",
+        "command": "/home/grego/Documents/BadCompany/lilith-zero/examples/pretty-hook.sh",
+        "bash": "/home/grego/Documents/BadCompany/lilith-zero/examples/pretty-hook.sh",
+        "env": {
+          "LILITH_ZERO_FORMAT": "copilot",
+          "LILITH_ZERO_POLICY": "/home/grego/Documents/BadCompany/lilith-zero/examples/policy-banger.yaml"
+        },
+        "timeoutSec": 10
+      }
+    ],
     "PreToolUse": [
       {
         "type": "command",
         "command": "/home/grego/Documents/BadCompany/lilith-zero/examples/pretty-hook.sh",
-        "windows": "examples\\pretty-hook.ps1",
         "env": {
           "LILITH_ZERO_FORMAT": "vscode",
           "LILITH_ZERO_POLICY": "/home/grego/Documents/BadCompany/lilith-zero/examples/policy-banger.yaml"
@@ -17,7 +40,6 @@
       {
         "type": "command",
         "command": "/home/grego/Documents/BadCompany/lilith-zero/examples/pretty-hook.sh",
-        "windows": "examples\\pretty-hook.ps1",
         "env": {
           "LILITH_ZERO_FORMAT": "vscode",
           "LILITH_ZERO_POLICY": "/home/grego/Documents/BadCompany/lilith-zero/examples/policy-banger.yaml"
@@ -29,19 +51,6 @@
       {
         "type": "command",
         "command": "/home/grego/Documents/BadCompany/lilith-zero/examples/pretty-hook.sh",
-        "windows": "examples\\pretty-hook.ps1",
-        "env": {
-          "LILITH_ZERO_FORMAT": "vscode",
-          "LILITH_ZERO_POLICY": "/home/grego/Documents/BadCompany/lilith-zero/examples/policy-banger.yaml"
-        },
-        "timeout": 5
-      }
-    ],
-    "SessionEnd": [
-      {
-        "type": "command",
-        "command": "/home/grego/Documents/BadCompany/lilith-zero/examples/pretty-hook.sh",
-        "windows": "examples\\pretty-hook.ps1",
         "env": {
           "LILITH_ZERO_FORMAT": "vscode",
           "LILITH_ZERO_POLICY": "/home/grego/Documents/BadCompany/lilith-zero/examples/policy-banger.yaml"
