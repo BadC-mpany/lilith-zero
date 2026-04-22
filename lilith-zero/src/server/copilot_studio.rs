@@ -48,6 +48,14 @@ impl ValidationResponse {
             status: "OK".to_string(),
         }
     }
+
+    /// Construct a failed validation response with a descriptive status.
+    pub fn not_ready(status: impl Into<String>) -> Self {
+        Self {
+            is_successful: false,
+            status: status.into(),
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
