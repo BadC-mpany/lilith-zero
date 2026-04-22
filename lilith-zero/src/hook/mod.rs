@@ -6,6 +6,8 @@
 pub mod copilot;
 /// OpenClaw agent hook adapter (forward-looking; based on openclaw/openclaw#60943).
 pub mod openclaw;
+/// Shared session identity utilities (used by copilot, vscode, and openclaw adapters).
+pub mod session;
 /// VS Code Copilot sidebar agent hook adapter.
 pub mod vscode;
 
