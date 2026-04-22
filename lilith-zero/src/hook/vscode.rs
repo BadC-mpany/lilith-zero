@@ -104,7 +104,7 @@ impl VsCodeHookInput {
             .as_deref()
             .filter(|s| !s.trim().is_empty())
             .map(|s| s.to_string())
-            .unwrap_or_else(|| super::copilot::derive_session_id(&self.cwd));
+            .unwrap_or_else(|| super::session::derive_session_id(&self.cwd));
         let hook_event_name = self
             .hook_event_name
             .as_deref()
@@ -204,16 +204,23 @@ impl VsCodePreToolOutput {
     }
 
     /// Deny the tool call with a human-readable reason.
+    ///
+    /// `permissionDecisionReason` is shown to the user.
+    /// `additionalContext` is injected into the model's conversation context
+    /// to guide it after the block — it does not repeat the reason.
     pub fn deny(reason: impl Into<String>) -> Self {
-        let reason = reason.into();
         Self {
             hook_specific_output: VsCodePreToolSpecific {
                 hook_event_name: "PreToolUse".to_string(),
                 permission_decision: "deny".to_string(),
-                permission_decision_reason: Some(reason.clone()),
-                additional_context: Some(format!(
-                    "This action was blocked by Lilith Zero security policy: {reason}"
-                )),
+                permission_decision_reason: Some(reason.into()),
+                additional_context: Some(
+                    "This tool call was blocked by the Lilith Zero security policy. \
+                     You cannot perform this action in the current session. \
+                     Inform the user that the operation was blocked and suggest they \
+                     review the active security policy or start a new session."
+                        .to_string(),
+                ),
             },
         }
     }
