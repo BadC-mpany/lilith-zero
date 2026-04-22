@@ -53,10 +53,7 @@ resource_rules: []
 }
 
 /// Run `lilith-zero hook` (default `--format claude`) with the given stdin JSON.
-fn run_claude_hook(
-    input_json: &str,
-    policy_path: &std::path::Path,
-) -> assert_cmd::assert::Assert {
+fn run_claude_hook(input_json: &str, policy_path: &std::path::Path) -> assert_cmd::assert::Assert {
     let mut cmd = Command::new(bin_path());
     cmd.arg("hook")
         .arg("--format")
@@ -77,8 +74,7 @@ fn test_claude_pre_tool_use_allowed_tool_exits_0() {
     let policy = write_temp_policy(default_policy_yaml());
     let input = r#"{"session_id":"claude-test-allow","hook_event_name":"PreToolUse","tool_name":"allowed_tool","tool_input":{}}"#;
 
-    run_claude_hook(input, policy.path())
-        .code(0); // exit 0 = allow
+    run_claude_hook(input, policy.path()).code(0); // exit 0 = allow
 }
 
 /// A denied tool must exit with code 2.
@@ -88,8 +84,7 @@ fn test_claude_pre_tool_use_denied_tool_exits_2() {
     let policy = write_temp_policy(default_policy_yaml());
     let input = r#"{"session_id":"claude-test-deny","hook_event_name":"PreToolUse","tool_name":"forbidden_tool","tool_input":{}}"#;
 
-    run_claude_hook(input, policy.path())
-        .code(2); // exit 2 = deny
+    run_claude_hook(input, policy.path()).code(2); // exit 2 = deny
 }
 
 /// An allowed tool must produce no output on stdout — Claude Code ignores stdout
@@ -166,8 +161,7 @@ fn test_claude_unlisted_tool_denied_fail_closed() {
     let policy = write_temp_policy(default_policy_yaml());
     let input = r#"{"session_id":"claude-unknown","hook_event_name":"PreToolUse","tool_name":"mystery_unlisted_tool","tool_input":{}}"#;
 
-    run_claude_hook(input, policy.path())
-        .code(2); // unknown → deny (fail-closed)
+    run_claude_hook(input, policy.path()).code(2); // unknown → deny (fail-closed)
 }
 
 /// No policy file → all tools must be denied (fail-closed, no policy = deny all).
@@ -202,8 +196,7 @@ fn test_claude_post_tool_use_exits_0() {
     let policy = write_temp_policy(default_policy_yaml());
     let input = r#"{"session_id":"claude-post","hook_event_name":"PostToolUse","tool_name":"forbidden_tool","tool_input":null,"tool_output":{"result":"some output"}}"#;
 
-    run_claude_hook(input, policy.path())
-        .code(0);
+    run_claude_hook(input, policy.path()).code(0);
 }
 
 /// Unknown event names must exit 0 (pass-through: unknown events are allowed
@@ -213,8 +206,7 @@ fn test_claude_unknown_event_exits_0() {
     let policy = write_temp_policy(default_policy_yaml());
     let input = r#"{"session_id":"claude-unknown-event","hook_event_name":"FutureNewEvent","tool_name":"forbidden_tool","tool_input":{}}"#;
 
-    run_claude_hook(input, policy.path())
-        .code(0);
+    run_claude_hook(input, policy.path()).code(0);
 }
 
 // ---------------------------------------------------------------------------
@@ -253,15 +245,13 @@ resource_rules: []
     let input1 = format!(
         r#"{{"session_id":"{session_id}","hook_event_name":"PreToolUse","tool_name":"taint_tool","tool_input":{{}}}}"#
     );
-    run_claude_hook(&input1, policy.path())
-        .code(0); // taint_tool is ALLOW
+    run_claude_hook(&input1, policy.path()).code(0); // taint_tool is ALLOW
 
     // Call 2: invoke check_tool → must be blocked (CLAUDE_TEST_TAINT is active).
     let input2 = format!(
         r#"{{"session_id":"{session_id}","hook_event_name":"PreToolUse","tool_name":"check_tool","tool_input":{{}}}}"#
     );
-    run_claude_hook(&input2, policy.path())
-        .code(2); // blocked by CLAUDE_TEST_TAINT
+    run_claude_hook(&input2, policy.path()).code(2); // blocked by CLAUDE_TEST_TAINT
 
     // Cleanup session file
     let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
