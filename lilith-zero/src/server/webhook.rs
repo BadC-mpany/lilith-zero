@@ -157,10 +157,13 @@ async fn handle_layer_error(err: BoxError) -> Response {
 // POST /validate
 // ---------------------------------------------------------------------------
 
-/// Health check: validates JWT and returns `{"isSuccessful":true,"status":"OK"}`.
+/// Health check: validates JWT and confirms the server is properly configured.
 ///
-/// Copilot Studio calls this during initial configuration to verify the
-/// endpoint is reachable and auth is correctly wired.
+/// Returns `{"isSuccessful":true,"status":"OK"}` only when auth passes AND a
+/// policy file is configured and readable. Returns `isSuccessful:false` with a
+/// descriptive status when no policy is loaded — this prevents the operator
+/// from believing the server is enforcing policy when it is only running in a
+/// fail-closed deny-all state due to missing configuration.
 async fn handle_validate(State(state): State<WebhookState>, headers: HeaderMap) -> Response {
     let cid = extract_correlation_id(&headers);
 
@@ -175,7 +178,21 @@ async fn do_validate(state: &WebhookState, headers: &HeaderMap) -> Response {
         return auth_error_response(e);
     }
 
-    (StatusCode::OK, Json(ValidationResponse::ok())).into_response()
+    // Check policy is configured and the file exists on disk.
+    // isSuccessful=false warns the operator that tool calls will fail-closed
+    // (all denied) rather than being evaluated against a real policy.
+    let validation = match &state.config.policies_yaml_path {
+        None => ValidationResponse::not_ready("NO_POLICY_CONFIGURED"),
+        Some(path) => {
+            if path.exists() {
+                ValidationResponse::ok()
+            } else {
+                ValidationResponse::not_ready("POLICY_FILE_NOT_FOUND")
+            }
+        }
+    };
+
+    (StatusCode::OK, Json(validation)).into_response()
 }
 
 // ---------------------------------------------------------------------------

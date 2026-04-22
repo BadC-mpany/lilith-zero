@@ -33,6 +33,7 @@
 use std::io::Write;
 use std::sync::Arc;
 
+use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
 use reqwest::Client;
 use serde_json::{json, Value};
 use tempfile::NamedTempFile;
@@ -183,6 +184,39 @@ async fn test_webhook_validate_returns_200_no_auth_mode() {
     let body: Value = resp.json().await.unwrap();
     assert_eq!(body["isSuccessful"].as_bool(), Some(true));
     assert_eq!(body["status"].as_str(), Some("OK"));
+}
+
+/// /validate must return isSuccessful=false when no policy is configured.
+///
+/// An operator who receives isSuccessful=true believes the server is enforcing
+/// policy. Without a policy file, all tool calls are fail-closed denied but the
+/// engine is not actually evaluating rules — isSuccessful=false makes this
+/// explicit so the configuration mistake is caught during initial setup.
+#[tokio::test]
+async fn test_webhook_validate_returns_not_successful_when_no_policy() {
+    let config = Config::default(); // no policies_yaml_path
+    let state = WebhookState {
+        config: Arc::new(config),
+        audit_log_path: None,
+        auth: Arc::new(NoAuthAuthenticator),
+    };
+    let base = start_test_server(state).await;
+    let client = Client::new();
+
+    let resp = post_json(&client, &format!("{base}/validate"), None, None).await;
+    assert_eq!(resp.status(), 200, "/validate must still return HTTP 200");
+
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(
+        body["isSuccessful"].as_bool(),
+        Some(false),
+        "isSuccessful must be false when no policy is configured"
+    );
+    let status = body["status"].as_str().unwrap_or("");
+    assert!(
+        !status.is_empty() && status != "OK",
+        "status must describe the misconfiguration, got: {status}"
+    );
 }
 
 /// /validate must return 401 when no token is supplied (shared-secret mode).
@@ -857,5 +891,118 @@ async fn test_webhook_analyze_missing_correlation_id_is_not_required() {
     assert!(
         resp.headers().get("x-ms-correlation-id").is_none(),
         "response must not include x-ms-correlation-id if the request had none"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Shared-secret full HTTP roundtrip (auth acceptance path)
+// ---------------------------------------------------------------------------
+// These tests generate a valid HS256 JWT client-side and verify that the
+// server accepts it end-to-end. This is distinct from the auth unit tests
+// (src/server/auth.rs) which test the authenticator in isolation — here we
+// verify the full path: header extraction → token validation → handler logic.
+
+/// Build a valid HS256 JWT for use in integration tests.
+fn make_test_hs256_token(secret: &str) -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64;
+
+    let claims = json!({
+        "sub": "test-subject",
+        "exp": now + 3600,
+        "iat": now,
+        "iss": "test-issuer"
+    });
+
+    encode(
+        &Header::new(Algorithm::HS256),
+        &claims,
+        &EncodingKey::from_secret(secret.as_bytes()),
+    )
+    .expect("failed to encode test HS256 token")
+}
+
+/// A valid shared-secret JWT must be accepted by /validate end-to-end.
+///
+/// This is the acceptance path: the auth unit tests cover rejection; this test
+/// covers the full HTTP roundtrip from a signed JWT to an HTTP 200 response.
+#[tokio::test]
+async fn test_webhook_shared_secret_valid_token_accepted_by_validate() {
+    let secret = "integration-test-shared-secret-32ch";
+    let policy = write_temp_policy(default_policy_yaml());
+    let state = WebhookState {
+        config: Arc::new(Config {
+            policies_yaml_path: Some(policy.path().to_path_buf()),
+            ..Config::default()
+        }),
+        audit_log_path: None,
+        auth: Arc::new(SharedSecretAuthenticator::new(secret, None)),
+    };
+    let base = start_test_server(state).await;
+    let client = Client::new();
+
+    let token = make_test_hs256_token(secret);
+    let resp = post_json(
+        &client,
+        &format!("{base}/validate"),
+        Some(&format!("Bearer {token}")),
+        None,
+    )
+    .await;
+
+    assert_eq!(
+        resp.status(),
+        200,
+        "valid shared-secret token must be accepted by /validate"
+    );
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(
+        body["isSuccessful"].as_bool(),
+        Some(true),
+        "isSuccessful must be true when auth passes and policy is loaded"
+    );
+}
+
+/// A valid shared-secret JWT must allow a tool call through /analyze-tool-execution.
+///
+/// End-to-end acceptance path: token signed → accepted → policy evaluated → allow.
+#[tokio::test]
+async fn test_webhook_shared_secret_valid_token_accepted_by_analyze() {
+    let secret = "integration-test-shared-secret-32ch";
+    let policy = write_temp_policy(default_policy_yaml());
+    let state = WebhookState {
+        config: Arc::new(Config {
+            policies_yaml_path: Some(policy.path().to_path_buf()),
+            ..Config::default()
+        }),
+        audit_log_path: None,
+        auth: Arc::new(SharedSecretAuthenticator::new(secret, None)),
+    };
+    let base = start_test_server(state).await;
+    let client = Client::new();
+
+    let token = make_test_hs256_token(secret);
+    let body = analyze_request("conv-auth-roundtrip-1", "allowed_tool", json!({}));
+    let resp = post_json(
+        &client,
+        &format!("{base}/analyze-tool-execution"),
+        Some(&format!("Bearer {token}")),
+        Some(body),
+    )
+    .await;
+
+    assert_eq!(
+        resp.status(),
+        200,
+        "valid shared-secret token must reach the policy engine (HTTP 200)"
+    );
+    let json_body: Value = resp.json().await.unwrap();
+    assert_eq!(
+        json_body["blockAction"].as_bool(),
+        Some(false),
+        "allowed_tool must be allowed when valid token is presented"
     );
 }

@@ -1,17 +1,4 @@
 {
-  "_usage": [
-    "Option A — Repo-level: copy this file to .github/hooks/hooks.json in your repository.",
-    "  gh copilot will automatically load it from the git root.",
-    "",
-    "Option B — Global: merge the 'hooks' key into ~/.copilot/config.json.",
-    "  This applies to all gh copilot sessions on your machine.",
-    "",
-    "Before using, set these environment variables or edit BINARY_PATH/POLICY_PATH below:",
-    "  export LILITH_ZERO_BIN=/absolute/path/to/lilith-zero",
-    "  export LILITH_ZERO_POLICY=/absolute/path/to/policy.yaml",
-    "",
-    "Event names use camelCase (preToolUse, postToolUse) for gh copilot CLI."
-  ],
   "version": 1,
   "hooks": {
     "preToolUse": [

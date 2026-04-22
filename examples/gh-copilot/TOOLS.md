@@ -66,6 +66,11 @@ Or inspect directly:
 tail -f ~/.copilot/logs/*.log | grep toolName
 ```
 
+## Setup and configuration
+
+See `examples/SETUP.md` for full installation instructions (binary discovery,
+global vs repo-level hooks.json placement, policy file selection).
+
 Sources:
 - [GitHub Copilot CLI command reference](https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-command-reference)
 - [Using hooks with Copilot CLI](https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/use-hooks)
