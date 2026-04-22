@@ -20,22 +20,61 @@ tool_classes:
   "#fetch": [EXFILTRATION]
 
 static_rules:
-  editFiles:          ALLOW
-  createFile:         ALLOW
+  # ── FILE READ (snake_case actual + camelCase alias) ───────────────────────
+  read_file:          ALLOW
   readFile:           ALLOW
+  find_files:         ALLOW
+  search:             ALLOW
   searchFiles:        ALLOW
+  list_directory:     ALLOW
   listDirectory:      ALLOW
+  get_errors:         ALLOW
+  get_changed_files:  ALLOW
+
+  # ── FILE WRITE ─────────────────────────────────────────────────────────────
+  insert_edit_into_file: ALLOW
+  editFiles:          ALLOW
+  edit_file:          ALLOW
+  create_file:        ALLOW
+  createFile:         ALLOW
+
+  # ── FILE DELETE (deny) ─────────────────────────────────────────────────────
+  delete_file:        DENY
   deleteFile:         DENY
+
+  # ── TERMINAL (deny) ────────────────────────────────────────────────────────
+  run_in_terminal:    DENY
   runTerminalCommand: DENY
+  run_vs_code_task:   DENY
+
+  # ── NETWORK ────────────────────────────────────────────────────────────────
   "#fetch":           ALLOW   # blocked when both ACCESS_PRIVATE + UNTRUSTED_SOURCE taints are active
+  fetch:              ALLOW
+  fetch_webpage:      ALLOW
+
+  # ── GIT / VERSION CONTROL (deny) ──────────────────────────────────────────
+  run_git_command:    DENY
+  push_to_github:     DENY
   pushToGitHub:       DENY
 
 taint_rules:
+  - tool: read_file
+    action: ADD_TAINT
+    tag: ACCESS_PRIVATE
+
   - tool: readFile
     action: ADD_TAINT
     tag: ACCESS_PRIVATE
 
   - tool: "#fetch"
+    action: ADD_TAINT
+    tag: UNTRUSTED_SOURCE
+
+  - tool: fetch
+    action: ADD_TAINT
+    tag: UNTRUSTED_SOURCE
+
+  - tool: fetch_webpage
     action: ADD_TAINT
     tag: UNTRUSTED_SOURCE
 
