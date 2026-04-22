@@ -106,7 +106,7 @@ impl OpenClawHookInput {
             .or_else(|| self.session_id.as_deref().filter(|s| !s.trim().is_empty()))
             .map(|s| s.to_string())
             .unwrap_or_else(|| {
-                super::copilot::derive_session_id(self.cwd.as_deref().unwrap_or("openclaw-default"))
+                super::session::derive_session_id(self.cwd.as_deref().unwrap_or("openclaw-default"))
             })
     }
 
