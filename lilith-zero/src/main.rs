@@ -433,8 +433,13 @@ async fn run_hook(
     use lilith_zero::hook::{HookHandler, HookInput};
     use std::io::Read;
 
+    // 1 MiB cap — matches the MCP codec body limit and the webhook body limit.
+    // Oversized input truncates and fails JSON parsing (fail-closed in every format).
+    const STDIN_LIMIT: u64 = 1024 * 1024;
     let mut buffer = String::new();
-    std::io::stdin().read_to_string(&mut buffer)?;
+    std::io::stdin()
+        .take(STDIN_LIMIT)
+        .read_to_string(&mut buffer)?;
 
     match format {
         // ----------------------------------------------------------------
@@ -626,7 +631,7 @@ async fn run_hook(
             use lilith_zero::hook::openclaw::OpenClawHookInput;
 
             if buffer.trim().is_empty() {
-                std::process::exit(0);
+                std::process::exit(2); // fail-closed: empty input = deny
             }
 
             let input: OpenClawHookInput = match serde_json::from_str(&buffer) {
