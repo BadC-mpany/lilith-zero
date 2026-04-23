@@ -45,6 +45,23 @@ write_policy() {
     echo "$tmpfile"
 }
 
+# Derive the session file path for a given cwd (mirrors Rust derive_session_id).
+# The session file is created by tests 1-8 that use cwd="/workspace".
+workspace_session_file() {
+    local cwd="$1"
+    local sid
+    sid="copilot-$(printf '%s' "$cwd" | sha256sum | head -c 32)"
+    echo "$HOME/.lilith/sessions/${sid}.json"
+}
+
+# Clean up the workspace session file left by non-taint tests, both before
+# (so stale state from a previous failed run doesn't interfere) and after.
+WORKSPACE_SESSION="$(workspace_session_file "/workspace")"
+rm -f "$WORKSPACE_SESSION" 2>/dev/null || true
+# Also clean up the Claude backward-compat test session used in test 10.
+CLAUDE_COMPAT_SESSION="$HOME/.lilith/sessions/shell-compat.json"
+rm -f "$CLAUDE_COMPAT_SESSION" 2>/dev/null || true
+
 DEFAULT_POLICY="$(write_policy '
 id: test-policy
 customer_id: test
@@ -230,9 +247,10 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# Clean up temp files
+# Clean up temp files and session files created during this run
 # ---------------------------------------------------------------------------
 rm -f "$DEFAULT_POLICY"
+rm -f "$WORKSPACE_SESSION" "$CLAUDE_COMPAT_SESSION" 2>/dev/null || true
 
 # ---------------------------------------------------------------------------
 # Summary

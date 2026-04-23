@@ -607,9 +607,13 @@ fn test_vscode_malformed_json_fails_closed() {
     );
 }
 
-/// Empty stdin must deny — never accidentally allow when no payload arrives.
+/// Empty stdin must emit a neutral unknown-event response and exit 0.
+///
+/// VS Code cannot have sent a tool event with no payload — we can't know what event
+/// to mirror, so we emit a generic "Unknown" response. VS Code ignores outputs for
+/// non-tool events, and this is safer than hardcoding a mismatched "PreToolUse" deny.
 #[test]
-fn test_vscode_empty_stdin_fails_closed() {
+fn test_vscode_empty_stdin_emits_unknown_event_response() {
     let policy = write_policy(vscode_policy());
     let out = Command::new(bin())
         .args(["hook", "--format", "vscode", "--policy"])
@@ -622,15 +626,19 @@ fn test_vscode_empty_stdin_fails_closed() {
         .clone();
     let json = parse_output(&out);
     assert_eq!(
-        json["hookSpecificOutput"]["permissionDecision"].as_str(),
-        Some("deny"),
-        "empty stdin must fail-closed with deny"
+        json["hookSpecificOutput"]["hookEventName"].as_str(),
+        Some("Unknown"),
+        "empty stdin must emit hookEventName=Unknown"
+    );
+    assert!(
+        json["hookSpecificOutput"]["permissionDecision"].is_null(),
+        "empty stdin must not include permissionDecision (no tool event)"
     );
 }
 
-/// Whitespace-only stdin must also deny.
+/// Whitespace-only stdin must also emit a neutral unknown-event response.
 #[test]
-fn test_vscode_whitespace_only_stdin_fails_closed() {
+fn test_vscode_whitespace_only_stdin_emits_unknown_event_response() {
     let policy = write_policy(vscode_policy());
     let out = Command::new(bin())
         .args(["hook", "--format", "vscode", "--policy"])
@@ -643,9 +651,9 @@ fn test_vscode_whitespace_only_stdin_fails_closed() {
         .clone();
     let json = parse_output(&out);
     assert_eq!(
-        json["hookSpecificOutput"]["permissionDecision"].as_str(),
-        Some("deny"),
-        "whitespace-only stdin must fail-closed with deny"
+        json["hookSpecificOutput"]["hookEventName"].as_str(),
+        Some("Unknown"),
+        "whitespace-only stdin must emit hookEventName=Unknown"
     );
 }
 

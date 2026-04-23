@@ -48,7 +48,11 @@ pub struct HookHandler {
 }
 
 impl HookHandler {
-    /// Create a new HookHandler with the given configuration.
+    /// Create a new HookHandler, loading the policy from disk via `config.policies_yaml_path`.
+    ///
+    /// Used by hook mode (each invocation is a separate process). For the webhook
+    /// server — where the process is long-lived — prefer [`with_policy`] to avoid
+    /// a blocking disk read on every request.
     pub fn new(config: Arc<Config>, audit_logs: Option<std::path::PathBuf>) -> Result<Self> {
         let signer = crate::engine_core::crypto::CryptoSigner::try_new()
             .map_err(|e| anyhow::anyhow!("Crypto init failed: {}", e))?;
@@ -56,7 +60,6 @@ impl HookHandler {
             .map_err(|e| anyhow::anyhow!("Security Core init failed: {}", e))?;
         core.validate_session_tokens = false;
 
-        // Load policy if specified in config
         if let Some(path) = &config.policies_yaml_path {
             tracing::info!("Loading hook policy from {:?}", path);
             let content = std::fs::read_to_string(path)
@@ -71,12 +74,43 @@ impl HookHandler {
         Ok(Self { core, persistence })
     }
 
+    /// Create a HookHandler using a pre-parsed policy, bypassing the disk read.
+    ///
+    /// Used by the webhook server to avoid blocking I/O on every request. The
+    /// policy is parsed once at startup and shared via `Arc`.
+    pub fn with_policy(
+        config: Arc<Config>,
+        audit_logs: Option<std::path::PathBuf>,
+        policy: Option<Arc<crate::engine_core::models::PolicyDefinition>>,
+    ) -> Result<Self> {
+        let signer = crate::engine_core::crypto::CryptoSigner::try_new()
+            .map_err(|e| anyhow::anyhow!("Crypto init failed: {}", e))?;
+        let mut core = SecurityCore::new(config, signer, audit_logs)
+            .map_err(|e| anyhow::anyhow!("Security Core init failed: {}", e))?;
+        core.validate_session_tokens = false;
+
+        if let Some(p) = policy {
+            core.set_policy((*p).clone());
+        }
+        let persistence = PersistenceLayer::default_local();
+
+        Ok(Self { core, persistence })
+    }
+
     /// Handle a hook input, returning the appropriate process exit code.
     pub async fn handle(&mut self, input: HookInput) -> Result<i32> {
+        // Sanitize the session ID before use: it may originate from an untrusted
+        // JSON payload (Claude Code hook input, Copilot Studio conversationId).
+        // Using the raw value would allow control characters or path separators
+        // to reach the audit log and the session file path.
+        let session_id = crate::engine_core::persistence::PersistenceLayer::sanitize_session_id(
+            &input.session_id,
+        );
+
         // A. Acquire cross-process lock on the session file.
         //    All subsequent reads and writes go through the lock's file handle
         //    so that Windows LockFileEx byte-range locking is respected.
-        let mut lock = self.persistence.lock(&input.session_id)?;
+        let mut lock = self.persistence.lock(&session_id)?;
 
         // B. Load session state through the locked handle.
         let state = lock.load()?;
@@ -85,7 +119,7 @@ impl HookHandler {
         if let Some(state) = state {
             self.core.import_state(state);
         }
-        self.core.session_id = input.session_id.clone();
+        self.core.session_id = session_id.clone();
 
         // C. Silent Handshake (only on first call of session)
         if is_new_session {

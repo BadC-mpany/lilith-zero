@@ -203,15 +203,22 @@ impl VsCodePreToolOutput {
         }
     }
 
-    /// Deny the tool call with a human-readable reason.
+    /// Deny the tool call with a human-readable reason, using `"PreToolUse"` as the event name.
     ///
-    /// `permissionDecisionReason` is shown to the user.
-    /// `additionalContext` is injected into the model's conversation context
-    /// to guide it after the block — it does not repeat the reason.
+    /// Use [`deny_for_event`] when the actual event name is known (e.g. from a partial parse
+    /// of a malformed payload) so the response mirrors what VS Code sent.
     pub fn deny(reason: impl Into<String>) -> Self {
+        Self::deny_for_event("PreToolUse", reason)
+    }
+
+    /// Deny the tool call with the given event name and human-readable reason.
+    ///
+    /// The VS Code spec requires that the `hookEventName` in the response matches the event
+    /// that triggered the hook. Use this when the event name is known from the payload.
+    pub fn deny_for_event(event: impl Into<String>, reason: impl Into<String>) -> Self {
         Self {
             hook_specific_output: VsCodePreToolSpecific {
-                hook_event_name: "PreToolUse".to_string(),
+                hook_event_name: event.into(),
                 permission_decision: "deny".to_string(),
                 permission_decision_reason: Some(reason.into()),
                 additional_context: Some(

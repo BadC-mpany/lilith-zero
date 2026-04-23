@@ -9,8 +9,8 @@
 //!
 //! - [`CopilotHookInput`] — the stdin payload for all Copilot hook events.
 //! - [`CopilotHookOutput`] — the stdout JSON response for `preToolUse`.
-//! - [`derive_session_id`] — maps a workspace `cwd` to a stable session ID
-//!   (Copilot has no native session_id concept).
+//! - [`derive_session_id`] — re-exported from [`super::session`]; maps a
+//!   workspace `cwd` to a stable session ID (Copilot has no native session_id).
 //! - [`normalize_event_name`] — translates Copilot camelCase event names to
 //!   the PascalCase names used by the existing `HookHandler` routing logic.
 //!

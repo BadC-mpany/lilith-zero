@@ -205,9 +205,9 @@ fn test_openclaw_rate_limit_session_cap() {
 
 // ── Error resilience ──────────────────────────────────────────────────────────
 
-/// Empty stdin must exit 0 (fail-open for non-events — avoids blocking startup).
+/// Empty stdin must exit 2 (fail-closed — same invariant as Claude Code and Copilot formats).
 #[test]
-fn test_openclaw_empty_stdin_exits_zero() {
+fn test_openclaw_empty_stdin_exits_two() {
     let policy = write_temp_policy(&openclaw_policy_yaml());
     Command::new(bin_path())
         .arg("hook")
@@ -217,7 +217,7 @@ fn test_openclaw_empty_stdin_exits_zero() {
         .arg(policy.path())
         .write_stdin(b"".to_vec())
         .assert()
-        .success();
+        .code(2);
 }
 
 /// Malformed JSON must exit 2 (fail-closed — cannot parse = cannot trust).

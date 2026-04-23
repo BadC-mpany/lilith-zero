@@ -28,9 +28,14 @@ else
 fi
 
 echo "--- Testing State Persistence ---"
-rm -rf ~/.lilith/sessions
 
-POLICY_PERSISTENCE="$SCRIPT_DIR/policy_persistence_test.yaml"
+# Use a unique session ID per run so orphan files from a failed previous run
+# never affect this run (and this run's files don't affect the next).
+SESSION_ID="test-persist-$$"
+SESSION_FILE="$HOME/.lilith/sessions/${SESSION_ID}.json"
+rm -f "$SESSION_FILE" 2>/dev/null || true
+
+POLICY_PERSISTENCE="$(mktemp /tmp/lilith-persist-policy-XXXXXX.yaml)"
 cat > "$POLICY_PERSISTENCE" <<EOF
 id: persistence-policy
 customer_id: test-customer
@@ -51,17 +56,17 @@ resource_rules: []
 EOF
 
 echo "1. Call taint_me"
-echo '{"session_id": "persist-123", "hook_event_name": "PreToolUse", "tool_name": "taint_me"}' | "$BINARY" hook --policy "$POLICY_PERSISTENCE"
+echo "{\"session_id\": \"$SESSION_ID\", \"hook_event_name\": \"PreToolUse\", \"tool_name\": \"taint_me\"}" | "$BINARY" hook --policy "$POLICY_PERSISTENCE"
 echo "Exit code: $?"
 
 echo "2. Call check_me (should be blocked)"
 set +e
-echo '{"session_id": "persist-123", "hook_event_name": "PreToolUse", "tool_name": "check_me"}' | "$BINARY" hook --policy "$POLICY_PERSISTENCE"
+echo "{\"session_id\": \"$SESSION_ID\", \"hook_event_name\": \"PreToolUse\", \"tool_name\": \"check_me\"}" | "$BINARY" hook --policy "$POLICY_PERSISTENCE"
 EXIT_CODE_PERSIST=$?
 set -e
 echo "Exit code: $EXIT_CODE_PERSIST"
 
-rm "$POLICY_PERSISTENCE"
+rm -f "$POLICY_PERSISTENCE" "$SESSION_FILE" 2>/dev/null || true
 
 if [ $EXIT_CODE_PERSIST -eq 2 ]; then
     echo "SUCCESS: Persistence verified across calls"

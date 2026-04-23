@@ -75,6 +75,16 @@ pub trait Authenticator: Send + Sync {
 
     /// Returns a human-readable description of this authenticator for logs.
     fn description(&self) -> &'static str;
+
+    /// Whether this authenticator accepts requests that carry no Authorization header.
+    ///
+    /// Defaults to `false`. Only [`NoAuthAuthenticator`] overrides this to `true`.
+    /// The `authenticate()` helper checks this explicitly so that future implementations
+    /// cannot accidentally grant access to headerless requests by returning `Ok(())`
+    /// for an empty-string token.
+    fn accepts_unauthenticated_requests(&self) -> bool {
+        false
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -119,6 +129,10 @@ impl Authenticator for NoAuthAuthenticator {
 
     fn description(&self) -> &'static str {
         "no-auth (development only — all tokens accepted)"
+    }
+
+    fn accepts_unauthenticated_requests(&self) -> bool {
+        true
     }
 }
 
@@ -171,18 +185,27 @@ impl Authenticator for SharedSecretAuthenticator {
 // Mode 3: Microsoft Entra ID (RS256 via JWKS)
 // ---------------------------------------------------------------------------
 
-/// Cached JWKS key set with a timestamp for TTL enforcement.
+/// Cached JWKS key set with timestamps for TTL and forced-refresh cooldown.
 struct JwksCache {
     key_set: jsonwebtoken::jwk::JwkSet,
     fetched_at: Instant,
+    /// Set when the cache was force-refreshed after a `KeyNotFound` to enforce a cooldown
+    /// and prevent cache-busting DoS attacks.
+    forced_at: Option<Instant>,
 }
 
 /// Validates JWTs issued by Microsoft Entra ID using the tenant's JWKS endpoint.
 ///
 /// # Key caching
 /// JWKS keys are cached for [`JWKS_CACHE_TTL`]. On cache miss (first call or
-/// after TTL), keys are refreshed from the JWKS endpoint. A `kid` not found
-/// after refresh is returned as [`AuthError::KeyNotFound`] — not retried.
+/// after TTL), keys are refreshed from the JWKS endpoint.
+///
+/// # Key rotation recovery
+/// If a `kid` is not found in the cached key set, the cache is force-refreshed
+/// once (subject to a [`FORCE_REFRESH_COOLDOWN`] to prevent DoS). If the `kid`
+/// is still absent after the refresh, `KeyNotFound` is returned. This limits
+/// the outage window on Entra key rotations to the cooldown period (60 s)
+/// rather than the full TTL (1 h).
 ///
 /// # Issuer validation
 /// The issuer must be `https://login.microsoftonline.com/{tenant_id}/v2.0`.
@@ -194,8 +217,12 @@ pub struct EntraAuthenticator {
     cache: Arc<RwLock<Option<JwksCache>>>,
 }
 
-/// Maximum age of cached JWKS keys before a refresh is triggered.
+/// Maximum age of cached JWKS keys before a TTL-driven refresh is triggered.
 const JWKS_CACHE_TTL: Duration = Duration::from_secs(3600);
+
+/// Minimum time between forced cache refreshes triggered by `KeyNotFound`.
+/// Prevents a burst of requests with unknown `kid` values from flooding the JWKS endpoint.
+const FORCE_REFRESH_COOLDOWN: Duration = Duration::from_secs(60);
 
 impl EntraAuthenticator {
     /// Create an authenticator for a specific Entra tenant and audience.
@@ -253,9 +280,73 @@ impl EntraAuthenticator {
         *guard = Some(JwksCache {
             key_set: key_set.clone(),
             fetched_at: Instant::now(),
+            forced_at: None,
         });
 
         Ok(key_set)
+    }
+
+    /// Force-refresh the JWKS cache regardless of TTL, subject to a cooldown.
+    ///
+    /// Called after a `KeyNotFound` to recover from Entra key rotations without
+    /// waiting for the full 1-hour TTL. The cooldown prevents a burst of unknown
+    /// `kid` values from flooding the JWKS endpoint.
+    async fn force_refresh_jwks(&self) -> Result<jsonwebtoken::jwk::JwkSet, AuthError> {
+        let mut guard = self.cache.write().await;
+
+        // Cooldown check: if we forced a refresh recently, return the cached keys
+        // rather than hitting the JWKS endpoint again.
+        if let Some(ref c) = *guard {
+            if let Some(forced_at) = c.forced_at {
+                if forced_at.elapsed() < FORCE_REFRESH_COOLDOWN {
+                    return Ok(c.key_set.clone());
+                }
+            }
+        }
+
+        let response = reqwest::get(&self.jwks_url)
+            .await
+            .map_err(|e| AuthError::JwksFetchFailed(e.to_string()))?;
+
+        let key_set: jsonwebtoken::jwk::JwkSet = response
+            .json()
+            .await
+            .map_err(|e| AuthError::JwksFetchFailed(format!("JWKS parse error: {e}")))?;
+
+        *guard = Some(JwksCache {
+            key_set: key_set.clone(),
+            fetched_at: Instant::now(),
+            forced_at: Some(Instant::now()),
+        });
+
+        Ok(key_set)
+    }
+
+    /// Validate a token against a specific JWK. Extracted to avoid duplicating the
+    /// RS256 + issuer check logic between the normal path and the retry-after-refresh path.
+    fn validate_with_jwk(
+        &self,
+        token: &str,
+        jwk: &jsonwebtoken::jwk::Jwk,
+    ) -> Result<(), AuthError> {
+        let decoding_key = DecodingKey::from_jwk(jwk)
+            .map_err(|e| AuthError::ValidationFailed(format!("key conversion: {e}")))?;
+
+        let mut validation = Validation::new(Algorithm::RS256);
+        validation.set_audience(&[&self.audience]);
+
+        let token_data = decode::<EntraClaims>(token, &decoding_key, &validation)
+            .map_err(|e| AuthError::ValidationFailed(e.to_string()))?;
+
+        let expected_iss = format!("https://login.microsoftonline.com/{}/v2.0", self.tenant_id);
+        if token_data.claims.iss != expected_iss {
+            return Err(AuthError::InvalidIssuer {
+                expected: expected_iss,
+                got: token_data.claims.iss,
+            });
+        }
+
+        Ok(())
     }
 }
 
@@ -267,32 +358,22 @@ impl Authenticator for EntraAuthenticator {
 
         let kid = header.kid.ok_or(AuthError::MissingClaim("kid"))?;
 
-        // Fetch (possibly cached) JWKS and find the matching key.
+        // Fetch (possibly cached) JWKS and look up the key.
         let jwks = self.get_jwks().await?;
-        let jwk = jwks
+        if let Some(jwk) = jwks.find(&kid) {
+            return self.validate_with_jwk(token, jwk);
+        }
+
+        // kid not found — Entra may have rotated its signing keys. Force-refresh
+        // the cache and retry exactly once. The cooldown in force_refresh_jwks
+        // bounds how often we hit the JWKS endpoint on unknown kids.
+        tracing::info!(kid = %kid, "kid not in cached JWKS, forcing refresh for key rotation recovery");
+        let refreshed = self.force_refresh_jwks().await?;
+        let jwk = refreshed
             .find(&kid)
             .ok_or_else(|| AuthError::KeyNotFound(kid.clone()))?;
 
-        let decoding_key = DecodingKey::from_jwk(jwk)
-            .map_err(|e| AuthError::ValidationFailed(format!("key conversion: {e}")))?;
-
-        // Validate signature, expiry, and audience.
-        let mut validation = Validation::new(Algorithm::RS256);
-        validation.set_audience(&[&self.audience]);
-
-        let token_data = decode::<EntraClaims>(token, &decoding_key, &validation)
-            .map_err(|e| AuthError::ValidationFailed(e.to_string()))?;
-
-        // Validate issuer — must match our tenant exactly.
-        let expected_iss = format!("https://login.microsoftonline.com/{}/v2.0", self.tenant_id);
-        if token_data.claims.iss != expected_iss {
-            return Err(AuthError::InvalidIssuer {
-                expected: expected_iss,
-                got: token_data.claims.iss,
-            });
-        }
-
-        Ok(())
+        self.validate_with_jwk(token, jwk)
     }
 
     fn description(&self) -> &'static str {
@@ -454,5 +535,138 @@ mod tests {
         auth.validate_token(&token)
             .await
             .expect("any audience must be accepted when audience validation is disabled");
+    }
+
+    // --- EntraAuthenticator JWKS mock tests ---
+    // These tests start a minimal axum server that serves a JWKS document,
+    // allowing end-to-end testing of the JWKS fetch and error paths without
+    // network access to a real Entra tenant.
+
+    /// Spin up a one-shot axum server that responds with `body` on any request.
+    async fn mock_jwks_server(body: &'static str, status: u16) -> String {
+        use axum::{
+            response::{IntoResponse, Response},
+            routing::get,
+            Router,
+        };
+        use tokio::net::TcpListener;
+
+        let app = Router::new().route(
+            "/*path",
+            get(move || async move {
+                Response::builder()
+                    .status(status)
+                    .header("Content-Type", "application/json")
+                    .body(axum::body::Body::from(body))
+                    .unwrap()
+                    .into_response()
+            }),
+        );
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        format!("http://127.0.0.1:{}", addr.port())
+    }
+
+    /// JWKS endpoint returns HTTP 500 → `JwksFetchFailed`.
+    #[tokio::test]
+    async fn test_entra_jwks_fetch_failed_on_server_error() {
+        let base = mock_jwks_server(r#"{"error":"internal"}"#, 500).await;
+        let auth = EntraAuthenticator::new("test-tenant", "https://api.example.com")
+            .with_jwks_url(format!("{base}/keys"));
+
+        // Use a syntactically valid JWT header so we reach the JWKS fetch step.
+        // The token body doesn't matter because we fail before signature checks.
+        let fake_token = "eyJhbGciOiJSUzI1NiIsImtpZCI6InRlc3Qta2lkIn0.e30.signature";
+        let result = auth.validate_token(fake_token).await;
+        assert!(
+            matches!(result, Err(AuthError::JwksFetchFailed(_))),
+            "HTTP 500 from JWKS endpoint must produce JwksFetchFailed, got: {result:?}"
+        );
+    }
+
+    /// JWKS endpoint returns invalid JSON → `JwksFetchFailed`.
+    #[tokio::test]
+    async fn test_entra_jwks_fetch_failed_on_invalid_json() {
+        let base = mock_jwks_server("not valid json {{{", 200).await;
+        let auth = EntraAuthenticator::new("test-tenant", "https://api.example.com")
+            .with_jwks_url(format!("{base}/keys"));
+
+        let fake_token = "eyJhbGciOiJSUzI1NiIsImtpZCI6InRlc3Qta2lkIn0.e30.signature";
+        let result = auth.validate_token(fake_token).await;
+        assert!(
+            matches!(result, Err(AuthError::JwksFetchFailed(_))),
+            "Invalid JSON from JWKS endpoint must produce JwksFetchFailed, got: {result:?}"
+        );
+    }
+
+    /// JWKS endpoint returns a valid key set but with no matching kid → `KeyNotFound`.
+    /// Also verifies that the force-refresh path is exercised (two HTTP requests made).
+    #[tokio::test]
+    async fn test_entra_key_not_found_when_kid_absent_from_jwks() {
+        // A syntactically valid but empty JWKS (no keys).
+        let base = mock_jwks_server(r#"{"keys":[]}"#, 200).await;
+        let auth = EntraAuthenticator::new("test-tenant", "https://api.example.com")
+            .with_jwks_url(format!("{base}/keys"));
+
+        let fake_token = "eyJhbGciOiJSUzI1NiIsImtpZCI6InRlc3Qta2lkIn0.e30.signature";
+        let result = auth.validate_token(fake_token).await;
+        // The kid "test-kid" is not in the empty set — after the forced refresh
+        // (which also returns empty), KeyNotFound is returned.
+        assert!(
+            matches!(result, Err(AuthError::KeyNotFound(_))),
+            "Empty JWKS must produce KeyNotFound after force-refresh, got: {result:?}"
+        );
+    }
+
+    /// Token with no `kid` header → `MissingClaim`.
+    #[tokio::test]
+    async fn test_entra_missing_kid_in_header() {
+        // RS256 token without a kid claim in the header.
+        let base = mock_jwks_server(r#"{"keys":[]}"#, 200).await;
+        let auth = EntraAuthenticator::new("test-tenant", "https://api.example.com")
+            .with_jwks_url(format!("{base}/keys"));
+
+        // eyJhbGciOiJSUzI1NiJ9 = {"alg":"RS256"} (no kid)
+        let token_no_kid = "eyJhbGciOiJSUzI1NiJ9.e30.signature";
+        let result = auth.validate_token(token_no_kid).await;
+        assert!(
+            matches!(result, Err(AuthError::MissingClaim("kid"))),
+            "Token without kid must produce MissingClaim(kid), got: {result:?}"
+        );
+    }
+
+    /// Malformed JWT header → `InvalidHeader`.
+    #[tokio::test]
+    async fn test_entra_malformed_jwt_header() {
+        let base = mock_jwks_server(r#"{"keys":[]}"#, 200).await;
+        let auth = EntraAuthenticator::new("test-tenant", "https://api.example.com")
+            .with_jwks_url(format!("{base}/keys"));
+
+        let result = auth.validate_token("not.a.jwt").await;
+        assert!(
+            matches!(result, Err(AuthError::InvalidHeader(_))),
+            "Malformed JWT must produce InvalidHeader, got: {result:?}"
+        );
+    }
+
+    /// The `NoAuthAuthenticator` accepts requests without an Authorization header.
+    #[test]
+    fn test_no_auth_accepts_unauthenticated_requests() {
+        assert!(
+            NoAuthAuthenticator.accepts_unauthenticated_requests(),
+            "NoAuthAuthenticator must accept unauthenticated requests"
+        );
+    }
+
+    /// All other authenticators must NOT accept unauthenticated requests by default.
+    #[test]
+    fn test_shared_secret_rejects_unauthenticated_requests() {
+        let auth = SharedSecretAuthenticator::new("secret", None);
+        assert!(
+            !auth.accepts_unauthenticated_requests(),
+            "SharedSecretAuthenticator must not accept unauthenticated requests"
+        );
     }
 }

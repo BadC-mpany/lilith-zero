@@ -433,8 +433,13 @@ async fn run_hook(
     use lilith_zero::hook::{HookHandler, HookInput};
     use std::io::Read;
 
+    // 1 MiB cap — matches the MCP codec body limit and the webhook body limit.
+    // Oversized input truncates and fails JSON parsing (fail-closed in every format).
+    const STDIN_LIMIT: u64 = 1024 * 1024;
     let mut buffer = String::new();
-    std::io::stdin().read_to_string(&mut buffer)?;
+    std::io::stdin()
+        .take(STDIN_LIMIT)
+        .read_to_string(&mut buffer)?;
 
     match format {
         // ----------------------------------------------------------------
@@ -549,9 +554,10 @@ async fn run_hook(
                 if debug {
                     eprintln!("[lilith-zero] DEBUG: empty stdin");
                 }
+                // No payload means no event — emit a neutral unknown-event response.
                 println!(
                     "{}",
-                    VsCodePreToolOutput::deny("no input received on stdin").to_json_line()
+                    VsCodeGenericOutput::for_event("Unknown").to_json_line()
                 );
                 return Ok(());
             }
@@ -566,10 +572,31 @@ async fn run_hook(
                     if debug {
                         eprintln!("[lilith-zero] DEBUG parse error: {e}");
                     }
-                    println!(
-                        "{}",
-                        VsCodePreToolOutput::deny(format!("JSON parse error: {e}")).to_json_line()
-                    );
+                    // Try to salvage the event name from the raw payload so the
+                    // response hookEventName matches what VS Code sent.
+                    let detected_event = serde_json::from_str::<serde_json::Value>(&buffer)
+                        .ok()
+                        .and_then(|v| {
+                            v.get("hook_event_name")
+                                .or_else(|| v.get("hookEventName"))
+                                .and_then(|n| n.as_str())
+                                .map(|s| s.to_string())
+                        })
+                        .unwrap_or_else(|| "PreToolUse".to_string());
+
+                    if detected_event == "PostToolUse" {
+                        // PostToolUse can't be denied; let output pass through.
+                        println!("{}", VsCodePostToolOutput::allow().to_json_line());
+                    } else {
+                        println!(
+                            "{}",
+                            VsCodePreToolOutput::deny_for_event(
+                                &detected_event,
+                                format!("JSON parse error: {e}")
+                            )
+                            .to_json_line()
+                        );
+                    }
                     return Ok(());
                 }
             };
@@ -599,10 +626,19 @@ async fn run_hook(
             let exit_code = match handler.handle(hook_input).await {
                 Ok(code) => code,
                 Err(e) => {
-                    println!(
-                        "{}",
-                        VsCodePreToolOutput::deny(format!("handler error: {e}")).to_json_line()
-                    );
+                    // We know the event at this point — use it in the error response.
+                    if is_post_tool {
+                        println!("{}", VsCodePostToolOutput::allow().to_json_line());
+                    } else {
+                        println!(
+                            "{}",
+                            VsCodePreToolOutput::deny_for_event(
+                                event,
+                                format!("handler error: {e}")
+                            )
+                            .to_json_line()
+                        );
+                    }
                     return Ok(());
                 }
             };
@@ -626,7 +662,7 @@ async fn run_hook(
             use lilith_zero::hook::openclaw::OpenClawHookInput;
 
             if buffer.trim().is_empty() {
-                std::process::exit(0);
+                std::process::exit(2); // fail-closed: empty input = deny
             }
 
             let input: OpenClawHookInput = match serde_json::from_str(&buffer) {
@@ -708,10 +744,30 @@ async fn run_webhook_server(
         }
     };
 
+    // Parse the policy once at startup so each request doesn't pay a disk read.
+    let policy = if let Some(ref path) = config.policies_yaml_path {
+        let content = std::fs::read_to_string(path)
+            .map_err(|e| format!("Cannot read policy '{}': {e}", path.display()))?;
+        let pol: lilith_zero::engine_core::models::PolicyDefinition =
+            serde_yaml_ng::from_str(&content)
+                .map_err(|e| format!("Cannot parse policy '{}': {e}", path.display()))?;
+        tracing::info!(
+            "Policy '{}' loaded at startup ({} static rules, {} taint rules)",
+            pol.name,
+            pol.static_rules.len(),
+            pol.taint_rules.len()
+        );
+        Some(Arc::new(pol))
+    } else {
+        tracing::warn!("No policy configured — all tool calls will be fail-closed denied");
+        None
+    };
+
     let state = WebhookState {
         config: Arc::new(config),
         audit_log_path: audit_logs,
         auth,
+        policy,
     };
 
     serve(&bind, state).await?;
