@@ -331,16 +331,18 @@ fn with_correlation_header(mut resp: Response, correlation_id: Option<&str>) -> 
 }
 
 /// Authenticate a request, extracting and validating the Bearer token.
+///
+/// When the `Authorization` header is absent, the authenticator's
+/// `accepts_unauthenticated_requests()` decides: only `NoAuthAuthenticator`
+/// returns `true`, making this path explicit and safe against future
+/// implementations that might accidentally accept an empty-string token.
 async fn authenticate(
     auth: &Arc<dyn Authenticator>,
     auth_header: Option<&str>,
 ) -> Result<(), AuthError> {
     match extract_bearer_token(auth_header) {
         Ok(token) => auth.validate_token(token).await,
-        Err(e @ AuthError::MissingAuthHeader) => {
-            // No-auth mode accepts requests without a header.
-            auth.validate_token("").await.map_err(|_| e)
-        }
+        Err(AuthError::MissingAuthHeader) if auth.accepts_unauthenticated_requests() => Ok(()),
         Err(e) => Err(e),
     }
 }

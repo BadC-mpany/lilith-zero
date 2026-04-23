@@ -75,6 +75,16 @@ pub trait Authenticator: Send + Sync {
 
     /// Returns a human-readable description of this authenticator for logs.
     fn description(&self) -> &'static str;
+
+    /// Whether this authenticator accepts requests that carry no Authorization header.
+    ///
+    /// Defaults to `false`. Only [`NoAuthAuthenticator`] overrides this to `true`.
+    /// The `authenticate()` helper checks this explicitly so that future implementations
+    /// cannot accidentally grant access to headerless requests by returning `Ok(())`
+    /// for an empty-string token.
+    fn accepts_unauthenticated_requests(&self) -> bool {
+        false
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -119,6 +129,10 @@ impl Authenticator for NoAuthAuthenticator {
 
     fn description(&self) -> &'static str {
         "no-auth (development only — all tokens accepted)"
+    }
+
+    fn accepts_unauthenticated_requests(&self) -> bool {
+        true
     }
 }
 
