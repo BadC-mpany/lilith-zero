@@ -70,12 +70,23 @@ impl PersistenceLayer {
         Ok(SessionLock { file })
     }
 
-    fn get_file_path(&self, session_id: &str) -> PathBuf {
-        // Sanitize session_id to prevent path traversal.
-        let safe_id = session_id
+    /// Sanitize a session ID so it is safe to use as a filename component and
+    /// in structured log output (audit JSONL). Retains only ASCII alphanumeric
+    /// characters, hyphens, and underscores — identical to the characters that
+    /// `derive_session_id` and VS Code produce naturally.
+    ///
+    /// Call this on any session ID that originates from an untrusted source
+    /// (Claude Code JSON payload, Copilot Studio `conversationId`) before
+    /// assigning it to `SecurityCore::session_id` or passing it to `lock()`.
+    pub(crate) fn sanitize_session_id(session_id: &str) -> String {
+        session_id
             .chars()
             .filter(|c| c.is_alphanumeric() || *c == '-' || *c == '_')
-            .collect::<String>();
+            .collect()
+    }
+
+    fn get_file_path(&self, session_id: &str) -> PathBuf {
+        let safe_id = Self::sanitize_session_id(session_id);
         self.storage_dir.join(format!("{}.json", safe_id))
     }
 }

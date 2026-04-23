@@ -73,10 +73,18 @@ impl HookHandler {
 
     /// Handle a hook input, returning the appropriate process exit code.
     pub async fn handle(&mut self, input: HookInput) -> Result<i32> {
+        // Sanitize the session ID before use: it may originate from an untrusted
+        // JSON payload (Claude Code hook input, Copilot Studio conversationId).
+        // Using the raw value would allow control characters or path separators
+        // to reach the audit log and the session file path.
+        let session_id = crate::engine_core::persistence::PersistenceLayer::sanitize_session_id(
+            &input.session_id,
+        );
+
         // A. Acquire cross-process lock on the session file.
         //    All subsequent reads and writes go through the lock's file handle
         //    so that Windows LockFileEx byte-range locking is respected.
-        let mut lock = self.persistence.lock(&input.session_id)?;
+        let mut lock = self.persistence.lock(&session_id)?;
 
         // B. Load session state through the locked handle.
         let state = lock.load()?;
@@ -85,7 +93,7 @@ impl HookHandler {
         if let Some(state) = state {
             self.core.import_state(state);
         }
-        self.core.session_id = input.session_id.clone();
+        self.core.session_id = session_id.clone();
 
         // C. Silent Handshake (only on first call of session)
         if is_new_session {
