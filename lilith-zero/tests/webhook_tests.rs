@@ -40,6 +40,7 @@ use tempfile::NamedTempFile;
 use tokio::net::TcpListener;
 
 use lilith_zero::config::Config;
+use lilith_zero::engine_core::models::PolicyDefinition;
 use lilith_zero::server::auth::{NoAuthAuthenticator, SharedSecretAuthenticator};
 use lilith_zero::server::webhook::{build_router, WebhookState};
 
@@ -84,6 +85,13 @@ async fn start_test_server(state: WebhookState) -> String {
     format!("http://127.0.0.1:{}", addr.port())
 }
 
+/// Parse a policy YAML file into a shared Arc — mirrors what run_webhook_server does.
+fn load_test_policy(policy_path: &std::path::Path) -> Option<Arc<PolicyDefinition>> {
+    let yaml = std::fs::read_to_string(policy_path).expect("test policy must be readable");
+    let pol: PolicyDefinition = serde_yaml_ng::from_str(&yaml).expect("test policy must parse");
+    Some(Arc::new(pol))
+}
+
 /// Build a `WebhookState` with `NoAuthAuthenticator` — use for all tests
 /// that focus on routing, payload, and policy (not auth itself).
 fn test_state_no_auth(policy_path: &std::path::Path) -> WebhookState {
@@ -95,6 +103,7 @@ fn test_state_no_auth(policy_path: &std::path::Path) -> WebhookState {
         config: Arc::new(config),
         audit_log_path: None,
         auth: Arc::new(NoAuthAuthenticator),
+        policy: load_test_policy(policy_path),
     }
 }
 
@@ -109,6 +118,7 @@ fn test_state_with_shared_secret_auth(policy_path: &std::path::Path) -> WebhookS
         config: Arc::new(config),
         audit_log_path: None,
         auth: Arc::new(SharedSecretAuthenticator::new("test-webhook-secret", None)),
+        policy: load_test_policy(policy_path),
     }
 }
 
@@ -199,6 +209,7 @@ async fn test_webhook_validate_returns_not_successful_when_no_policy() {
         config: Arc::new(config),
         audit_log_path: None,
         auth: Arc::new(NoAuthAuthenticator),
+        policy: None,
     };
     let base = start_test_server(state).await;
     let client = Client::new();
@@ -475,6 +486,7 @@ async fn test_webhook_analyze_no_policy_blocks_all_fail_closed() {
         config: Arc::new(config),
         audit_log_path: None,
         auth: Arc::new(NoAuthAuthenticator),
+        policy: None,
     };
     let base = start_test_server(state).await;
     let client = Client::new();
@@ -940,6 +952,7 @@ async fn test_webhook_shared_secret_valid_token_accepted_by_validate() {
         }),
         audit_log_path: None,
         auth: Arc::new(SharedSecretAuthenticator::new(secret, None)),
+        policy: load_test_policy(policy.path()),
     };
     let base = start_test_server(state).await;
     let client = Client::new();
@@ -980,6 +993,7 @@ async fn test_webhook_shared_secret_valid_token_accepted_by_analyze() {
         }),
         audit_log_path: None,
         auth: Arc::new(SharedSecretAuthenticator::new(secret, None)),
+        policy: load_test_policy(policy.path()),
     };
     let base = start_test_server(state).await;
     let client = Client::new();

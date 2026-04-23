@@ -89,6 +89,13 @@ pub struct WebhookState {
     pub audit_log_path: Option<PathBuf>,
     /// JWT authenticator (no-auth / shared-secret / Entra ID).
     pub auth: Arc<dyn Authenticator>,
+    /// Policy parsed once at server startup. `None` means no policy configured
+    /// (all tool calls will be fail-closed denied by the engine).
+    ///
+    /// Pre-parsing avoids a blocking disk read + YAML parse on every request,
+    /// which would otherwise consume a significant fraction of the 900 ms
+    /// evaluation budget and risk triggering the timeout → Copilot Studio allow.
+    pub policy: Option<Arc<crate::engine_core::models::PolicyDefinition>>,
 }
 
 // ---------------------------------------------------------------------------
@@ -178,18 +185,14 @@ async fn do_validate(state: &WebhookState, headers: &HeaderMap) -> Response {
         return auth_error_response(e);
     }
 
-    // Check policy is configured and the file exists on disk.
-    // isSuccessful=false warns the operator that tool calls will fail-closed
-    // (all denied) rather than being evaluated against a real policy.
-    let validation = match &state.config.policies_yaml_path {
-        None => ValidationResponse::not_ready("NO_POLICY_CONFIGURED"),
-        Some(path) => {
-            if path.exists() {
-                ValidationResponse::ok()
-            } else {
-                ValidationResponse::not_ready("POLICY_FILE_NOT_FOUND")
-            }
-        }
+    // isSuccessful=true only when a policy was successfully parsed at startup.
+    // This is more accurate than checking whether the file path exists: if the
+    // policy failed to parse, the file might still be present but the server
+    // would be running in fail-closed deny-all mode without enforcing real rules.
+    let validation = if state.policy.is_some() {
+        ValidationResponse::ok()
+    } else {
+        ValidationResponse::not_ready("NO_POLICY_LOADED")
     };
 
     (StatusCode::OK, Json(validation)).into_response()
@@ -257,7 +260,13 @@ async fn do_analyze(
     );
 
     // 4. Evaluate through the security engine.
-    let mut handler = match HookHandler::new(state.config.clone(), state.audit_log_path.clone()) {
+    // Use the pre-parsed policy from WebhookState to avoid a blocking disk read
+    // on every request (which would erode the 900 ms evaluation budget).
+    let mut handler = match HookHandler::with_policy(
+        state.config.clone(),
+        state.audit_log_path.clone(),
+        state.policy.clone(),
+    ) {
         Ok(h) => h,
         Err(e) => {
             tracing::error!("Failed to create HookHandler: {e}");
