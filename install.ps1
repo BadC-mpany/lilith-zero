@@ -19,8 +19,10 @@ try {
     exit 1
 }
 
-$DownloadUrl = "https://github.com/BadC-mpany/lilith-zero/releases/download/$Version/lilith-zero.exe"
+$DownloadUrl = "https://github.com/BadC-mpany/lilith-zero/releases/download/$Version/lilith-zero-windows-x86_64.exe"
+$ChecksumUrl = "https://github.com/BadC-mpany/lilith-zero/releases/download/$Version/checksums.sha256"
 $DestPath = Join-Path $INSTALL_DIR $BINARY_NAME
+$TempChecksum = Join-Path $env:TEMP "checksums.sha256"
 
 # --- Create Directory ---
 if (-not (Test-Path $INSTALL_DIR)) {
@@ -29,6 +31,25 @@ if (-not (Test-Path $INSTALL_DIR)) {
 
 Write-Host "Downloading $Version -> $DestPath..." -ForegroundColor Cyan
 Invoke-WebRequest -Uri $DownloadUrl -OutFile $DestPath
+Invoke-WebRequest -Uri $ChecksumUrl -OutFile $TempChecksum
+
+# --- Verify Checksum ---
+Write-Host "Verifying checksum..." -ForegroundColor Cyan
+$ExpectedHashLine = Select-String -Path $TempChecksum -Pattern "lilith-zero-windows-x86_64.exe"
+if ($null -eq $ExpectedHashLine) {
+    Write-Error "Checksum for Windows binary not found in checksums.sha256"
+    exit 1
+}
+$ExpectedHash = $ExpectedHashLine.ToString().Split(" ")[0].ToUpper()
+$ActualHash = (Get-FileHash -Path $DestPath -Algorithm SHA256).Hash.ToUpper()
+
+if ($ExpectedHash -ne $ActualHash) {
+    Write-Error "SECURITY ERROR: SHA-256 checksum mismatch!`nExpected: $ExpectedHash`nActual:   $ActualHash"
+    Remove-Item $DestPath
+    exit 1
+}
+Write-Host "Checksum OK." -ForegroundColor Green
+Remove-Item $TempChecksum
 
 # --- PATH Management ---
 $UserPath = [Environment]::GetEnvironmentVariable("Path", "User")

@@ -17,14 +17,15 @@ ARCH="$(uname -m)"
 case "$OS" in
     darwin)
         case "$ARCH" in
-            x86_64)  TARGET="lilith-zero-macos-x86" ;;
-            arm64)   TARGET="lilith-zero-macos-arm" ;;
-            *)       echo "Are you running on a toaster? Unsupported macOS arch: $ARCH"; exit 1 ;;
+            x86_64)  TARGET="lilith-zero-macos-x86_64" ;;
+            arm64)   TARGET="lilith-zero-macos-aarch64" ;;
+            *)       echo "Unsupported macOS arch: $ARCH"; exit 1 ;;
         esac
         ;;
     linux)
         case "$ARCH" in
-            x86_64)  TARGET="lilith-zero" ;;
+            x86_64)  TARGET="lilith-zero-linux-x86_64" ;;
+            aarch64|arm64) TARGET="lilith-zero-linux-aarch64" ;;
             *)       echo "Unsupported Linux arch: $ARCH. Please build from source."; exit 1 ;;
         esac
         ;;
