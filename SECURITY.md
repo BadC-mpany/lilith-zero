@@ -9,6 +9,21 @@ Lilith Zero operates on a **Zero Trust, Defense-in-Depth** architecture designed
 
 Our security engineering process adheres to **rigorous assurance standards**, integrating formal verification, continuous fuzzing, and hermetic red-teaming into every CI pipeline.
 
+## Supply Chain Integrity
+
+We adhere to **SLSA** (Supply-chain Levels for Software Artifacts) principles to ensure the integrity of our releases.
+
+### 1. Build Provenance
+All official releases are built via **GitHub Actions** using **OIDC identity federation**. Every binary, Python package, and npm package includes a cryptographically signed **Attestation of Provenance** (based on Sigstore).
+- **Verification**: You can verify the provenance of any release using the GitHub CLI:
+  `gh attestation verify lilith-zero-linux-x86_64 --repo BadC-mpany/lilith-zero`
+
+### 2. Checksum Verification
+Install scripts automatically verify the **SHA-256 checksum** of all downloaded binaries against a manifest generated at build time.
+
+### 3. npm Provenance
+The `@badcomp/lilith-zero` package is published with **npm provenance**, allowing you to trace the package back to the exact GitHub Action run and commit that produced it.
+
 ## Rigorous Verification Methodology
 
 We employ a multi-layered verification strategy to ensure mathematical correctness and runtime safety.

@@ -8,7 +8,7 @@
 
 [![CI](https://github.com/BadC-mpany/lilith-zero/actions/workflows/ci.yml/badge.svg)](https://github.com/BadC-mpany/lilith-zero/actions)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-0.2.0-green.svg)](https://github.com/BadC-mpany/lilith-zero/releases)
+[![Version](https://img.shields.io/badge/Version-0.2.2-green.svg)](https://github.com/BadC-mpany/lilith-zero/releases)
 
 <br/>
 

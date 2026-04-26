@@ -9,6 +9,8 @@ on:
 
 permissions:
   contents: read
+  id-token: write
+  attestations: write
 
 jobs:
   quality-rust:
@@ -64,6 +66,11 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Attest Build Provenance
+        uses: actions/attest-build-provenance@17372338870e283901b70956b60706599767f748 # v2.2.0
+        with:
+          subject-path: 'dist/*'
+
   build-docs:
     needs: [test-matrix]
     uses: ./.github/workflows/_docs_build.yml
@@ -109,4 +116,27 @@ jobs:
         with:
           packages-dir: sdk/dist/
           print-hash: true
-          attestations: false
+          attestations: true
+
+  publish-npm:
+    name: Publish to npm
+    needs: [test-matrix]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+      - name: Build and Publish
+        working-directory: sdk-ts
+        run: |
+          bun install
+          bun run build
+          # Note: npm provenance requires OIDC setup in npmjs.com package settings
+          npm publish --access public --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
