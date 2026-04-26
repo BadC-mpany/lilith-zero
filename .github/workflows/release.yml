@@ -67,7 +67,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Attest Build Provenance
-        uses: actions/attest-build-provenance@17372338870e283901b70956b60706599767f748 # v2.2.0
+        uses: actions/attest-build-provenance@520d128f165991a6c774bcb264f323e3d70747f4 # v2.2.0
         with:
           subject-path: 'dist/*'
 
@@ -131,6 +131,11 @@ jobs:
         uses: actions/checkout@v4
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
       - name: Build and Publish
         working-directory: sdk-ts
         run: |
