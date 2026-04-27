@@ -114,3 +114,7 @@ strip = true
 inherits = "release"
 debug = true
 strip = false
+
+[[test]]
+name = "red_team"
+path = "tests/red_team/mod.rs"
