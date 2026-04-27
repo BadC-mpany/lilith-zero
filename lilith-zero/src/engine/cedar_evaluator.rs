@@ -58,10 +58,17 @@ impl CedarEvaluator {
         let paths_list: Vec<Value> = canonical_paths.iter().map(|p| Value::String(p.clone())).collect();
         let classes_list: Vec<Value> = classes.iter().map(|c| Value::String(c.clone())).collect();
 
+        let path = if canonical_paths.len() == 1 {
+            Value::String(canonical_paths[0].clone())
+        } else {
+            Value::String("".to_string())
+        };
+
         // Serialize Context to JSON 
         let context_json = serde_json::json!({
             "taints": taints_list,
             "paths": paths_list,
+            "path": path,
             "args": tool_args,
             "classes": classes_list
         });

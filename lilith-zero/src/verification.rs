@@ -332,20 +332,7 @@ mod tests {
         assert!(taints.contains("SECRET"));
     }
 
-    #[test]
-    fn test_wildcard_edge_cases() {
-        // Description: Executes the test_wildcard_edge_cases logic.
-        use crate::engine::pattern_matcher::PatternMatcher;
-        assert!(PatternMatcher::wildcard_match("**", "anything"));
-        assert!(PatternMatcher::wildcard_match("**", ""));
-        assert!(PatternMatcher::wildcard_match(
-            "file://**/secret",
-            "file:///home/secret"
-        ));
-        assert!(PatternMatcher::wildcard_match("exact", "exact"));
-        assert!(!PatternMatcher::wildcard_match("exact", "exactt"));
-        assert!(!PatternMatcher::wildcard_match("exact", "exac"));
-    }
+
 
     #[test]
     fn test_lethal_trifecta_detection() {

@@ -430,21 +430,40 @@ impl McpMiddleware {
         }
 
         // Rug-pull protection: verify tool descriptions against stored pins on tools/list.
+        // 2025.11 MCP Spec: Decouple from security core heuristics and dynamically register explicit capability metadata.
         if pending_method.as_deref() == Some(crate::engine_core::constants::methods::TOOLS_LIST) {
             if let Some(result) = &resp.result {
                 if let Some(tools_arr) = result.get("tools").and_then(|v| v.as_array()) {
-                    let pairs: Vec<(String, String)> = tools_arr
-                        .iter()
-                        .filter_map(|t| {
-                            let name = t.get("name")?.as_str()?.to_string();
+                    let mut pairs: Vec<(String, String)> = Vec::new();
+                    
+                    for t in tools_arr {
+                        if let Some(name) = t.get("name").and_then(|n| n.as_str()) {
                             let desc = t
                                 .get("description")
                                 .and_then(|d| d.as_str())
                                 .unwrap_or("")
                                 .to_string();
-                            Some((name, desc))
-                        })
-                        .collect();
+                            pairs.push((name.to_string(), desc));
+                            
+                            let mut dynamic_classes = Vec::new();
+                            
+                            // Check for single string taintClass
+                            if let Some(tc) = t.get("taintClass").and_then(|tc| tc.as_str()) {
+                                dynamic_classes.push(tc.to_string());
+                            }
+                            
+                            // Check for array of security classes (2025.11 standard)
+                            if let Some(classes_arr) = t.get("securityClasses").and_then(|c| c.as_array()) {
+                                for c in classes_arr {
+                                    if let Some(c_str) = c.as_str() {
+                                        dynamic_classes.push(c_str.to_string());
+                                    }
+                                }
+                            }
+                            
+                            self.core.register_tool_classes(name, dynamic_classes);
+                        }
+                    }
 
                     let violations = self.pin_store.observe(&pairs);
                     if !violations.is_empty() {

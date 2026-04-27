@@ -13,7 +13,6 @@ use std::sync::Arc;
 use tracing::{info, warn};
 
 use crate::config::Config;
-use crate::engine::evaluator::PolicyEvaluator;
 use crate::engine::cedar_evaluator::CedarEvaluator;
 use crate::engine_core::path_utils::extract_and_canonicalize_paths;
 use cedar_policy::Decision as CedarDecision;
@@ -59,6 +58,8 @@ pub struct SecurityCore {
     pub policy: Option<PolicyDefinition>,
     /// The natively loaded Cedar policy evaluator.
     pub cedar_evaluator: Option<CedarEvaluator>,
+    /// Dynamic tool capabilities discovered from upstream tools/list responses.
+    pub dynamic_tool_classes: HashMap<String, Vec<String>>,
     taints: HashSet<String>,
     history: Vec<HistoryEntry>,
     call_count: u32,
@@ -87,6 +88,7 @@ impl SecurityCore {
             session_id,
             policy: None,
             cedar_evaluator: None,
+            dynamic_tool_classes: HashMap::new(),
             taints: HashSet::new(),
             history: Vec::new(),
             call_count: 0,
@@ -119,6 +121,18 @@ impl SecurityCore {
                 exceptions: None,
             });
         }
+        
+        match crate::engine::yaml_to_cedar::CedarCompiler::compile(&policy) {
+            Ok(policy_set) => {
+                self.cedar_evaluator = Some(CedarEvaluator::new(policy_set));
+                info!("Successfully compiled YAML policy to Cedar PolicySet");
+            }
+            Err(e) => {
+                warn!("Failed to compile policy to Cedar: {}. Falling back to DENY ALL.", e);
+                // We no longer have a fallback evaluator, so if Cedar compilation fails, we fail closed.
+            }
+        }
+        
         self.policy = Some(policy);
     }
 
@@ -325,15 +339,38 @@ impl SecurityCore {
                 let canonical_paths = extract_and_canonicalize_paths(&mut args_clone);
 
                 let evaluator_result = if let Some(cedar_eval) = &self.cedar_evaluator {
-                    match cedar_eval.evaluate(
-                        &self.session_id,
-                        "tools/call",
-                        &tool_name_str,
-                        arguments.inner(),
-                        &canonical_paths,
-                        &self.taints,
-                        &classes,
-                    ) {
+                    let mut path_denied = None;
+                    for path in &canonical_paths {
+                        let path_arr = vec![path.clone()];
+                        let res = cedar_eval.evaluate(
+                            &self.session_id,
+                            "resources/read",
+                            &tool_name_str,
+                            arguments.inner(),
+                            &path_arr,
+                            &self.taints,
+                            &classes,
+                        );
+                        if let Ok(response) = res {
+                            if response.decision() == CedarDecision::Deny {
+                                path_denied = Some(format!("Path '{}' blocked by resource rules", path));
+                                break;
+                            }
+                        }
+                    }
+
+                    if let Some(reason) = path_denied {
+                        Ok(Decision::Denied { reason })
+                    } else {
+                        match cedar_eval.evaluate(
+                            &self.session_id,
+                            "tools/call",
+                            &tool_name_str,
+                            arguments.inner(),
+                            &canonical_paths,
+                            &self.taints,
+                            &classes,
+                        ) {
                         Ok(response) => {
                             if response.decision() == CedarDecision::Allow {
                                 let mut taints_to_add = vec![];
@@ -361,16 +398,7 @@ impl SecurityCore {
                         },
                         Err(e) => Err(e),
                     }
-                } else if let Some(policy) = &self.policy {
-                    PolicyEvaluator::evaluate_with_args(
-                        policy,
-                        &tool_name_str,
-                        &classes,
-                        &self.history,
-                        &self.taints,
-                        arguments.inner(), // Helper to get reference without consuming? Tainted is defined where?
-                    )
-                    .await
+                    }
                 } else {
                     match self.config.security_level {
                         crate::config::SecurityLevel::AuditOnly => {
@@ -612,12 +640,30 @@ impl SecurityCore {
         }
     }
 
+    /// Register dynamically discovered tool classes (e.g. from a tools/list response).
+    pub fn register_tool_classes(&mut self, tool_name: &str, classes: Vec<String>) {
+        if !classes.is_empty() {
+            info!("Registered dynamic classes for tool '{}': {:?}", tool_name, classes);
+            self.dynamic_tool_classes.insert(tool_name.to_string(), classes);
+        }
+    }
+
     fn classify_tool(&self, name: &str) -> Vec<String> {
-        self.policy
+        let mut classes = self.policy
             .as_ref()
             .and_then(|p| p.tool_classes.get(name))
             .cloned()
-            .unwrap_or_default()
+            .unwrap_or_default();
+            
+        if let Some(dynamic) = self.dynamic_tool_classes.get(name) {
+            for c in dynamic {
+                if !classes.contains(c) {
+                    classes.push(c.clone());
+                }
+            }
+        }
+        
+        classes
     }
 
     fn process_evaluator_decision(
