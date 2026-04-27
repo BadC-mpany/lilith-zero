@@ -109,7 +109,9 @@ jobs:
 
       - name: Build Distribution
         working-directory: sdk
-        run: uv build --package lilith-zero
+        run: |
+          uv build --package lilith-zero
+          rm -f dist/.gitignore
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@ed0c53931b1dc9bd32cbe73a98c7f6766f8a527e # release/v1
@@ -117,6 +119,7 @@ jobs:
           packages-dir: sdk/dist/
           print-hash: true
           attestations: true
+          skip-existing: true
 
   publish-npm:
     name: Publish to npm
