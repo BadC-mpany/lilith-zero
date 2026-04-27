@@ -326,7 +326,46 @@ impl SecurityCore {
                     .as_ref()
                     .map(|h| h.begin_tool_evaluation(&self.session_id, &tool_name_str));
 
-                let evaluator_result = if let Some(policy) = &self.policy {
+                let canonical_paths = extract_and_canonicalize_paths(arguments.inner());
+
+                let evaluator_result = if let Some(cedar_eval) = &self.cedar_evaluator {
+                    match cedar_eval.evaluate(
+                        &self.session_id,
+                        "tools/call",
+                        &tool_name_str,
+                        arguments.inner(),
+                        &canonical_paths,
+                        &self.taints,
+                        &classes,
+                    ) {
+                        Ok(response) => {
+                            if response.decision() == CedarDecision::Allow {
+                                let mut taints_to_add = vec![];
+                                let mut taints_to_remove = vec![];
+                                for policy_id in response.diagnostics().reason() {
+                                    let id_str = policy_id.to_string();
+                                    if let Some(tag) = id_str.strip_prefix("add_taint:") {
+                                        if let Some((t, _)) = tag.split_once(':') {
+                                            taints_to_add.push(t.to_string());
+                                        }
+                                    } else if let Some(tag) = id_str.strip_prefix("remove_taint:") {
+                                        if let Some((t, _)) = tag.split_once(':') {
+                                            taints_to_remove.push(t.to_string());
+                                        }
+                                    }
+                                }
+                                if taints_to_add.is_empty() && taints_to_remove.is_empty() {
+                                    Ok(Decision::Allowed)
+                                } else {
+                                    Ok(Decision::AllowedWithSideEffects { taints_to_add, taints_to_remove })
+                                }
+                            } else {
+                                Ok(Decision::Denied { reason: "Denied by Cedar policy".to_string() })
+                            }
+                        },
+                        Err(e) => Err(e),
+                    }
+                } else if let Some(policy) = &self.policy {
                     PolicyEvaluator::evaluate_with_args(
                         policy,
                         &tool_name_str,
@@ -413,11 +452,36 @@ impl SecurityCore {
 
                 let mut allow_access = false;
                 let mut taints_to_add = vec![];
+                let uri_str = uri.clone().into_inner_unchecked();
+                let canonical_paths = extract_and_canonicalize_paths(&json!(uri_str));
 
-                if let Some(policy) = &self.policy {
+                if let Some(cedar_eval) = &self.cedar_evaluator {
+                    match cedar_eval.evaluate(
+                        &self.session_id,
+                        "resources/read",
+                        &uri_str,
+                        &json!({}),
+                        &canonical_paths,
+                        &self.taints,
+                        &[],
+                    ) {
+                        Ok(response) if response.decision() == CedarDecision::Allow => {
+                            allow_access = true;
+                            for policy_id in response.diagnostics().reason() {
+                                let id_str = policy_id.to_string();
+                                if let Some(tag) = id_str.strip_prefix("add_taint:") {
+                                    if let Some((t, _)) = tag.split_once(':') {
+                                        taints_to_add.push(t.to_string());
+                                    }
+                                }
+                            }
+                        },
+                        _ => { allow_access = false; }
+                    }
+                } else if let Some(policy) = &self.policy {
                     for rule in &policy.resource_rules {
                         if self.match_resource_pattern(
-                            &uri.clone().into_inner_unchecked(),
+                            &uri_str,
                             &rule.uri_pattern,
                         ) {
                             if rule.action == "BLOCK" {
@@ -469,6 +533,72 @@ impl SecurityCore {
                 }
             }
 
+            SecurityEvent::PromptRequest {
+                request_id: _,
+                prompt_name,
+                arguments,
+                session_token: _,
+            } => {
+                let prompt_name_str = prompt_name.into_inner_unchecked();
+                let canonical_paths = extract_and_canonicalize_paths(arguments.inner());
+                
+                let mut allow_access = false;
+                if let Some(cedar_eval) = &self.cedar_evaluator {
+                    match cedar_eval.evaluate(
+                        &self.session_id,
+                        "prompts/get",
+                        &prompt_name_str,
+                        arguments.inner(),
+                        &canonical_paths,
+                        &self.taints,
+                        &[],
+                    ) {
+                        Ok(res) if res.decision() == CedarDecision::Allow => { allow_access = true; },
+                        _ => { allow_access = false; }
+                    }
+                }
+                
+                if allow_access {
+                    SecurityDecision::Allow
+                } else {
+                    SecurityDecision::Deny {
+                        error_code: jsonrpc::ERROR_SECURITY_BLOCK,
+                        reason: format!("Prompt access denied by policy: {}", prompt_name_str),
+                    }
+                }
+            }
+            SecurityEvent::SamplingRequest {
+                request_id: _,
+                messages,
+                session_token: _,
+            } => {
+                let canonical_paths = extract_and_canonicalize_paths(messages.inner());
+                
+                let mut allow_access = false;
+                if let Some(cedar_eval) = &self.cedar_evaluator {
+                    match cedar_eval.evaluate(
+                        &self.session_id,
+                        "sampling/createMessage",
+                        "sampling",
+                        messages.inner(),
+                        &canonical_paths,
+                        &self.taints,
+                        &[],
+                    ) {
+                        Ok(res) if res.decision() == CedarDecision::Allow => { allow_access = true; },
+                        _ => { allow_access = false; }
+                    }
+                }
+                
+                if allow_access {
+                    SecurityDecision::Allow
+                } else {
+                    SecurityDecision::Deny {
+                        error_code: jsonrpc::ERROR_SECURITY_BLOCK,
+                        reason: "Sampling access denied by policy".to_string(),
+                    }
+                }
+            }
             SecurityEvent::ToolResponse {
                 tool_name: _,
                 result: _,

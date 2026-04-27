@@ -72,9 +72,70 @@ impl CedarCompiler {
             set.add(policy).map_err(|e| e.to_string())?;
         }
 
-        // 3. Default Fallback
-        // MCP requests are deny-by-default in Lilith Zero if not matched by an ALLOW rule.
-        // Actually Cedar is default-deny. We don't need to add anything.
+        // 3. Taint Rules
+        for (i, rule) in def.taint_rules.iter().enumerate() {
+            let mut resource_cond = String::new();
+            if let Some(ref t) = rule.tool {
+                resource_cond = format!("resource == Resource::\"{}\"", t);
+            } else if let Some(ref tc) = rule.tool_class {
+                resource_cond = format!("context.classes.contains(\"{}\")", tc);
+            } else {
+                resource_cond = "true".to_string(); // Applies to all
+            }
+
+            let mut conditions = vec![];
+            
+            // Required Taints
+            if let Some(ref req_taints) = rule.required_taints {
+                for rt in req_taints {
+                    conditions.push(format!("context.taints.contains(\"{}\")", rt));
+                }
+            }
+            
+            // Forbidden Taints
+            if let Some(ref forbid_taints) = rule.forbidden_tags {
+                for ft in forbid_taints {
+                    conditions.push(format!("context.taints.contains(\"{}\")", ft));
+                }
+            }
+            
+            // Tags for ADD/REMOVE
+            let mut policy_id_prefix = "rule".to_string();
+            let effect = match rule.action.to_uppercase().as_str() {
+                "ALLOW" => "permit",
+                "BLOCK" | "CHECK_TAINT" => "forbid",
+                "ADD_TAINT" => {
+                    policy_id_prefix = format!("add_taint:{}", rule.tag.as_deref().unwrap_or(""));
+                    "permit"
+                },
+                "REMOVE_TAINT" => {
+                    policy_id_prefix = format!("remove_taint:{}", rule.tag.as_deref().unwrap_or(""));
+                    "permit"
+                },
+                _ => "forbid", // Default to fail closed
+            };
+
+            let condition_str = if conditions.is_empty() {
+                "".to_string()
+            } else {
+                format!(" && {}", conditions.join(" && "))
+            };
+
+            let policy_src = format!(
+                r#"{} (
+    principal,
+    action == Action::"tools/call",
+    resource
+) when {{
+    ({}){} 
+}};"#,
+                effect, resource_cond, condition_str
+            );
+
+            let policy = Policy::parse(Some(PolicyId::from_str(&format!("{}_{}", policy_id_prefix, i)).unwrap()), &policy_src)
+                .map_err(|e| format!("Failed to compile taint rule: {}", e))?;
+            set.add(policy).map_err(|e| e.to_string())?;
+        }
 
         Ok(set)
     }

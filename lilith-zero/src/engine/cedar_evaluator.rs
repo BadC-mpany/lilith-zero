@@ -37,7 +37,8 @@ impl CedarEvaluator {
         tool_args: &Value,
         canonical_paths: &[String],
         taints: &HashSet<String>,
-    ) -> Result<Decision, InterceptorError> {
+        classes: &[String],
+    ) -> Result<cedar_policy::Response, InterceptorError> {
         // Principal is the session (or agent)
         let principal = EntityUid::from_str(&format!(r#"Session::"{}""#, session_id))
             .map_err(|e| InterceptorError::InternalError(format!("Invalid Principal UID: {}", e)))?;
@@ -53,12 +54,14 @@ impl CedarEvaluator {
         // Context contains active taints, safe paths, and original args (for reference, though typed schemas are better)
         let taints_list: Vec<Value> = taints.iter().map(|t| Value::String(t.clone())).collect();
         let paths_list: Vec<Value> = canonical_paths.iter().map(|p| Value::String(p.clone())).collect();
+        let classes_list: Vec<Value> = classes.iter().map(|c| Value::String(c.clone())).collect();
 
         // Serialize Context to JSON 
         let context_json = serde_json::json!({
             "taints": taints_list,
             "paths": paths_list,
-            "args": tool_args
+            "args": tool_args,
+            "classes": classes_list
         });
 
         let context = Context::from_json_value(context_json, None)
@@ -71,6 +74,6 @@ impl CedarEvaluator {
 
         let response = self.authorizer.is_authorized(&request, &self.policy_set, &entities);
 
-        Ok(response.decision())
+        Ok(response)
     }
 }
