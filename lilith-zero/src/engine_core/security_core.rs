@@ -14,6 +14,10 @@ use tracing::{info, warn};
 
 use crate::config::Config;
 use crate::engine::evaluator::PolicyEvaluator;
+use crate::engine::cedar_evaluator::CedarEvaluator;
+use crate::engine::yaml_to_cedar::CedarCompiler;
+use crate::engine_core::path_utils::extract_and_canonicalize_paths;
+use cedar_policy::Decision as CedarDecision;
 use crate::engine_core::auth;
 use crate::engine_core::constants::jsonrpc;
 use crate::engine_core::crypto::CryptoSigner;
@@ -54,6 +58,7 @@ pub struct SecurityCore {
     pub session_id: String,
     /// The currently loaded security policy; `None` means no policy (fail-closed by default).
     pub policy: Option<PolicyDefinition>,
+    pub cedar_evaluator: Option<CedarEvaluator>,
     taints: HashSet<String>,
     history: Vec<HistoryEntry>,
     call_count: u32,
@@ -81,6 +86,7 @@ impl SecurityCore {
             audit,
             session_id,
             policy: None,
+            cedar_evaluator: None,
             taints: HashSet::new(),
             history: Vec::new(),
             call_count: 0,
@@ -95,8 +101,7 @@ impl SecurityCore {
     ///
     /// If `protect_lethal_trifecta` is enabled in either the policy or the config, automatically
     /// appends the EXFILTRATION blocking rule that implements lethal-trifecta protection.
-    pub fn set_policy(&mut self, mut policy: PolicyDefinition) {
-        // Description: Executes the set_policy logic.
+        pub fn set_policy(&mut self, mut policy: PolicyDefinition) {
         if policy.protect_lethal_trifecta || self.config.protect_lethal_trifecta {
             info!("Lethal trifecta protection enabled - auto-injecting EXFILTRATION blocking rule");
             policy.taint_rules.push(PolicyRule {
@@ -114,6 +119,17 @@ impl SecurityCore {
                 exceptions: None,
             });
         }
+        
+        match CedarCompiler::compile(&policy) {
+            Ok(policy_set) => {
+                self.cedar_evaluator = Some(CedarEvaluator::new(policy_set));
+                info!("Successfully compiled YAML policy to Cedar PolicySet");
+            }
+            Err(e) => {
+                warn!("Failed to compile policy to Cedar: {}. Falling back to legacy evaluator.", e);
+            }
+        }
+        
         self.policy = Some(policy);
     }
 

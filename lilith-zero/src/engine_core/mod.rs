@@ -14,6 +14,8 @@ pub mod errors;
 pub mod events;
 /// Data models: policies, rules, JSON-RPC messages, and session structures.
 pub mod models;
+/// Path canonicalization utilities.
+pub mod path_utils;
 /// State persistence for ephemeral hook execution.
 pub mod persistence;
 /// Per-session security state and policy evaluation entry point.

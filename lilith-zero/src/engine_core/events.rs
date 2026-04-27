@@ -46,6 +46,19 @@ pub enum SecurityEvent {
         /// Optional session token included in the request parameters.
         session_token: Option<String>,
     },
+    /// An MCP `prompts/get` call to be evaluated against prompt rules.
+    PromptRequest {
+        request_id: Value,
+        prompt_name: TaintedString,
+        arguments: Tainted<Value>,
+        session_token: Option<String>,
+    },
+    /// An MCP `sampling/createMessage` call to be evaluated against sampling rules.
+    SamplingRequest {
+        request_id: Value,
+        messages: Tainted<Value>,
+        session_token: Option<String>,
+    },
     /// An MCP tool-call response to be evaluated for post-execution side effects.
     ToolResponse {
         /// The tool name.
