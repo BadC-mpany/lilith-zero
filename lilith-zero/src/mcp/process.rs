@@ -77,11 +77,22 @@ impl ProcessSupervisor {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
 
-        #[cfg(target_os = "linux")]
-        // SAFETY: `prctl` is a syscall with no Rust-visible aliasing hazards.
+        #[cfg(unix)]
+        // SAFETY: `prctl` and `setpgid` are syscalls with no Rust-visible aliasing hazards.
         unsafe {
             command.pre_exec(|| {
-                let ret = libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL);
+                #[cfg(target_os = "linux")]
+                {
+                    let ret = libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL);
+                    if ret != 0 {
+                        return Err(std::io::Error::last_os_error());
+                    }
+                }
+                
+                // Create a new process group for the child (Linux & macOS)
+                // This allows the supervisor to send SIGKILL to the entire process group
+                // to prevent double-fork daemonization escapes.
+                let ret = libc::setpgid(0, 0);
                 if ret != 0 {
                     return Err(std::io::Error::last_os_error());
                 }
@@ -148,10 +159,20 @@ impl ProcessSupervisor {
             .map(|s| Box::new(s) as Box<dyn AsyncRead + Unpin + Send>);
 
         let (kill_tx, kill_rx) = oneshot::channel();
+        
+        let pid_opt = child.id();
 
         tokio::spawn(async move {
             tokio::select! {
                 _ = kill_rx => {
+                    #[cfg(unix)]
+                    if let Some(pid) = pid_opt {
+                        // Kill the entire process group
+                        // SAFETY: process ID is valid and negative pid means send to process group.
+                        unsafe {
+                            libc::kill(-(pid as i32), libc::SIGKILL);
+                        }
+                    }
                     let _ = child.kill().await;
                 }
                 status = child.wait() => {

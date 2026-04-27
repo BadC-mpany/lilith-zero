@@ -34,8 +34,13 @@ pub fn validate_audience_claim(
 ) -> Result<()> {
     let secret = jwt_secret.ok_or_else(|| anyhow!("Authentication required (audiences set) but lilith-zero_JWT_SECRET is missing. Cannot validate token."))?;
 
-    let decoding_key = DecodingKey::from_secret(secret.as_bytes());
-    let mut validation = Validation::new(Algorithm::HS256); // Default to HS256 for now. logic can expand.
+    let (decoding_key, algorithm) = if secret.starts_with("-----BEGIN") {
+        (DecodingKey::from_rsa_pem(secret.as_bytes()).map_err(|e| anyhow!("Invalid RSA PEM: {}", e))?, Algorithm::RS256)
+    } else {
+        (DecodingKey::from_secret(secret.as_bytes()), Algorithm::HS256)
+    };
+
+    let mut validation = Validation::new(algorithm); // Use detected algorithm
 
     validation.validate_aud = false; // We check manually.
 
@@ -64,13 +69,6 @@ pub fn validate_audience_claim(
                 found = true;
                 break;
             }
-        }
-        if !found {
-            return Err(anyhow!(
-                "Token audience {:?} does not match expected {:?}",
-                token_auds,
-                expected_audiences
-            ));
         }
         if !found {
             return Err(anyhow!(

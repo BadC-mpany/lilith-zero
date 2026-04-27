@@ -15,7 +15,6 @@ use tracing::{info, warn};
 use crate::config::Config;
 use crate::engine::evaluator::PolicyEvaluator;
 use crate::engine::cedar_evaluator::CedarEvaluator;
-use crate::engine::yaml_to_cedar::CedarCompiler;
 use crate::engine_core::path_utils::extract_and_canonicalize_paths;
 use cedar_policy::Decision as CedarDecision;
 use crate::engine_core::auth;
@@ -58,6 +57,7 @@ pub struct SecurityCore {
     pub session_id: String,
     /// The currently loaded security policy; `None` means no policy (fail-closed by default).
     pub policy: Option<PolicyDefinition>,
+    /// The natively loaded Cedar policy evaluator.
     pub cedar_evaluator: Option<CedarEvaluator>,
     taints: HashSet<String>,
     history: Vec<HistoryEntry>,
@@ -101,7 +101,7 @@ impl SecurityCore {
     ///
     /// If `protect_lethal_trifecta` is enabled in either the policy or the config, automatically
     /// appends the EXFILTRATION blocking rule that implements lethal-trifecta protection.
-        pub fn set_policy(&mut self, mut policy: PolicyDefinition) {
+    pub fn set_policy(&mut self, mut policy: PolicyDefinition) {
         if policy.protect_lethal_trifecta || self.config.protect_lethal_trifecta {
             info!("Lethal trifecta protection enabled - auto-injecting EXFILTRATION blocking rule");
             policy.taint_rules.push(PolicyRule {
@@ -119,18 +119,13 @@ impl SecurityCore {
                 exceptions: None,
             });
         }
-        
-        match CedarCompiler::compile(&policy) {
-            Ok(policy_set) => {
-                self.cedar_evaluator = Some(CedarEvaluator::new(policy_set));
-                info!("Successfully compiled YAML policy to Cedar PolicySet");
-            }
-            Err(e) => {
-                warn!("Failed to compile policy to Cedar: {}. Falling back to legacy evaluator.", e);
-            }
-        }
-        
         self.policy = Some(policy);
+    }
+
+    /// Load a native Cedar policy set into the security core.
+    pub fn set_cedar_policy(&mut self, policy_set: cedar_policy::PolicySet) {
+        self.cedar_evaluator = Some(CedarEvaluator::new(policy_set));
+        info!("Successfully loaded Cedar PolicySet");
     }
 
     /// Register a telemetry hook for distributed tracing.
@@ -326,7 +321,8 @@ impl SecurityCore {
                     .as_ref()
                     .map(|h| h.begin_tool_evaluation(&self.session_id, &tool_name_str));
 
-                let canonical_paths = extract_and_canonicalize_paths(arguments.inner());
+                let mut args_clone = arguments.inner().clone();
+                let canonical_paths = extract_and_canonicalize_paths(&mut args_clone);
 
                 let evaluator_result = if let Some(cedar_eval) = &self.cedar_evaluator {
                     match cedar_eval.evaluate(
@@ -453,7 +449,8 @@ impl SecurityCore {
                 let mut allow_access = false;
                 let mut taints_to_add = vec![];
                 let uri_str = uri.clone().into_inner_unchecked();
-                let canonical_paths = extract_and_canonicalize_paths(&json!(uri_str));
+                let mut uri_json = json!(uri_str);
+                let canonical_paths = extract_and_canonicalize_paths(&mut uri_json);
 
                 if let Some(cedar_eval) = &self.cedar_evaluator {
                     match cedar_eval.evaluate(
@@ -540,7 +537,8 @@ impl SecurityCore {
                 session_token: _,
             } => {
                 let prompt_name_str = prompt_name.into_inner_unchecked();
-                let canonical_paths = extract_and_canonicalize_paths(arguments.inner());
+                let mut args_clone = arguments.inner().clone();
+                let canonical_paths = extract_and_canonicalize_paths(&mut args_clone);
                 
                 let mut allow_access = false;
                 if let Some(cedar_eval) = &self.cedar_evaluator {
@@ -572,7 +570,8 @@ impl SecurityCore {
                 messages,
                 session_token: _,
             } => {
-                let canonical_paths = extract_and_canonicalize_paths(messages.inner());
+                let mut messages_clone = messages.inner().clone();
+                let canonical_paths = extract_and_canonicalize_paths(&mut messages_clone);
                 
                 let mut allow_access = false;
                 if let Some(cedar_eval) = &self.cedar_evaluator {

@@ -6,7 +6,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 
-use cedar_policy::{Authorizer, Context, Decision, Entities, EntityUid, PolicySet, Request, RestrictedExpression};
+use cedar_policy::{Authorizer, Context, Entities, EntityUid, PolicySet, Request};
 use std::collections::HashSet;
 use std::str::FromStr;
 use serde_json::Value;
@@ -21,6 +21,7 @@ pub struct CedarEvaluator {
 }
 
 impl CedarEvaluator {
+    /// Creates a new `CedarEvaluator` with the given `PolicySet`.
     pub fn new(policy_set: PolicySet) -> Self {
         Self {
             authorizer: Authorizer::new(),
@@ -29,6 +30,7 @@ impl CedarEvaluator {
     }
 
     /// Evaluate an MCP action for a given session.
+    #[allow(clippy::too_many_arguments)]
     pub fn evaluate(
         &self,
         session_id: &str,
@@ -41,15 +43,15 @@ impl CedarEvaluator {
     ) -> Result<cedar_policy::Response, InterceptorError> {
         // Principal is the session (or agent)
         let principal = EntityUid::from_str(&format!(r#"Session::"{}""#, session_id))
-            .map_err(|e| InterceptorError::InternalError(format!("Invalid Principal UID: {}", e)))?;
+            .map_err(|e| InterceptorError::StateError(format!("Invalid Principal UID: {}", e)))?;
 
         // Action is the MCP method (e.g., tools/call, resources/read)
         let action_uid = EntityUid::from_str(&format!(r#"Action::"{}""#, action))
-            .map_err(|e| InterceptorError::InternalError(format!("Invalid Action UID: {}", e)))?;
+            .map_err(|e| InterceptorError::StateError(format!("Invalid Action UID: {}", e)))?;
 
         // Resource is the tool name or the resource URI
         let resource_uid = EntityUid::from_str(&format!(r#"Resource::"{}""#, resource))
-            .map_err(|e| InterceptorError::InternalError(format!("Invalid Resource UID: {}", e)))?;
+            .map_err(|e| InterceptorError::StateError(format!("Invalid Resource UID: {}", e)))?;
 
         // Context contains active taints, safe paths, and original args (for reference, though typed schemas are better)
         let taints_list: Vec<Value> = taints.iter().map(|t| Value::String(t.clone())).collect();
@@ -65,10 +67,10 @@ impl CedarEvaluator {
         });
 
         let context = Context::from_json_value(context_json, None)
-            .map_err(|e| InterceptorError::InternalError(format!("Context conversion failed: {}", e)))?;
+            .map_err(|e| InterceptorError::StateError(format!("Context conversion failed: {}", e)))?;
 
         let request = Request::new(principal, action_uid, resource_uid, context, None)
-            .map_err(|e| InterceptorError::InternalError(format!("Request construction failed: {}", e)))?;
+            .map_err(|e| InterceptorError::StateError(format!("Request construction failed: {}", e)))?;
 
         let entities = Entities::empty();
 

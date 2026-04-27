@@ -43,12 +43,26 @@ pub async fn supervisor_main(
             parent_pid, cmd
         );
 
-        let mut child = Command::new(&cmd)
-            .args(&args)
+        let mut command = Command::new(&cmd);
+        command.args(&args)
             .stdin(Stdio::inherit())
             .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit())
-            .spawn()?;
+            .stderr(Stdio::inherit());
+
+        // Create process group for the actual child command
+        // SAFETY: setpgid is safe.
+        unsafe {
+            command.pre_exec(|| {
+                let ret = libc::setpgid(0, 0);
+                if ret != 0 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
+
+        let mut child = command.spawn()?;
+        let child_pid = child.id().unwrap_or(0) as i32;
 
         #[cfg(target_os = "macos")]
         let parent_died = monitor_parent_kqueue(parent_pid as i32)?;
@@ -59,9 +73,17 @@ pub async fn supervisor_main(
         let mut sigterm = signal(SignalKind::terminate())?;
         let mut sigint = signal(SignalKind::interrupt())?;
 
+        let kill_pg = || {
+            if child_pid > 0 {
+                // SAFETY: sending kill to negative PID (process group)
+                unsafe { libc::kill(-child_pid, libc::SIGKILL); }
+            }
+        };
+
         tokio::select! {
             _ = parent_died => {
                 eprintln!("[supervisor] Parent died! Killing child...");
+                kill_pg();
                 let _ = child.kill().await;
                 std::process::exit(1);
             }
@@ -77,9 +99,11 @@ pub async fn supervisor_main(
                 }
             }
             _ = sigterm.recv() => {
+                kill_pg();
                 let _ = child.kill().await;
             }
             _ = sigint.recv() => {
+                kill_pg();
                 let _ = child.kill().await;
             }
         }

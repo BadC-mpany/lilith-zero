@@ -42,21 +42,17 @@ pub fn lexical_canonicalize<P: AsRef<Path>>(path: P) -> PathBuf {
 
 /// Recursively extract all string values from a JSON Value that might represent paths or URIs,
 /// strip schemes, canonicalize them lexically, and return as a flat list.
-pub fn extract_and_canonicalize_paths(args: &Value) -> Vec<String> {
+pub fn extract_and_canonicalize_paths(args: &mut Value) -> Vec<String> {
     let mut paths = Vec::new();
 
-    // Helper closure to recursively find path-like keys or just extract all strings?
-    // Since we want to be bulletproof against bypasses where an attacker nests a path inside a 
-    // weird key or array, we will extract ALL strings that look like paths, OR specifically known keys.
-    // To be most bulletproof, if we don't know the exact schema, extracting ALL string values and 
-    // testing them against resource rules is the safest approach (fail-closed/conservative).
-
-    fn extract_strings(v: &Value, paths: &mut Vec<String>) {
+    fn extract_strings(v: &mut Value, paths: &mut Vec<String>) {
         match v {
             Value::String(s) => {
-                // Only consider strings that look like paths or URIs or might be used as one
-                // To be extremely rigorous, any string could be a path in a poorly typed tool.
-                paths.push(s.clone());
+                let p = s.strip_prefix("file://").unwrap_or(s);
+                let p = p.strip_prefix("file:").unwrap_or(p);
+                let canon = lexical_canonicalize(p).to_string_lossy().to_string();
+                paths.push(canon.clone());
+                *s = canon;
             }
             Value::Array(arr) => {
                 for item in arr {
@@ -64,8 +60,25 @@ pub fn extract_and_canonicalize_paths(args: &Value) -> Vec<String> {
                 }
             }
             Value::Object(obj) => {
-                for (_, value) in obj {
+                let mut keys_to_replace = Vec::new();
+
+                for (key, value) in obj.iter_mut() {
+                    let p = key.strip_prefix("file://").unwrap_or(key);
+                    let p = p.strip_prefix("file:").unwrap_or(p);
+                    let canon_key = lexical_canonicalize(p).to_string_lossy().to_string();
+                    paths.push(canon_key.clone());
+                    
+                    if canon_key != *key {
+                        keys_to_replace.push((key.clone(), canon_key));
+                    }
+                    
                     extract_strings(value, paths);
+                }
+                
+                for (old_key, new_key) in keys_to_replace {
+                    if let Some(val) = obj.remove(&old_key) {
+                        obj.insert(new_key, val);
+                    }
                 }
             }
             _ => {}
@@ -74,15 +87,7 @@ pub fn extract_and_canonicalize_paths(args: &Value) -> Vec<String> {
 
     extract_strings(args, &mut paths);
 
-    paths.into_iter().map(|p| {
-        // Strip common schemes
-        let p = p.strip_prefix("file://").unwrap_or(&p);
-        let p = p.strip_prefix("file:").unwrap_or(p);
-        
-        // Lexical canonicalize
-        let canon = lexical_canonicalize(p);
-        canon.to_string_lossy().to_string()
-    }).collect()
+    paths
 }
 
 #[cfg(test)]
@@ -101,13 +106,13 @@ mod tests {
 
     #[test]
     fn test_extract_and_canonicalize() {
-        let args = json!({
+        let mut args = json!({
             "path": "file:///tmp/nested/../../etc/passwd",
             "nested": {
                 "arr": ["/var/log", "../foo"]
             }
         });
-        let paths = extract_and_canonicalize_paths(&args);
+        let paths = extract_and_canonicalize_paths(&mut args);
         assert!(paths.contains(&"/etc/passwd".to_string()));
         assert!(paths.contains(&"/var/log".to_string()));
         // Note: "../foo" is relative. Depending on CWD, this is tricky, but lexical is correct for the string.

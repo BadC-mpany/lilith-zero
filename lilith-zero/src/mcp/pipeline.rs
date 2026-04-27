@@ -25,6 +25,7 @@ pub enum DownstreamEvent {
 
 /// An event produced by the upstream (middleware → MCP server) reader task.
 #[derive(Debug)]
+#[allow(clippy::large_enum_variant)]
 pub enum UpstreamEvent {
     /// A complete, parsed JSON-RPC response from the upstream server.
     Response(JsonRpcResponse),

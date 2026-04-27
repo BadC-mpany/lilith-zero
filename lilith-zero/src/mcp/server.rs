@@ -293,6 +293,10 @@ impl McpMiddleware {
             .as_ref()
             .map(|h| h.begin_mcp_request(&req.method, req.params.as_ref()));
 
+        if let Some(params) = req.params.as_mut() {
+            crate::engine_core::path_utils::extract_and_canonicalize_paths(params);
+        }
+
         let security_event = self.session.parse_request(req);
 
         let decision = self.core.evaluate(security_event.clone()).await;
