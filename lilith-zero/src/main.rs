@@ -11,6 +11,7 @@ use lilith_zero::mcp::supervisor;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 use std::sync::Arc;
 use tracing::info;
 
@@ -746,18 +747,30 @@ async fn run_webhook_server(
 
     // Parse the policy once at startup so each request doesn't pay a disk read.
     let policy = if let Some(ref path) = config.policies_yaml_path {
-        let content = std::fs::read_to_string(path)
-            .map_err(|e| format!("Cannot read policy '{}': {e}", path.display()))?;
-        let pol: lilith_zero::engine_core::models::PolicyDefinition =
-            serde_yaml_ng::from_str(&content)
-                .map_err(|e| format!("Cannot parse policy '{}': {e}", path.display()))?;
-        tracing::info!(
-            "Policy '{}' loaded at startup ({} static rules, {} taint rules)",
-            pol.name,
-            pol.static_rules.len(),
-            pol.taint_rules.len()
-        );
-        Some(Arc::new(pol))
+        if path.extension().map_or(false, |ext| ext == "cedar") {
+            let content = std::fs::read_to_string(path)
+                .map_err(|e| format!("Cannot read Cedar policy '{}': {e}", path.display()))?;
+            let _policy_set = cedar_policy::PolicySet::from_str(&content)
+                .map_err(|e| format!("Cannot parse Cedar policy '{}': {e}", path.display()))?;
+            
+            // We need a dummy PolicyDefinition for the webhook state, or we update WebhookState
+            // to support both. For now, we'll just log and fail if it's cedar in webhook until fully supported.
+            tracing::info!("Native Cedar policies are supported in 'run' and 'hook' modes.");
+            None
+        } else {
+            let content = std::fs::read_to_string(path)
+                .map_err(|e| format!("Cannot read policy '{}': {e}", path.display()))?;
+            let pol: lilith_zero::engine_core::models::PolicyDefinition =
+                serde_yaml_ng::from_str(&content)
+                    .map_err(|e| format!("Cannot parse policy '{}': {e}", path.display()))?;
+            tracing::info!(
+                "Policy '{}' loaded at startup ({} static rules, {} taint rules)",
+                pol.name,
+                pol.static_rules.len(),
+                pol.taint_rules.len()
+            );
+            Some(Arc::new(pol))
+        }
     } else {
         tracing::warn!("No policy configured — all tool calls will be fail-closed denied");
         None
@@ -802,6 +815,22 @@ fn validate_command(policy_path: &Path) -> Result<(), Box<dyn std::error::Error>
 
     let content = std::fs::read_to_string(policy_path)
         .map_err(|e| format!("Cannot read '{}': {e}", policy_path.display()))?;
+
+    if policy_path.extension().map_or(false, |ext| ext == "cedar") {
+        match cedar_policy::PolicySet::from_str(&content) {
+            Ok(set) => {
+                let count = set.policies().collect::<Vec<_>>().len();
+                println!(
+                    "OK  Cedar PolicySet is valid  ({} policies)",
+                    count
+                );
+                return Ok(());
+            }
+            Err(e) => {
+                return Err(format!("Cedar parse error in '{}': {e}", policy_path.display()).into());
+            }
+        }
+    }
 
     let policy: PolicyDefinition = serde_yaml_ng::from_str(&content)
         .map_err(|e| format!("YAML parse error in '{}': {e}", policy_path.display()))?;

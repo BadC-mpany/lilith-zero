@@ -83,7 +83,7 @@ class AuditEntry(TypedDict):
 # Module-level constants
 _MCP_PROTOCOL_VERSION = "2024-11-05"
 _SDK_NAME = "lilith-zero"
-_SDK_VERSION = "0.2.1"
+_SDK_VERSION = "0.2.2"
 _SESSION_TIMEOUT_SEC = 5.0
 _SESSION_POLL_INTERVAL_SEC = 0.1
 _SESSION_ID_MARKER = "LILITH_ZERO_SESSION_ID="
@@ -298,12 +298,16 @@ class Lilith:
             try:
                 self._audit_logs = []
                 with open(self._audit_file_path, encoding="utf-8") as _af:
-                    for _line in _af:
-                        if _line.strip():
-                            self._parse_audit_line(_line)
+                    self._parse_audit_lines(_af.read())
             except OSError:
                 pass
         return list(self._audit_logs)
+
+    def _parse_audit_lines(self, text: str) -> None:
+        """Helper to parse multiple JSONL audit lines from a block of text."""
+        for line in text.splitlines():
+            if line.strip():
+                self._parse_audit_line(line)
 
     @property
     def session_id(self) -> str | None:
@@ -481,9 +485,7 @@ class Lilith:
             try:
                 self._audit_logs = []
                 with open(self._audit_file_path, encoding="utf-8") as _af:
-                    for _line in _af:
-                        if _line.strip():
-                            self._parse_audit_line(_line)
+                    self._parse_audit_lines(_af.read())
             except OSError:
                 pass
 
@@ -573,6 +575,12 @@ class Lilith:
                         self._session_id = parts[1].strip()
                         self._session_event.set()
                         _logger.debug("Captured session ID: %s", self._session_id)
+                elif text.startswith("[AUDIT] "):
+                    # Format: [AUDIT] <signature> <payload_json>
+                    parts = text[8:].split(" ", 1)
+                    if len(parts) == 2:
+                        signature, payload_json = parts
+                        self._parse_audit_entry(signature, payload_json)
                 else:
                     _logger.debug("[stderr] %s", text)
         except asyncio.CancelledError:
@@ -684,11 +692,7 @@ class Lilith:
                         # EOF
                         if not self._process or self._process.returncode is not None:
                             # Drain remaining
-                            remaining = f.read()
-                            if remaining:
-                                for log_line in remaining.split("\n"):
-                                    if log_line.strip():
-                                        self._parse_audit_line(log_line)
+                            self._parse_audit_lines(f.read())
                             break
                         await asyncio.sleep(_SESSION_POLL_INTERVAL_SEC)
         except (asyncio.CancelledError, FileNotFoundError):
@@ -701,11 +705,15 @@ class Lilith:
         try:
             data = json.loads(line)
             signature = data.get("signature")
-            # The Rust audit logger serialises the payload as a JSON *string*
-            # (double-encoded): {"signature": "…", "payload": "{…}"}.
             payload_raw = data.get("payload")
-            if not (signature and payload_raw):
-                return
+            if signature and payload_raw:
+                self._parse_audit_entry(signature, payload_raw)
+        except Exception:
+            pass
+
+    def _parse_audit_entry(self, signature: str, payload_raw: str | dict[str, Any]) -> None:
+        """Helper to parse a signed audit entry and append to logs."""
+        try:
             payload = (
                 json.loads(payload_raw) if isinstance(payload_raw, str) else payload_raw
             )

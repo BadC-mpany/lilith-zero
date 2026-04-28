@@ -27,7 +27,7 @@ fn bench_policy_validator(c: &mut Criterion) {
         forbidden_tags: None,
         required_taints: None,
         error: None,
-        pattern: None,
+        match_args: None, pattern: None,
         exceptions: None,
     };
 

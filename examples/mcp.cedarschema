@@ -1,0 +1,27 @@
+// Cedar Schema for MCP (Model Context Protocol) 
+// Grounding Lilith-Zero policies in a formally verifiable structure.
+
+namespace MCP {
+    entity Session {
+        taints: Set<String>,
+        history: Set<String>,
+        call_count: Long
+    };
+
+    entity Action {
+        // e.g. Action::"tools/call", Action::"resources/read"
+    };
+
+    entity Resource {
+        // e.g. Resource::"read_file", Resource::"https://google.com"
+    };
+
+    // The context record passed to every evaluation
+    type Context = {
+        "taints": Set<String>,
+        "paths": Set<String>,
+        "path": String,
+        "args": Record,
+        "classes": Set<String>
+    };
+}

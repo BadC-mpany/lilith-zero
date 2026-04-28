@@ -213,6 +213,9 @@ pub struct PolicyRule {
     /// Optional logic pattern that must match for the rule to apply.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pattern: Option<LogicCondition>,
+    /// Optional argument matcher (legacy alias for a simple pattern).
+    #[serde(alias = "match_args", skip_serializing_if = "Option::is_none")]
+    pub match_args: Option<serde_json::Value>,
     /// Conditions under which this rule is skipped even if it would otherwise fire.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub exceptions: Option<Vec<RuleException>>,

@@ -71,20 +71,6 @@ fn test_cedar_taint_based_forbid() {
 
 #[test]
 fn test_cedar_path_traversal_check() {
-    let policy_src = r#"
-        forbid(
-            principal,
-            action == Action::"tools/call",
-            resource
-        ) when {
-            context.paths.any(p | p.contains("..") || p.contains("/etc/"))
-        };
-        permit(principal, action, resource);
-    "#;
-    // Note: Cedar 4.x doesn't have .any() on arrays yet in the base language without custom functions,
-    // but we can simulate it or use specific checks if we know the schema.
-    // However, our CedarEvaluator passes 'paths' as a list.
-    
     let policy_src_fixed = r#"
         forbid( principal, action, resource ) 
         when { context.paths.contains("/etc/shadow") };
@@ -104,6 +90,41 @@ fn test_cedar_path_traversal_check() {
         "read_file",
         &json!({"path": "/etc/shadow"}),
         &paths,
+        &taints,
+        &classes
+    ).unwrap();
+    
+    assert_eq!(response.decision(), Decision::Deny);
+}
+
+#[test]
+fn test_lethal_trifecta_debug() {
+    let policy_src = r#"
+        forbid(
+            principal,
+            action == Action::"tools/call",
+            resource
+        ) when {
+            context.classes.contains("EXFILTRATION") &&
+            context.taints.contains("ACCESS_PRIVATE") &&
+            context.taints.contains("UNTRUSTED_SOURCE")
+        };
+        permit(principal, action, resource);
+    "#;
+    let policy_set = PolicySet::from_str(policy_src).unwrap();
+    let evaluator = CedarEvaluator::new(policy_set);
+    
+    let mut taints = HashSet::new();
+    taints.insert("ACCESS_PRIVATE".to_string());
+    taints.insert("UNTRUSTED_SOURCE".to_string());
+    let classes = vec!["EXFILTRATION".to_string()];
+    
+    let response = evaluator.evaluate(
+        "session-1",
+        "tools/call",
+        "send_email",
+        &json!({}),
+        &[],
         &taints,
         &classes
     ).unwrap();

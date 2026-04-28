@@ -64,12 +64,18 @@ impl CedarEvaluator {
             Value::String("".to_string())
         };
 
+        let sanitized_args = if tool_args.is_null() {
+            serde_json::json!({})
+        } else {
+            tool_args.clone()
+        };
+
         // Serialize Context to JSON 
         let context_json = serde_json::json!({
             "taints": taints_list,
             "paths": paths_list,
             "path": path,
-            "args": tool_args,
+            "args": sanitized_args,
             "classes": classes_list
         });
 
@@ -84,5 +90,13 @@ impl CedarEvaluator {
         let response = self.authorizer.is_authorized(&request, &self.policy_set, &entities);
 
         Ok(response)
+    }
+
+    /// Retrieve an annotation value from a policy by ID.
+    pub fn get_policy_annotation(&self, policy_id: &cedar_policy::PolicyId, key: &str) -> Option<String> {
+        self.policy_set
+            .policy(policy_id)
+            .and_then(|p| p.annotation(key))
+            .map(|a| a.to_string())
     }
 }
