@@ -1,0 +1,76 @@
+id: claude-code-safe-default
+customer_id: example
+name: "Claude Code - Safe Default (Bash blocked)"
+version: 1
+
+# Blocks the "Access Private → Access Untrusted → Exfiltrate" chain automatically.
+# Example attack: Claude reads ~/.ssh/id_rsa, fetches a malicious page that injects
+# instructions, then tries to curl your key to an attacker server — trifecta stops it.
+protect_lethal_trifecta: true
+
+# Tool classifications feed the trifecta engine.
+# Bash = EXFILTRATION because it can run curl/wget/nc to send data anywhere.
+tool_classes:
+  Read:      [ACCESS_PRIVATE]
+  WebFetch:  [UNTRUSTED_SOURCE]
+  WebSearch: [UNTRUSTED_SOURCE]
+  Bash:      [EXFILTRATION]
+
+static_rules:
+  # Core dev tools — always on
+  Read:             ALLOW
+  Edit:             ALLOW
+  Write:            ALLOW
+
+  # Agent / orchestration
+  Agent:            ALLOW
+  Skill:            ALLOW
+  ToolSearch:       ALLOW
+
+  # Task & planning
+  TaskCreate:       ALLOW
+  TaskGet:          ALLOW
+  TaskList:         ALLOW
+  TaskOutput:       ALLOW
+  TaskStop:         ALLOW
+  TaskUpdate:       ALLOW
+  EnterPlanMode:    ALLOW
+  ExitPlanMode:     ALLOW
+  EnterWorktree:    ALLOW
+  ExitWorktree:     ALLOW
+
+  # Scheduling & monitoring
+  CronCreate:       ALLOW
+  CronDelete:       ALLOW
+  CronList:         ALLOW
+  ScheduleWakeup:   ALLOW
+  Monitor:          ALLOW
+
+  # Interaction
+  AskUserQuestion:  ALLOW
+  PushNotification: ALLOW
+  RemoteTrigger:    ALLOW
+  NotebookEdit:     ALLOW
+
+  # Web — allowed, but tainted. If the session already has ACCESS_PRIVATE taint
+  # (from reading files) AND you then call an EXFILTRATION-class tool, trifecta blocks it.
+  WebFetch:         ALLOW
+  WebSearch:        ALLOW
+
+  # Bash is BLOCKED by default.
+  Bash:             DENY
+
+taint_rules:
+  - tool: Read
+    action: ADD_TAINT
+    tag: ACCESS_PRIVATE
+
+  - tool: WebFetch
+    action: ADD_TAINT
+    tag: UNTRUSTED_SOURCE
+
+  - tool: WebSearch
+    action: ADD_TAINT
+    tag: UNTRUSTED_SOURCE
+
+resource_rules: []
