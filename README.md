@@ -93,7 +93,7 @@ All adapters share the same policy engine, taint tracker, and audit layer: only 
 
 **Step-by-step setup guide:** [`examples/claude-code/README.md`](examples/claude-code/README.md)  
 
-Hooks fire on every (only `PreToolCall` is blocking) tool call. Lilith reads the JSON event from stdin and signals via exit code: `0` = allow, `2` = block.
+Hooks fire on every tool call. Only `PreToolUse` is blocking — `PostToolUse` fires after execution and cannot prevent it. Lilith reads the JSON event from stdin and signals via exit code: `0` = allow, `2` = block.
 
 
 **`.claude/settings.json`** (project) or `~/.claude/settings.json`:

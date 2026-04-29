@@ -115,12 +115,12 @@ EOF
 Start Claude Code and try the following:
 
 **Should succeed** (Read is ALLOW in both policies):
-```
+```text
 Read the first 5 lines of README.md
 ```
 
 **Should be blocked** (Bash is DENY in policy-safe-default.yaml):
-```
+```text
 Run ls in the terminal
 ```
 
