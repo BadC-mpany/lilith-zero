@@ -13,16 +13,13 @@ use tokio::process::Command;
 #[cfg(unix)]
 use tokio::signal::unix::{signal, SignalKind};
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 use libc;
 
-/// Entry point for the macOS supervisor sub-process.
+/// Entry point for the macOS/Linux supervisor sub-process.
 ///
-/// On macOS, the main process re-execs itself with the `__supervisor` subcommand, passing the
-/// parent PID.  This supervisor uses kqueue `EVFILT_PROC` / `NOTE_EXIT` to detect when the
-/// parent dies, at which point it kills the wrapped child command and exits.
-///
-/// On non-Unix platforms this returns an error immediately.
+/// The main process re-execs itself with the `__supervisor` subcommand, passing the
+/// parent PID.
 pub async fn supervisor_main(
     parent_pid: u32,
     cmd: String,
@@ -38,10 +35,11 @@ pub async fn supervisor_main(
 
     #[cfg(unix)]
     {
-        eprintln!(
-            "[supervisor] Starting for parent {} wrapping '{}'",
-            parent_pid, cmd
-        );
+        // Become a subreaper on Linux so we catch all orphans
+        #[cfg(target_os = "linux")]
+        unsafe {
+            let _ = libc::prctl(libc::PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0);
+        }
 
         let mut command = Command::new(&cmd);
         command.args(&args)
@@ -55,7 +53,10 @@ pub async fn supervisor_main(
             command.pre_exec(|| {
                 let ret = libc::setpgid(0, 0);
                 if ret != 0 {
-                    return Err(std::io::Error::last_os_error());
+                    let err = std::io::Error::last_os_error();
+                    if err.raw_os_error() != Some(libc::EPERM) {
+                        let _ = eprintln!("lilith-zero supervisor: setpgid(0,0) failed: {}", err);
+                    }
                 }
                 Ok(())
             });
@@ -67,7 +68,18 @@ pub async fn supervisor_main(
         #[cfg(target_os = "macos")]
         let parent_died = monitor_parent_kqueue(parent_pid as i32)?;
 
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(target_os = "linux")]
+        let parent_died = async move {
+            loop {
+                // kill(pid, 0) checks if the process exists
+                if unsafe { libc::kill(parent_pid as i32, 0) } != 0 {
+                    break;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            }
+        };
+
+        #[cfg(not(any(target_os = "macos", target_os = "linux")))]
         let parent_died = std::future::pending::<()>();
 
         let mut sigterm = signal(SignalKind::terminate())?;
@@ -78,11 +90,39 @@ pub async fn supervisor_main(
                 // SAFETY: sending kill to negative PID (process group)
                 unsafe { libc::kill(-child_pid, libc::SIGKILL); }
             }
+
+            #[cfg(target_os = "linux")]
+            {
+                // Rigorous cleanup: since we are the subreaper, orphaned grandchildren
+                // have been reparented to us. Find all processes whose PPID is us, and kill them.
+                let my_pid = std::process::id() as i32;
+                if let Ok(entries) = std::fs::read_dir("/proc") {
+                    for entry in entries.flatten() {
+                        if let Ok(file_name) = entry.file_name().into_string() {
+                            if let Ok(pid) = file_name.parse::<i32>() {
+                                if pid == my_pid || pid == child_pid { continue; }
+                                let stat_path = format!("/proc/{}/stat", pid);
+                                if let Ok(stat) = std::fs::read_to_string(stat_path) {
+                                    let parts: Vec<&str> = stat.split_whitespace().collect();
+                                    if parts.len() > 3 {
+                                        if let Ok(ppid) = parts[3].parse::<i32>() {
+                                            if ppid == my_pid {
+                                                // Kill this orphaned descendant's process group just to be safe
+                                                unsafe { libc::kill(-pid, libc::SIGKILL); }
+                                                unsafe { libc::kill(pid, libc::SIGKILL); }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         };
 
         tokio::select! {
             _ = parent_died => {
-                eprintln!("[supervisor] Parent died! Killing child...");
                 kill_pg();
                 let _ = child.kill().await;
                 std::process::exit(1);
@@ -90,10 +130,11 @@ pub async fn supervisor_main(
             status = child.wait() => {
                 match status {
                     Ok(s) => {
+                         kill_pg();
                          std::process::exit(s.code().unwrap_or(1));
                     }
-                    Err(e) => {
-                        eprintln!("[supervisor] Child wait failed: {}", e);
+                    Err(_) => {
+                        kill_pg();
                         std::process::exit(1);
                     }
                 }

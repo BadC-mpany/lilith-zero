@@ -83,7 +83,7 @@ class AuditEntry(TypedDict):
 # Module-level constants
 _MCP_PROTOCOL_VERSION = "2024-11-05"
 _SDK_NAME = "lilith-zero"
-_SDK_VERSION = "0.2.2"
+_SDK_VERSION = "0.2.5"
 _SESSION_TIMEOUT_SEC = 5.0
 _SESSION_POLL_INTERVAL_SEC = 0.1
 _SESSION_ID_MARKER = "LILITH_ZERO_SESSION_ID="
