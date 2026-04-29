@@ -61,6 +61,11 @@ impl<T> Tainted<T> {
     pub fn inner(&self) -> &T {
         &self.inner
     }
+
+    /// Mutably borrow the inner value without consuming the wrapper.
+    pub fn inner_mut(&mut self) -> &mut T {
+        &mut self.inner
+    }
 }
 
 impl<T> Clean<T> {

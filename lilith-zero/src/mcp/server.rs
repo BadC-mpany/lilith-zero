@@ -10,6 +10,7 @@ use crate::mcp::codec::McpCodec;
 use anyhow::{Context, Result};
 use serde_json::Value;
 use std::collections::HashMap;
+use std::str::FromStr;
 use std::sync::Arc;
 use tokio::io::{AsyncWrite, AsyncWriteExt};
 use tokio::sync::mpsc;
@@ -122,70 +123,83 @@ impl McpMiddleware {
         );
 
         if let Some(ref path) = self.core.config.policies_yaml_path {
-            match std::fs::read_to_string(path.as_path()) {
-                Ok(content) => match serde_yaml_ng::from_str(&content) {
-                    Ok(p) => {
-                        // Structured validation: emit all diagnostics before activating policy.
-                        let diagnostics = PolicyValidator::validate_policy_detailed(&p);
-                        let has_errors = diagnostics
-                            .iter()
-                            .any(|d| d.severity == ValidationSeverity::Error);
+            if path.extension().map_or(false, |ext| ext == "cedar") {
+                match std::fs::read_to_string(path.as_path()) {
+                    Ok(content) => match cedar_policy::PolicySet::from_str(&content) {
+                        Ok(policy_set) => {
+                            info!("Loaded native Cedar policy from {}", path.display());
+                            self.core.set_cedar_policy(policy_set);
+                        }
+                        Err(e) => error!("Failed to parse Cedar policy: {}", e),
+                    },
+                    Err(e) => error!("Failed to read Cedar policy file: {}", e),
+                }
+            } else {
+                match std::fs::read_to_string(path.as_path()) {
+                    Ok(content) => match serde_yaml_ng::from_str(&content) {
+                        Ok(p) => {
+                            // Structured validation: emit all diagnostics before activating policy.
+                            let diagnostics = PolicyValidator::validate_policy_detailed(&p);
+                            let has_errors = diagnostics
+                                .iter()
+                                .any(|d| d.severity == ValidationSeverity::Error);
 
-                        for d in &diagnostics {
-                            self.core.log_audit(
-                                "POLICY_VALIDATION",
-                                serde_json::json!({
-                                    "severity": format!("{:?}", d.severity),
-                                    "field_path": d.field_path,
-                                    "rule_index": d.rule_index,
-                                    "message": d.message,
-                                    "suggestion": d.suggestion,
-                                }),
-                            );
-                            if d.severity == ValidationSeverity::Error {
+                            for d in &diagnostics {
+                                self.core.log_audit(
+                                    "POLICY_VALIDATION",
+                                    serde_json::json!({
+                                        "severity": format!("{:?}", d.severity),
+                                        "field_path": d.field_path,
+                                        "rule_index": d.rule_index,
+                                        "message": d.message,
+                                        "suggestion": d.suggestion,
+                                    }),
+                                );
+                                if d.severity == ValidationSeverity::Error {
+                                    error!(
+                                        field = %d.field_path,
+                                        rule = ?d.rule_index,
+                                        suggestion = ?d.suggestion,
+                                        "Policy validation error: {}",
+                                        d.message
+                                    );
+                                } else {
+                                    warn!(
+                                        field = %d.field_path,
+                                        rule = ?d.rule_index,
+                                        suggestion = ?d.suggestion,
+                                        "Policy validation warning: {}",
+                                        d.message
+                                    );
+                                }
+                            }
+
+                            if has_errors {
                                 error!(
-                                    field = %d.field_path,
-                                    rule = ?d.rule_index,
-                                    suggestion = ?d.suggestion,
-                                    "Policy validation error: {}",
-                                    d.message
+                                    "Policy '{}' has validation errors — not loading (fail-closed). \
+                                     Fix all [Error] diagnostics above and restart.",
+                                    p.name
                                 );
                             } else {
-                                warn!(
-                                    field = %d.field_path,
-                                    rule = ?d.rule_index,
-                                    suggestion = ?d.suggestion,
-                                    "Policy validation warning: {}",
-                                    d.message
+                                info!(
+                                    policy = %p.name,
+                                    warnings = diagnostics.len(),
+                                    "Loaded policy from {}",
+                                    path.display()
                                 );
+                                // Apply pin_mode from policy YAML before handing off.
+                                if let Some(ref mode_str) = p.pin_mode {
+                                    self.pin_store.mode =
+                                        crate::config::PinMode::parse(mode_str.as_str());
+                                    info!(pin_mode = %mode_str, "Pin mode set from policy");
+                                }
+                                self.core.set_policy(p);
                             }
                         }
-
-                        if has_errors {
-                            error!(
-                                "Policy '{}' has validation errors — not loading (fail-closed). \
-                                 Fix all [Error] diagnostics above and restart.",
-                                p.name
-                            );
-                        } else {
-                            info!(
-                                policy = %p.name,
-                                warnings = diagnostics.len(),
-                                "Loaded policy from {}",
-                                path.display()
-                            );
-                            // Apply pin_mode from policy YAML before handing off.
-                            if let Some(ref mode_str) = p.pin_mode {
-                                self.pin_store.mode =
-                                    crate::config::PinMode::parse(mode_str.as_str());
-                                info!(pin_mode = %mode_str, "Pin mode set from policy");
-                            }
-                            self.core.set_policy(p);
-                        }
-                    }
-                    Err(e) => error!("Failed to parse policy YAML: {}", e),
-                },
-                Err(e) => error!("Failed to read policy file: {}", e),
+                        Err(e) => error!("Failed to parse policy YAML: {}", e),
+                    },
+                    Err(e) => error!("Failed to read policy file: {}", e),
+                }
             }
         } else {
             warn!("No policy loaded. lilith-zero defaults to strict DENY-ALL behavior (unless SecurityLevel::AuditOnly is set).");
@@ -292,6 +306,10 @@ impl McpMiddleware {
             .telemetry
             .as_ref()
             .map(|h| h.begin_mcp_request(&req.method, req.params.as_ref()));
+
+        if let Some(params) = req.params.as_mut() {
+            crate::engine_core::path_utils::extract_and_canonicalize_paths(params);
+        }
 
         let security_event = self.session.parse_request(req);
 
@@ -426,21 +444,40 @@ impl McpMiddleware {
         }
 
         // Rug-pull protection: verify tool descriptions against stored pins on tools/list.
+        // 2025.11 MCP Spec: Decouple from security core heuristics and dynamically register explicit capability metadata.
         if pending_method.as_deref() == Some(crate::engine_core::constants::methods::TOOLS_LIST) {
             if let Some(result) = &resp.result {
                 if let Some(tools_arr) = result.get("tools").and_then(|v| v.as_array()) {
-                    let pairs: Vec<(String, String)> = tools_arr
-                        .iter()
-                        .filter_map(|t| {
-                            let name = t.get("name")?.as_str()?.to_string();
+                    let mut pairs: Vec<(String, String)> = Vec::new();
+                    
+                    for t in tools_arr {
+                        if let Some(name) = t.get("name").and_then(|n| n.as_str()) {
                             let desc = t
                                 .get("description")
                                 .and_then(|d| d.as_str())
                                 .unwrap_or("")
                                 .to_string();
-                            Some((name, desc))
-                        })
-                        .collect();
+                            pairs.push((name.to_string(), desc));
+                            
+                            let mut dynamic_classes = Vec::new();
+                            
+                            // Check for single string taintClass
+                            if let Some(tc) = t.get("taintClass").and_then(|tc| tc.as_str()) {
+                                dynamic_classes.push(tc.to_string());
+                            }
+                            
+                            // Check for array of security classes (2025.11 standard)
+                            if let Some(classes_arr) = t.get("securityClasses").and_then(|c| c.as_array()) {
+                                for c in classes_arr {
+                                    if let Some(c_str) = c.as_str() {
+                                        dynamic_classes.push(c_str.to_string());
+                                    }
+                                }
+                            }
+                            
+                            self.core.register_tool_classes(name, dynamic_classes);
+                        }
+                    }
 
                     let violations = self.pin_store.observe(&pairs);
                     if !violations.is_empty() {

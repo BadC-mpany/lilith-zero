@@ -543,7 +543,7 @@ mod tests {
                 forbidden_tags: None,
                 required_taints: None,
                 error: None,
-                pattern: None,
+                match_args: None, pattern: None,
                 exceptions: None,
             }],
             created_at: Some("2024-01-01T00:00:00Z".to_string()),
@@ -576,7 +576,7 @@ mod tests {
                 forbidden_tags: None,
                 required_taints: None,
                 error: None,
-                pattern: None,
+                match_args: None, pattern: None,
                 exceptions: None,
             }],
             created_at: Some("2024-01-01T00:00:00Z".to_string()),
@@ -614,7 +614,7 @@ mod tests {
                 forbidden_tags: None, // Missing!
                 required_taints: None,
                 error: None,
-                pattern: None,
+                match_args: None, pattern: None,
                 exceptions: None,
             }],
             created_at: Some("2024-01-01T00:00:00Z".to_string()),
@@ -652,7 +652,7 @@ mod tests {
                 forbidden_tags: Some(vec!["sensitive".to_string()]),
                 required_taints: None,
                 error: None,
-                pattern: None,
+                match_args: None, pattern: None,
                 exceptions: Some(vec![RuleException {
                     condition: from_value(json!({
                         "tool_args_match": {"destination": "internal_*"}
@@ -697,7 +697,7 @@ mod tests {
                 forbidden_tags: Some(vec!["sensitive".to_string()]),
                 required_taints: None,
                 error: None,
-                pattern: None,
+                match_args: None, pattern: None,
                 exceptions: Some(vec![RuleException {
                     condition: from_value(json!({
                         "tool_args_match": {"to": "*@company.com"}
@@ -756,7 +756,7 @@ mod tests {
             },
             required_taints: None,
             error: None,
-            pattern: None,
+            match_args: None, pattern: None,
             exceptions: None,
         }
     }
@@ -783,7 +783,7 @@ mod tests {
             forbidden_tags: None,
             required_taints: None,
             error: None,
-            pattern: None,
+            match_args: None, pattern: None,
             exceptions: None,
         };
         let rule2 = PolicyRule {
@@ -794,7 +794,7 @@ mod tests {
             forbidden_tags: None, // error: CHECK_TAINT needs forbidden_tags
             required_taints: None,
             error: None,
-            pattern: None,
+            match_args: None, pattern: None,
             exceptions: None,
         };
         let policy = minimal_policy(vec![rule1, rule2]);
@@ -817,7 +817,7 @@ mod tests {
             forbidden_tags: None,
             required_taints: None,
             error: None, // missing → warning
-            pattern: None,
+            match_args: None, pattern: None,
             exceptions: None,
         };
         let policy = minimal_policy(vec![rule]);
@@ -840,7 +840,7 @@ mod tests {
             forbidden_tags: None,
             required_taints: None,
             error: None,
-            pattern: None,
+            match_args: None, pattern: None,
             exceptions: None,
         };
         let policy = minimal_policy(vec![rule]);
@@ -862,7 +862,7 @@ mod tests {
             forbidden_tags: None,
             required_taints: None,
             error: None,
-            pattern: None,
+            match_args: None, pattern: None,
             exceptions: None,
         };
         let policy = minimal_policy(vec![rule]);

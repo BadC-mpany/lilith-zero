@@ -58,7 +58,7 @@ fn create_test_policy(protect_trifecta: bool) -> PolicyDefinition {
         forbidden_tags: None,
         required_taints: None,
         error: None,
-        pattern: None,
+        match_args: None, pattern: None,
         exceptions: None,
     })
     .collect();
@@ -89,7 +89,10 @@ fn create_test_policy(protect_trifecta: bool) -> PolicyDefinition {
             },
         ],
         protect_lethal_trifecta: protect_trifecta,
-        tool_classes: Default::default(),
+        tool_classes: vec![
+            ("send_email".to_string(), vec!["EXFILTRATION".to_string()]),
+            ("post_api".to_string(), vec!["EXFILTRATION".to_string()]),
+        ].into_iter().collect(),
         rate_limit: None,
         replay_window_secs: 0,
         pin_mode: None,
@@ -260,6 +263,7 @@ async fn test_argument_matching() {
         forbidden_tags: None,
         required_taints: None,
         error: Some("Region blocked".to_string()),
+        match_args: None,
         pattern: Some(condition),
         exceptions: None,
     });

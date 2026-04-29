@@ -48,7 +48,7 @@ impl ProcessSupervisor {
     ) -> Result<ProcessSpawnResult, crate::engine_core::errors::InterceptorError> {
         debug!("ProcessSupervisor: spawning '{}' with args {:?}", cmd, args);
 
-        #[cfg(target_os = "macos")]
+        #[cfg(any(target_os = "macos", target_os = "linux"))]
         let mut command = {
             let self_exe = std::env::current_exe().map_err(|e| {
                 crate::engine_core::errors::InterceptorError::ProcessError(format!(
@@ -67,9 +67,9 @@ impl ProcessSupervisor {
             c
         };
 
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(not(any(target_os = "macos", target_os = "linux")))]
         let mut command = Command::new(cmd);
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(not(any(target_os = "macos", target_os = "linux")))]
         command.args(args);
 
         command
@@ -77,13 +77,17 @@ impl ProcessSupervisor {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
 
-        #[cfg(target_os = "linux")]
-        // SAFETY: `prctl` is a syscall with no Rust-visible aliasing hazards.
+        #[cfg(unix)]
+        // SAFETY: `prctl` and `setpgid` are syscalls with no Rust-visible aliasing hazards.
         unsafe {
             command.pre_exec(|| {
-                let ret = libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL);
+                // The supervisor child creates its own process group
+                let ret = libc::setpgid(0, 0);
                 if ret != 0 {
-                    return Err(std::io::Error::last_os_error());
+                    let err = std::io::Error::last_os_error();
+                    if err.raw_os_error() != Some(libc::EPERM) {
+                        let _ = eprintln!("lilith-zero: setpgid(0,0) failed: {}", err);
+                    }
                 }
                 Ok(())
             });
@@ -148,15 +152,36 @@ impl ProcessSupervisor {
             .map(|s| Box::new(s) as Box<dyn AsyncRead + Unpin + Send>);
 
         let (kill_tx, kill_rx) = oneshot::channel();
+        
+        let pid_opt = child.id();
 
         tokio::spawn(async move {
             tokio::select! {
                 _ = kill_rx => {
+                    #[cfg(unix)]
+                    if let Some(pid) = pid_opt {
+                        // Kill the entire process group
+                        // SAFETY: process ID is valid and negative pid means send to process group.
+                        debug!("Supervised process {} terminated. Killing process group -{}", pid, pid);
+                        unsafe {
+                            libc::kill(-(pid as i32), libc::SIGKILL);
+                        }
+                    }
+
                     let _ = child.kill().await;
                 }
                 status = child.wait() => {
                     match status {
                         Ok(s) => {
+                            debug!("Supervised immediate child {} exited with status {:?}. Cleaning up process group.", pid_opt.unwrap_or(0), s.code());
+                            #[cfg(unix)]
+                            if let Some(pid) = pid_opt {
+                                // Even if the immediate child exits, kill the group to catch orphans
+                                unsafe {
+                                    libc::kill(-(pid as i32), libc::SIGKILL);
+                                }
+                            }
+
                             let _ = tx_events.send(UpstreamEvent::Terminated(s.code())).await;
                         }
                         Err(_) => {

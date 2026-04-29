@@ -1,6 +1,6 @@
 [package]
 name = "lilith-zero"
-version = "0.2.2"
+version = "0.2.5"
 edition = "2021"
 license = "Apache-2.0"
 authors = ["Peter Tallosy"]
@@ -51,6 +51,7 @@ reqwest = { version = "0.12", features = ["json", "stream"], default-features = 
 # Optional telemetry integration — implements TelemetryHook trait from engine_core
 lilith-telemetry = { path = "../lilith-telemetry", version = "0.1.0", optional = true }
 fs2 = "0.4.3"
+cedar-policy = "4.10.0"
 
 [features]
 default = []
@@ -113,3 +114,7 @@ strip = true
 inherits = "release"
 debug = true
 strip = false
+
+[[test]]
+name = "red_team"
+path = "tests/red_team/mod.rs"

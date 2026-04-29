@@ -46,6 +46,26 @@ pub enum SecurityEvent {
         /// Optional session token included in the request parameters.
         session_token: Option<String>,
     },
+    /// An MCP `prompts/get` call to be evaluated against prompt rules.
+    PromptRequest {
+        /// The JSON-RPC request identifier.
+        request_id: Value,
+        /// The prompt name being requested.
+        prompt_name: TaintedString,
+        /// The prompt arguments, treated as tainted.
+        arguments: Tainted<Value>,
+        /// Optional session token included in the request parameters.
+        session_token: Option<String>,
+    },
+    /// An MCP `sampling/createMessage` call to be evaluated against sampling rules.
+    SamplingRequest {
+        /// The JSON-RPC request identifier.
+        request_id: Value,
+        /// The LLM messages requested to be sampled.
+        messages: Tainted<Value>,
+        /// Optional session token included in the request parameters.
+        session_token: Option<String>,
+    },
     /// An MCP tool-call response to be evaluated for post-execution side effects.
     ToolResponse {
         /// The tool name.

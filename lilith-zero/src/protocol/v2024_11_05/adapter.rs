@@ -102,6 +102,32 @@ impl McpSessionHandler for Mcp2024Adapter {
                     session_token,
                 }
             }
+            "prompts/get" => {
+                let params = req.params.as_ref().cloned().unwrap_or(Value::Object(serde_json::Map::new()));
+                let prompt_name = params.get("name").and_then(|v| v.as_str()).unwrap_or("unknown").to_string();
+                let arguments = params.get("arguments").cloned().unwrap_or(Value::Null);
+                let session_token = self.extract_session_token(req);
+                let request_id = req.id.clone().unwrap_or(Value::Null);
+
+                SecurityEvent::PromptRequest {
+                    request_id,
+                    prompt_name: TaintedString::new(prompt_name),
+                    arguments: Tainted::new(arguments, vec![]),
+                    session_token,
+                }
+            }
+            "sampling/createMessage" => {
+                let params = req.params.as_ref().cloned().unwrap_or(Value::Object(serde_json::Map::new()));
+                let messages = params.get("messages").cloned().unwrap_or(Value::Null);
+                let session_token = self.extract_session_token(req);
+                let request_id = req.id.clone().unwrap_or(Value::Null);
+
+                SecurityEvent::SamplingRequest {
+                    request_id,
+                    messages: Tainted::new(messages, vec![]),
+                    session_token,
+                }
+            }
             _ => SecurityEvent::Passthrough {
                 request_id: req.id.clone(),
                 method: req.method.clone(),
