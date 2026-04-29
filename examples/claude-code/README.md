@@ -78,17 +78,6 @@ cat > ~/.claude/settings.json << 'EOF'
           }
         ]
       }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "lilith-zero hook --policy ~/policy.yaml"
-          }
-        ]
-      }
     ]
   }
 }

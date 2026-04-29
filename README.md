@@ -91,19 +91,23 @@ All adapters share the same policy engine, taint tracker, and audit layer: only 
 
 ### Claude Code
 
-Hooks fire on every tool call. Lilith reads the JSON event from stdin and signals via exit code: `0` = allow, `2` = block.
+**Step-by-step setup guide:** [`examples/claude-code/README.md`](examples/claude-code/README.md)  
+
+Hooks fire on every (only `PreToolCall` is blocking) tool call. Lilith reads the JSON event from stdin and signals via exit code: `0` = allow, `2` = block.
+
 
 **`.claude/settings.json`** (project) or `~/.claude/settings.json`:
 ```json
 {
   "hooks": {
-    "PreToolUse":  [{"matcher": "", "hooks": [{"type": "command", "command": "lilith-zero hook --policy /path/to/policy.yaml"}]}],
-    "PostToolUse": [{"matcher": "", "hooks": [{"type": "command", "command": "lilith-zero hook --policy /path/to/policy.yaml"}]}]
+    "PreToolUse": [{"matcher": "", "hooks": [{"type": "command", "command": "lilith-zero hook --policy ~/policy.yaml"}]}]
   }
 }
 ```
+You can also use `PostToolUse` to only log each tool usage, it won't block the calls though.
 
-See `scripts/hooks.json` for a ready-to-use template.
+
+**Ready-to-use policies:** [`examples/claude-code/policy-safe-default.yaml`](examples/claude-code/policy-safe-default.yaml) · [`examples/claude-code/policy-bash-enabled.yaml`](examples/claude-code/policy-bash-enabled.yaml)
 
 ### GitHub Copilot CLI
 
