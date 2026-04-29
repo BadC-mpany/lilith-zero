@@ -63,9 +63,10 @@ impl HookHandler {
 
         if let Some(path) = &config.policies_yaml_path {
             tracing::info!("Loading hook policy from {:?}", path);
-            if path.extension().map_or(false, |ext| ext == "cedar") {
-                let content = std::fs::read_to_string(path)
-                    .map_err(|e| anyhow::anyhow!("Failed to read Cedar policy file {:?}: {}", path, e))?;
+            if path.extension().is_some_and(|ext| ext == "cedar") {
+                let content = std::fs::read_to_string(path).map_err(|e| {
+                    anyhow::anyhow!("Failed to read Cedar policy file {:?}: {}", path, e)
+                })?;
                 let policy_set = cedar_policy::PolicySet::from_str(&content)
                     .map_err(|e| anyhow::anyhow!("Failed to parse Cedar policy: {}", e))?;
                 core.set_cedar_policy(policy_set);

@@ -42,7 +42,8 @@ pub async fn supervisor_main(
         }
 
         let mut command = Command::new(&cmd);
-        command.args(&args)
+        command
+            .args(&args)
             .stdin(Stdio::inherit())
             .stdout(Stdio::inherit())
             .stderr(Stdio::inherit());
@@ -55,7 +56,7 @@ pub async fn supervisor_main(
                 if ret != 0 {
                     let err = std::io::Error::last_os_error();
                     if err.raw_os_error() != Some(libc::EPERM) {
-                        let _ = eprintln!("lilith-zero supervisor: setpgid(0,0) failed: {}", err);
+                        eprintln!("lilith-zero supervisor: setpgid(0,0) failed: {}", err);
                     }
                 }
                 Ok(())
@@ -88,7 +89,9 @@ pub async fn supervisor_main(
         let kill_pg = || {
             if child_pid > 0 {
                 // SAFETY: sending kill to negative PID (process group)
-                unsafe { libc::kill(-child_pid, libc::SIGKILL); }
+                unsafe {
+                    libc::kill(-child_pid, libc::SIGKILL);
+                }
             }
 
             #[cfg(target_os = "linux")]
@@ -100,7 +103,9 @@ pub async fn supervisor_main(
                     for entry in entries.flatten() {
                         if let Ok(file_name) = entry.file_name().into_string() {
                             if let Ok(pid) = file_name.parse::<i32>() {
-                                if pid == my_pid || pid == child_pid { continue; }
+                                if pid == my_pid || pid == child_pid {
+                                    continue;
+                                }
                                 let stat_path = format!("/proc/{}/stat", pid);
                                 if let Ok(stat) = std::fs::read_to_string(stat_path) {
                                     let parts: Vec<&str> = stat.split_whitespace().collect();
@@ -108,8 +113,12 @@ pub async fn supervisor_main(
                                         if let Ok(ppid) = parts[3].parse::<i32>() {
                                             if ppid == my_pid {
                                                 // Kill this orphaned descendant's process group just to be safe
-                                                unsafe { libc::kill(-pid, libc::SIGKILL); }
-                                                unsafe { libc::kill(pid, libc::SIGKILL); }
+                                                unsafe {
+                                                    libc::kill(-pid, libc::SIGKILL);
+                                                }
+                                                unsafe {
+                                                    libc::kill(pid, libc::SIGKILL);
+                                                }
                                             }
                                         }
                                     }

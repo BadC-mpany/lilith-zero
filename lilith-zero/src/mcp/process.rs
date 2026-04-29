@@ -86,7 +86,7 @@ impl ProcessSupervisor {
                 if ret != 0 {
                     let err = std::io::Error::last_os_error();
                     if err.raw_os_error() != Some(libc::EPERM) {
-                        let _ = eprintln!("lilith-zero: setpgid(0,0) failed: {}", err);
+                        eprintln!("lilith-zero: setpgid(0,0) failed: {}", err);
                     }
                 }
                 Ok(())
@@ -152,7 +152,7 @@ impl ProcessSupervisor {
             .map(|s| Box::new(s) as Box<dyn AsyncRead + Unpin + Send>);
 
         let (kill_tx, kill_rx) = oneshot::channel();
-        
+
         let pid_opt = child.id();
 
         tokio::spawn(async move {

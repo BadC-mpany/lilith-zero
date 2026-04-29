@@ -752,7 +752,7 @@ async fn run_webhook_server(
                 .map_err(|e| format!("Cannot read Cedar policy '{}': {e}", path.display()))?;
             let _policy_set = cedar_policy::PolicySet::from_str(&content)
                 .map_err(|e| format!("Cannot parse Cedar policy '{}': {e}", path.display()))?;
-            
+
             // We need a dummy PolicyDefinition for the webhook state, or we update WebhookState
             // to support both. For now, we'll just log and fail if it's cedar in webhook until fully supported.
             tracing::info!("Native Cedar policies are supported in 'run' and 'hook' modes.");
@@ -816,18 +816,17 @@ fn validate_command(policy_path: &Path) -> Result<(), Box<dyn std::error::Error>
     let content = std::fs::read_to_string(policy_path)
         .map_err(|e| format!("Cannot read '{}': {e}", policy_path.display()))?;
 
-    if policy_path.extension().map_or(false, |ext| ext == "cedar") {
+    if policy_path.extension().is_some_and(|ext| ext == "cedar") {
         match cedar_policy::PolicySet::from_str(&content) {
             Ok(set) => {
                 let count = set.policies().collect::<Vec<_>>().len();
-                println!(
-                    "OK  Cedar PolicySet is valid  ({} policies)",
-                    count
-                );
+                println!("OK  Cedar PolicySet is valid  ({} policies)", count);
                 return Ok(());
             }
             Err(e) => {
-                return Err(format!("Cedar parse error in '{}': {e}", policy_path.display()).into());
+                return Err(
+                    format!("Cedar parse error in '{}': {e}", policy_path.display()).into(),
+                );
             }
         }
     }

@@ -6,8 +6,8 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 
-use std::path::{Component, Path, PathBuf};
 use serde_json::Value;
+use std::path::{Component, Path, PathBuf};
 
 /// Robust, strictly lexical path canonicalization.
 /// Resolves `.` and `..` segments purely string-wise without touching the filesystem.
@@ -67,14 +67,14 @@ pub fn extract_and_canonicalize_paths(args: &mut Value) -> Vec<String> {
                     let p = p.strip_prefix("file:").unwrap_or(p);
                     let canon_key = lexical_canonicalize(p).to_string_lossy().to_string();
                     paths.push(canon_key.clone());
-                    
+
                     if canon_key != *key {
                         keys_to_replace.push((key.clone(), canon_key));
                     }
-                    
+
                     extract_strings(value, paths);
                 }
-                
+
                 for (old_key, new_key) in keys_to_replace {
                     if let Some(val) = obj.remove(&old_key) {
                         obj.insert(new_key, val);

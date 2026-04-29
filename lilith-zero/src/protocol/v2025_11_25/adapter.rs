@@ -76,8 +76,16 @@ impl McpSessionHandler for Mcp2025Adapter {
                 }
             }
             "resources/read" => {
-                let params = req.params.as_ref().cloned().unwrap_or(Value::Object(serde_json::Map::new()));
-                let uri = params.get("uri").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let params = req
+                    .params
+                    .as_ref()
+                    .cloned()
+                    .unwrap_or(Value::Object(serde_json::Map::new()));
+                let uri = params
+                    .get("uri")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
                 let session_token = self.extract_session_token(req);
                 let request_id = req.id.clone().unwrap_or(Value::Null);
 
@@ -88,8 +96,16 @@ impl McpSessionHandler for Mcp2025Adapter {
                 }
             }
             "prompts/get" => {
-                let params = req.params.as_ref().cloned().unwrap_or(Value::Object(serde_json::Map::new()));
-                let prompt_name = params.get("name").and_then(|v| v.as_str()).unwrap_or("unknown").to_string();
+                let params = req
+                    .params
+                    .as_ref()
+                    .cloned()
+                    .unwrap_or(Value::Object(serde_json::Map::new()));
+                let prompt_name = params
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown")
+                    .to_string();
                 let arguments = params.get("arguments").cloned().unwrap_or(Value::Null);
                 let session_token = self.extract_session_token(req);
                 let request_id = req.id.clone().unwrap_or(Value::Null);
@@ -102,7 +118,11 @@ impl McpSessionHandler for Mcp2025Adapter {
                 }
             }
             "sampling/createMessage" => {
-                let params = req.params.as_ref().cloned().unwrap_or(Value::Object(serde_json::Map::new()));
+                let params = req
+                    .params
+                    .as_ref()
+                    .cloned()
+                    .unwrap_or(Value::Object(serde_json::Map::new()));
                 let messages = params.get("messages").cloned().unwrap_or(Value::Null);
                 let session_token = self.extract_session_token(req);
                 let request_id = req.id.clone().unwrap_or(Value::Null);
