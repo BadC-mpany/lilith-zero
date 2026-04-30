@@ -104,6 +104,7 @@ fn test_state_no_auth(policy_path: &std::path::Path) -> WebhookState {
         audit_log_path: None,
         auth: Arc::new(NoAuthAuthenticator),
         policy: load_test_policy(policy_path),
+        cedar_policy: None,
     }
 }
 
@@ -119,6 +120,7 @@ fn test_state_with_shared_secret_auth(policy_path: &std::path::Path) -> WebhookS
         audit_log_path: None,
         auth: Arc::new(SharedSecretAuthenticator::new("test-webhook-secret", None)),
         policy: load_test_policy(policy_path),
+        cedar_policy: None,
     }
 }
 
@@ -210,6 +212,7 @@ async fn test_webhook_validate_returns_not_successful_when_no_policy() {
         audit_log_path: None,
         auth: Arc::new(NoAuthAuthenticator),
         policy: None,
+        cedar_policy: None,
     };
     let base = start_test_server(state).await;
     let client = Client::new();
@@ -230,31 +233,22 @@ async fn test_webhook_validate_returns_not_successful_when_no_policy() {
     );
 }
 
-/// /validate must return 401 when no token is supplied (shared-secret mode).
+/// /validate should be public (return 200) even without a token to support 
+/// the Microsoft Power Platform registration handshake.
 #[tokio::test]
-async fn test_webhook_validate_returns_401_with_no_token() {
+async fn test_webhook_validate_is_public_with_no_token() {
     let policy = write_temp_policy(default_policy_yaml());
     let state = test_state_with_shared_secret_auth(policy.path());
     let base = start_test_server(state).await;
     let client = Client::new();
 
     let resp = post_json(&client, &format!("{base}/validate"), None, None).await;
-    assert_eq!(resp.status(), 401, "missing token must return 401");
-
-    let body: Value = resp.json().await.unwrap();
-    assert!(
-        body["errorCode"].is_number(),
-        "401 must have numeric errorCode"
-    );
-    assert!(
-        body["message"].is_string(),
-        "401 must have a message string"
-    );
+    assert_eq!(resp.status(), 200, "public health check must return 200");
 }
 
-/// /validate must return 401 on a malformed token (shared-secret mode).
+/// /validate should be public even with an invalid token (ignored).
 #[tokio::test]
-async fn test_webhook_validate_returns_401_with_invalid_token() {
+async fn test_webhook_validate_is_public_with_invalid_token() {
     let policy = write_temp_policy(default_policy_yaml());
     let state = test_state_with_shared_secret_auth(policy.path());
     let base = start_test_server(state).await;
@@ -267,7 +261,7 @@ async fn test_webhook_validate_returns_401_with_invalid_token() {
         None,
     )
     .await;
-    assert_eq!(resp.status(), 401, "invalid JWT must return 401");
+    assert_eq!(resp.status(), 200, "invalid token should not block health check");
 }
 
 // ---------------------------------------------------------------------------
@@ -487,6 +481,7 @@ async fn test_webhook_analyze_no_policy_blocks_all_fail_closed() {
         audit_log_path: None,
         auth: Arc::new(NoAuthAuthenticator),
         policy: None,
+        cedar_policy: None,
     };
     let base = start_test_server(state).await;
     let client = Client::new();
@@ -953,6 +948,7 @@ async fn test_webhook_shared_secret_valid_token_accepted_by_validate() {
         audit_log_path: None,
         auth: Arc::new(SharedSecretAuthenticator::new(secret, None)),
         policy: load_test_policy(policy.path()),
+        cedar_policy: None,
     };
     let base = start_test_server(state).await;
     let client = Client::new();
@@ -994,6 +990,7 @@ async fn test_webhook_shared_secret_valid_token_accepted_by_analyze() {
         audit_log_path: None,
         auth: Arc::new(SharedSecretAuthenticator::new(secret, None)),
         policy: load_test_policy(policy.path()),
+        cedar_policy: None,
     };
     let base = start_test_server(state).await;
     let client = Client::new();
