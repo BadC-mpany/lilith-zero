@@ -86,7 +86,7 @@ impl ProcessSupervisor {
                 if ret != 0 {
                     let err = std::io::Error::last_os_error();
                     if err.raw_os_error() != Some(libc::EPERM) {
-                        let _ = eprintln!("lilith-zero: setpgid(0,0) failed: {}", err);
+                        eprintln!("lilith-zero: setpgid(0,0) failed: {}", err);
                     }
                 }
                 Ok(())
@@ -163,6 +163,7 @@ impl ProcessSupervisor {
                         // Kill the entire process group
                         // SAFETY: process ID is valid and negative pid means send to process group.
                         debug!("Supervised process {} terminated. Killing process group -{}", pid, pid);
+                        // SAFETY: The process ID is valid at this point and the syscall is safe as we are just sending a signal to the process group.
                         unsafe {
                             libc::kill(-(pid as i32), libc::SIGKILL);
                         }
@@ -177,6 +178,7 @@ impl ProcessSupervisor {
                             #[cfg(unix)]
                             if let Some(pid) = pid_opt {
                                 // Even if the immediate child exits, kill the group to catch orphans
+                                // SAFETY: The process ID is valid and the syscall is used for process group cleanup.
                                 unsafe {
                                     libc::kill(-(pid as i32), libc::SIGKILL);
                                 }
