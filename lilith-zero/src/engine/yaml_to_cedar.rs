@@ -43,8 +43,11 @@ forbid(
                 )
             };
 
-            let policy = Policy::parse(Some(PolicyId::from_str(&Self::sanitize_id(&format!("static_{}", tool))).unwrap()), &policy_src)
-                .map_err(|e| format!("Failed to compile static rule for {}: {}", tool, e))?;
+            let policy = Policy::parse(
+                Some(PolicyId::from_str(&Self::sanitize_id(&format!("static_{}", tool))).unwrap()),
+                &policy_src,
+            )
+            .map_err(|e| format!("Failed to compile static rule for {}: {}", tool, e))?;
             set.add(policy).map_err(|e| e.to_string())?;
         }
 
@@ -54,17 +57,27 @@ forbid(
         for (i, rule) in def.resource_rules.iter().enumerate() {
             // Cedar's `like` operator uses `*` for wildcards.
             // We must canonicalize the pattern just like we do at runtime.
-            let p = rule.uri_pattern.strip_prefix("file://").unwrap_or(&rule.uri_pattern);
+            let p = rule
+                .uri_pattern
+                .strip_prefix("file://")
+                .unwrap_or(&rule.uri_pattern);
             let p = p.strip_prefix("file:").unwrap_or(p);
             let canon_pattern = lexical_canonicalize(p).to_string_lossy().to_string();
 
             let cedar_pattern = canon_pattern.replace("\\*", "*");
-            
-            let effect = if rule.action.eq_ignore_ascii_case("ALLOW") { "permit" } else { "forbid" };
-            
+
+            let effect = if rule.action.eq_ignore_ascii_case("ALLOW") {
+                "permit"
+            } else {
+                "forbid"
+            };
+
             let mut annotations = String::new();
             if effect == "forbid" {
-                annotations = format!(r#"@error("Resource blocked by rule: {}")"#, rule.uri_pattern);
+                annotations = format!(
+                    r#"@error("Resource blocked by rule: {}")"#,
+                    rule.uri_pattern
+                );
             }
 
             // To support ordered "first match wins", this rule only matches if NO previous rule matched.
@@ -72,7 +85,7 @@ forbid(
             if !previous_resource_patterns.is_empty() {
                 order_cond = format!(" && !({})", previous_resource_patterns.join(" || "));
             }
-            
+
             let policy_src = format!(
                 r#"{}{} (
     principal,
@@ -83,9 +96,15 @@ forbid(
 }};"#,
                 annotations, effect, cedar_pattern, order_cond
             );
-            
-            let policy = Policy::parse(Some(PolicyId::from_str(&Self::sanitize_id(&format!("resource_rule_{}", i))).unwrap()), &policy_src)
-                .map_err(|e| format!("Failed to compile resource rule {}: {}", i, e))?;
+
+            let policy = Policy::parse(
+                Some(
+                    PolicyId::from_str(&Self::sanitize_id(&format!("resource_rule_{}", i)))
+                        .unwrap(),
+                ),
+                &policy_src,
+            )
+            .map_err(|e| format!("Failed to compile resource rule {}: {}", i, e))?;
             set.add(policy).map_err(|e| e.to_string())?;
 
             // 2b. Resource Taints (Side effects)
@@ -102,9 +121,16 @@ forbid(
                         cedar_pattern, order_cond
                     );
                     let taint_policy = Policy::parse(
-                        Some(PolicyId::from_str(&Self::sanitize_id(&format!("add_taint:{}:res_{}_{}", tag, i, j))).unwrap()),
-                        &taint_policy_src
-                    ).map_err(|e| format!("Failed to compile resource taint rule: {}", e))?;
+                        Some(
+                            PolicyId::from_str(&Self::sanitize_id(&format!(
+                                "add_taint:{}:res_{}_{}",
+                                tag, i, j
+                            )))
+                            .unwrap(),
+                        ),
+                        &taint_policy_src,
+                    )
+                    .map_err(|e| format!("Failed to compile resource taint rule: {}", e))?;
                     set.add(taint_policy).map_err(|e| e.to_string())?;
                 }
             }
@@ -115,14 +141,15 @@ forbid(
         // Add default permit for resources/read ONLY IF it wasn't matched by any previous rule
         let mut final_order_cond = String::new();
         if !previous_resource_patterns.is_empty() {
-             final_order_cond = format!(" && !({})", previous_resource_patterns.join(" || "));
+            final_order_cond = format!(" && !({})", previous_resource_patterns.join(" || "));
         }
-        
+
         let default_resource_permit = Policy::parse(
             Some(PolicyId::from_str(&Self::sanitize_id("default_resource_permit")).unwrap()),
             format!(r#"permit(principal, action == Action::"resources/read", resource) when {{ true{} }};"#, final_order_cond),
         ).unwrap();
-        set.add(default_resource_permit).map_err(|e| e.to_string())?;
+        set.add(default_resource_permit)
+            .map_err(|e| e.to_string())?;
 
         // 3. Taint Rules (Ordered: First match wins)
         let mut previous_taint_patterns = Vec::new();
@@ -142,38 +169,40 @@ forbid(
             };
 
             let mut conditions = vec![];
-            
+
             // Required Taints
             if let Some(ref req_taints) = rule.required_taints {
                 for rt in req_taints {
                     conditions.push(format!("context.taints.contains(\"{}\")", rt));
                 }
             }
-            
+
             // Forbidden Taints
             if let Some(ref forbid_taints) = rule.forbidden_tags {
                 for ft in forbid_taints {
                     conditions.push(format!("context.taints.contains(\"{}\")", ft));
                 }
             }
-            
+
             // Argument Matching (match_args)
             if let Some(ref match_args) = rule.match_args {
                 if let Some(obj) = match_args.as_object() {
                     for (key, val) in obj {
                         if let Some(s) = val.as_str() {
-                            let match_expr = if s.contains('*') || s.contains('.') || s.contains('|') {
-                                let simplified = s.replace(".*", "*").replace(".+", "*");
-                                format!("context.args.{} like \"{}\"", key, simplified)
-                            } else {
-                                format!("context.args.{} == \"{}\"", key, s)
-                            };
+                            let match_expr =
+                                if s.contains('*') || s.contains('.') || s.contains('|') {
+                                    let simplified = s.replace(".*", "*").replace(".+", "*");
+                                    format!("context.args.{} like \"{}\"", key, simplified)
+                                } else {
+                                    format!("context.args.{} == \"{}\"", key, s)
+                                };
                             conditions.push(match_expr.clone());
                             // Add to pattern for ordering
                             if current_pattern == "true" {
                                 current_pattern = match_expr;
                             } else {
-                                current_pattern = format!("({} && {})", current_pattern, match_expr);
+                                current_pattern =
+                                    format!("({} && {})", current_pattern, match_expr);
                             }
                         }
                     }
@@ -196,7 +225,7 @@ forbid(
             if !previous_taint_patterns.is_empty() {
                 order_cond = format!(" && !({})", previous_taint_patterns.join(" || "));
             }
-            
+
             // Tags for ADD/REMOVE
             let mut policy_id_prefix = "rule".to_string();
             let effect = match rule.action.to_uppercase().as_str() {
@@ -205,11 +234,12 @@ forbid(
                 "ADD_TAINT" => {
                     policy_id_prefix = format!("add_taint:{}:", rule.tag.as_deref().unwrap_or(""));
                     "permit"
-                },
+                }
                 "REMOVE_TAINT" => {
-                    policy_id_prefix = format!("remove_taint:{}:", rule.tag.as_deref().unwrap_or(""));
+                    policy_id_prefix =
+                        format!("remove_taint:{}:", rule.tag.as_deref().unwrap_or(""));
                     "permit"
-                },
+                }
                 _ => "forbid", // Default to fail closed
             };
 
@@ -235,8 +265,14 @@ forbid(
                 annotations, effect, resource_cond, condition_str, order_cond, ""
             );
 
-            let policy = Policy::parse(Some(PolicyId::from_str(&Self::sanitize_id(&format!("{}_{}", policy_id_prefix, i))).unwrap()), &policy_src)
-                .map_err(|e| format!("Failed to compile taint rule {}: {}", i, e))?;
+            let policy = Policy::parse(
+                Some(
+                    PolicyId::from_str(&Self::sanitize_id(&format!("{}_{}", policy_id_prefix, i)))
+                        .unwrap(),
+                ),
+                &policy_src,
+            )
+            .map_err(|e| format!("Failed to compile taint rule {}: {}", i, e))?;
             set.add(policy).map_err(|e| e.to_string())?;
 
             previous_taint_patterns.push(current_pattern);
@@ -247,7 +283,13 @@ forbid(
 
     fn sanitize_id(id: &str) -> String {
         id.chars()
-            .map(|c| if c.is_ascii_alphanumeric() || c == ':' { c } else { '_' })
+            .map(|c| {
+                if c.is_ascii_alphanumeric() || c == ':' {
+                    c
+                } else {
+                    '_'
+                }
+            })
             .collect()
     }
 
@@ -261,22 +303,32 @@ forbid(
                 let parts: Result<Vec<_>, _> = inner.iter().map(Self::compile_condition).collect();
                 Ok(format!("({})", parts?.join(" || ")))
             }
-            LogicCondition::Not(inner) => {
-                Ok(format!("!{}", Self::compile_condition(inner)?))
-            }
+            LogicCondition::Not(inner) => Ok(format!("!{}", Self::compile_condition(inner)?)),
             LogicCondition::Eq(vals) => {
-                if vals.len() != 2 { return Err("Eq requires 2 values".to_string()); }
-                Ok(format!("{} == {}", Self::compile_value(&vals[0])?, Self::compile_value(&vals[1])?))
+                if vals.len() != 2 {
+                    return Err("Eq requires 2 values".to_string());
+                }
+                Ok(format!(
+                    "{} == {}",
+                    Self::compile_value(&vals[0])?,
+                    Self::compile_value(&vals[1])?
+                ))
             }
             LogicCondition::Neq(vals) => {
-                if vals.len() != 2 { return Err("Neq requires 2 values".to_string()); }
-                Ok(format!("{} != {}", Self::compile_value(&vals[0])?, Self::compile_value(&vals[1])?))
+                if vals.len() != 2 {
+                    return Err("Neq requires 2 values".to_string());
+                }
+                Ok(format!(
+                    "{} != {}",
+                    Self::compile_value(&vals[0])?,
+                    Self::compile_value(&vals[1])?
+                ))
             }
             LogicCondition::ToolArgsMatch(v) => {
                 let mut matches = vec![];
                 if let Some(obj) = v.as_object() {
                     for (k, val) in obj {
-                         if let Some(s) = val.as_str() {
+                        if let Some(s) = val.as_str() {
                             if s.contains('*') {
                                 let simplified = s.replace(".*", "*").replace(".+", "*");
                                 matches.push(format!("context.args.{} like \"{}\"", k, simplified));
@@ -286,8 +338,11 @@ forbid(
                         }
                     }
                 }
-                if matches.is_empty() { Ok("true".to_string()) }
-                else { Ok(format!("({})", matches.join(" && "))) }
+                if matches.is_empty() {
+                    Ok("true".to_string())
+                } else {
+                    Ok(format!("({})", matches.join(" && ")))
+                }
             }
             _ => Ok("false".to_string()),
         }

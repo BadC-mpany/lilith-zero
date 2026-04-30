@@ -182,8 +182,8 @@ async fn handle_validate(State(state): State<WebhookState>, headers: HeaderMap) 
 }
 
 async fn do_validate(state: &WebhookState, _headers: &HeaderMap) -> Response {
-    // We allow /validate without authentication to support the initial 
-    // registration/save in the Power Platform Admin Center. 
+    // We allow /validate without authentication to support the initial
+    // registration/save in the Power Platform Admin Center.
     // Real security enforcement happens in /analyze-tool-execution.
 
     // isSuccessful=true only when a policy was successfully parsed at startup.

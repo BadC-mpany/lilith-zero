@@ -755,7 +755,7 @@ async fn run_webhook_server(
                 .map_err(|e| format!("Cannot read Cedar policy '{}': {e}", path.display()))?;
             let policy_set = cedar_policy::PolicySet::from_str(&content)
                 .map_err(|e| format!("Cannot parse Cedar policy '{}': {e}", path.display()))?;
-            
+
             tracing::info!(
                 "Cedar policy set loaded at startup ({} policies)",
                 policy_set.policies().collect::<Vec<_>>().len()
@@ -824,14 +824,13 @@ fn validate_command(policy_path: &Path) -> Result<(), Box<dyn std::error::Error>
         match cedar_policy::PolicySet::from_str(&content) {
             Ok(set) => {
                 let count = set.policies().collect::<Vec<_>>().len();
-                println!(
-                    "OK  Cedar PolicySet is valid  ({} policies)",
-                    count
-                );
+                println!("OK  Cedar PolicySet is valid  ({} policies)", count);
                 return Ok(());
             }
             Err(e) => {
-                return Err(format!("Cedar parse error in '{}': {e}", policy_path.display()).into());
+                return Err(
+                    format!("Cedar parse error in '{}': {e}", policy_path.display()).into(),
+                );
             }
         }
     }

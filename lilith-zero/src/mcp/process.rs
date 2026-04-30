@@ -152,7 +152,7 @@ impl ProcessSupervisor {
             .map(|s| Box::new(s) as Box<dyn AsyncRead + Unpin + Send>);
 
         let (kill_tx, kill_rx) = oneshot::channel();
-        
+
         let pid_opt = child.id();
 
         tokio::spawn(async move {

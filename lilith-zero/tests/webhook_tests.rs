@@ -233,7 +233,7 @@ async fn test_webhook_validate_returns_not_successful_when_no_policy() {
     );
 }
 
-/// /validate should be public (return 200) even without a token to support 
+/// /validate should be public (return 200) even without a token to support
 /// the Microsoft Power Platform registration handshake.
 #[tokio::test]
 async fn test_webhook_validate_is_public_with_no_token() {
@@ -261,7 +261,11 @@ async fn test_webhook_validate_is_public_with_invalid_token() {
         None,
     )
     .await;
-    assert_eq!(resp.status(), 200, "invalid token should not block health check");
+    assert_eq!(
+        resp.status(),
+        200,
+        "invalid token should not block health check"
+    );
 }
 
 // ---------------------------------------------------------------------------

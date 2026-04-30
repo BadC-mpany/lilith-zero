@@ -14,14 +14,14 @@ use tracing::{info, warn};
 
 use crate::config::Config;
 use crate::engine::cedar_evaluator::CedarEvaluator;
-use crate::engine_core::path_utils::extract_and_canonicalize_paths;
-use cedar_policy::Decision as CedarDecision;
 use crate::engine_core::auth;
 use crate::engine_core::constants::jsonrpc;
 use crate::engine_core::crypto::CryptoSigner;
 use crate::engine_core::events::{SecurityDecision, SecurityEvent};
 use crate::engine_core::models::{Decision, HistoryEntry, PolicyDefinition, PolicyRule};
+use crate::engine_core::path_utils::extract_and_canonicalize_paths;
 use anyhow::Result;
+use cedar_policy::Decision as CedarDecision;
 
 use crate::engine_core::audit::AuditLogger;
 use crate::engine_core::telemetry::TelemetryHook;
@@ -106,34 +106,40 @@ impl SecurityCore {
     pub fn set_policy(&mut self, mut policy: PolicyDefinition) {
         if policy.protect_lethal_trifecta || self.config.protect_lethal_trifecta {
             info!("Lethal trifecta protection enabled - auto-injecting EXFILTRATION blocking rule");
-            policy.taint_rules.insert(0, PolicyRule {
-                tool: None,
-                tool_class: Some("EXFILTRATION".to_string()),
-                action: "CHECK_TAINT".to_string(),
-                tag: None,
-                forbidden_tags: None,
-                required_taints: Some(vec![
-                    "ACCESS_PRIVATE".to_string(),
-                    "UNTRUSTED_SOURCE".to_string(),
-                ]),
-                error: Some("Blocked by lethal trifecta protection".to_string()),
-                pattern: None,
-                match_args: None,
-                exceptions: None,
-            });
+            policy.taint_rules.insert(
+                0,
+                PolicyRule {
+                    tool: None,
+                    tool_class: Some("EXFILTRATION".to_string()),
+                    action: "CHECK_TAINT".to_string(),
+                    tag: None,
+                    forbidden_tags: None,
+                    required_taints: Some(vec![
+                        "ACCESS_PRIVATE".to_string(),
+                        "UNTRUSTED_SOURCE".to_string(),
+                    ]),
+                    error: Some("Blocked by lethal trifecta protection".to_string()),
+                    pattern: None,
+                    match_args: None,
+                    exceptions: None,
+                },
+            );
         }
-        
+
         match crate::engine::yaml_to_cedar::CedarCompiler::compile(&policy) {
             Ok(policy_set) => {
                 self.cedar_evaluator = Some(CedarEvaluator::new(policy_set));
                 info!("Successfully compiled YAML policy to Cedar PolicySet");
             }
             Err(e) => {
-                warn!("Failed to compile policy to Cedar: {}. Falling back to DENY ALL.", e);
+                warn!(
+                    "Failed to compile policy to Cedar: {}. Falling back to DENY ALL.",
+                    e
+                );
                 // We no longer have a fallback evaluator, so if Cedar compilation fails, we fail closed.
             }
         }
-        
+
         self.policy = Some(policy);
     }
 
@@ -354,7 +360,8 @@ impl SecurityCore {
                         );
                         if let Ok(response) = res {
                             if response.decision() == CedarDecision::Deny {
-                                path_denied = Some(format!("Path '{}' blocked by resource rules", path));
+                                path_denied =
+                                    Some(format!("Path '{}' blocked by resource rules", path));
                                 break;
                             }
                         }
@@ -372,40 +379,47 @@ impl SecurityCore {
                             &self.taints,
                             &classes,
                         ) {
-                        Ok(response) => {
-                            if response.decision() == CedarDecision::Allow {
-                                let mut taints_to_add = vec![];
-                                let mut taints_to_remove = vec![];
-                                for policy_id in response.diagnostics().reason() {
-                                    let id_str = policy_id.to_string();
-                                    if let Some(tag) = id_str.strip_prefix("add_taint:") {
-                                        if let Some((t, _)) = tag.split_once(':') {
-                                            taints_to_add.push(t.to_string());
-                                        }
-                                    } else if let Some(tag) = id_str.strip_prefix("remove_taint:") {
-                                        if let Some((t, _)) = tag.split_once(':') {
-                                            taints_to_remove.push(t.to_string());
+                            Ok(response) => {
+                                if response.decision() == CedarDecision::Allow {
+                                    let mut taints_to_add = vec![];
+                                    let mut taints_to_remove = vec![];
+                                    for policy_id in response.diagnostics().reason() {
+                                        let id_str = policy_id.to_string();
+                                        if let Some(tag) = id_str.strip_prefix("add_taint:") {
+                                            if let Some((t, _)) = tag.split_once(':') {
+                                                taints_to_add.push(t.to_string());
+                                            }
+                                        } else if let Some(tag) =
+                                            id_str.strip_prefix("remove_taint:")
+                                        {
+                                            if let Some((t, _)) = tag.split_once(':') {
+                                                taints_to_remove.push(t.to_string());
+                                            }
                                         }
                                     }
-                                }
-                                if taints_to_add.is_empty() && taints_to_remove.is_empty() {
-                                    Ok(Decision::Allowed)
+                                    if taints_to_add.is_empty() && taints_to_remove.is_empty() {
+                                        Ok(Decision::Allowed)
+                                    } else {
+                                        Ok(Decision::AllowedWithSideEffects {
+                                            taints_to_add,
+                                            taints_to_remove,
+                                        })
+                                    }
                                 } else {
-                                    Ok(Decision::AllowedWithSideEffects { taints_to_add, taints_to_remove })
-                                }
-                            } else {
-                                let mut reason = "Denied by Cedar policy".to_string();
-                                for policy_id in response.diagnostics().reason() {
-                                    if let Some(err_msg) = cedar_eval.get_policy_annotation(policy_id, "error") {
-                                        reason = err_msg;
-                                        break;
+                                    let mut reason = "Denied by Cedar policy".to_string();
+                                    for policy_id in response.diagnostics().reason() {
+                                        if let Some(err_msg) =
+                                            cedar_eval.get_policy_annotation(policy_id, "error")
+                                        {
+                                            reason = err_msg;
+                                            break;
+                                        }
                                     }
+                                    Ok(Decision::Denied { reason })
                                 }
-                                Ok(Decision::Denied { reason })
                             }
-                        },
-                        Err(e) => Err(e),
-                    }
+                            Err(e) => Err(e),
+                        }
                     }
                 } else {
                     match self.config.security_level {
@@ -509,9 +523,12 @@ impl SecurityCore {
                                 }
                                 true
                             } else {
-                                let mut reason = format!("Access to resource denied by policy: {}", uri_str);
+                                let mut reason =
+                                    format!("Access to resource denied by policy: {}", uri_str);
                                 for policy_id in response.diagnostics().reason() {
-                                    if let Some(err_msg) = cedar_eval.get_policy_annotation(policy_id, "error") {
+                                    if let Some(err_msg) =
+                                        cedar_eval.get_policy_annotation(policy_id, "error")
+                                    {
                                         reason = err_msg;
                                         break;
                                     }
@@ -521,9 +538,9 @@ impl SecurityCore {
                                     reason,
                                 };
                             }
-                        },
+                        }
                         Err(e) => {
-                             return SecurityDecision::Deny {
+                            return SecurityDecision::Deny {
                                 error_code: jsonrpc::ERROR_INTERNAL,
                                 reason: format!("Policy error: {}", e),
                             };
@@ -531,9 +548,7 @@ impl SecurityCore {
                     }
                 } else {
                     match self.config.security_level {
-                        crate::config::SecurityLevel::AuditOnly => {
-                            true
-                        }
+                        crate::config::SecurityLevel::AuditOnly => true,
                         _ => {
                             false // Fail Closed
                         }
@@ -543,10 +558,7 @@ impl SecurityCore {
                 if !allow_access {
                     return SecurityDecision::Deny {
                         error_code: jsonrpc::ERROR_SECURITY_BLOCK,
-                        reason: format!(
-                            "Access to resource denied (Default Deny): {}",
-                            uri_str
-                        ),
+                        reason: format!("Access to resource denied (Default Deny): {}", uri_str),
                     };
                 }
 
@@ -570,7 +582,7 @@ impl SecurityCore {
                 let prompt_name_str = prompt_name.into_inner_unchecked();
                 let mut args_clone = arguments.inner().clone();
                 let canonical_paths = extract_and_canonicalize_paths(&mut args_clone);
-                
+
                 let allow_access = if let Some(cedar_eval) = &self.cedar_evaluator {
                     matches!(cedar_eval.evaluate(
                         &self.session_id,
@@ -584,7 +596,7 @@ impl SecurityCore {
                 } else {
                     false
                 };
-                
+
                 if allow_access {
                     SecurityDecision::Allow
                 } else {
@@ -601,7 +613,7 @@ impl SecurityCore {
             } => {
                 let mut messages_clone = messages.inner().clone();
                 let canonical_paths = extract_and_canonicalize_paths(&mut messages_clone);
-                
+
                 let allow_access = if let Some(cedar_eval) = &self.cedar_evaluator {
                     matches!(cedar_eval.evaluate(
                         &self.session_id,
@@ -615,7 +627,7 @@ impl SecurityCore {
                 } else {
                     false
                 };
-                
+
                 if allow_access {
                     SecurityDecision::Allow
                 } else {
@@ -642,18 +654,23 @@ impl SecurityCore {
     /// Register dynamically discovered tool classes (e.g. from a tools/list response).
     pub fn register_tool_classes(&mut self, tool_name: &str, classes: Vec<String>) {
         if !classes.is_empty() {
-            info!("Registered dynamic classes for tool '{}': {:?}", tool_name, classes);
-            self.dynamic_tool_classes.insert(tool_name.to_string(), classes);
+            info!(
+                "Registered dynamic classes for tool '{}': {:?}",
+                tool_name, classes
+            );
+            self.dynamic_tool_classes
+                .insert(tool_name.to_string(), classes);
         }
     }
 
     fn classify_tool(&self, name: &str) -> Vec<String> {
-        let mut classes = self.policy
+        let mut classes = self
+            .policy
             .as_ref()
             .and_then(|p| p.tool_classes.get(name))
             .cloned()
             .unwrap_or_default();
-            
+
         if let Some(dynamic) = self.dynamic_tool_classes.get(name) {
             for c in dynamic {
                 if !classes.contains(c) {
@@ -661,7 +678,7 @@ impl SecurityCore {
                 }
             }
         }
-        
+
         classes
     }
 
