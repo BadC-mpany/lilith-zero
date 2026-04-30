@@ -40,7 +40,7 @@ use axum::{
     extract::{DefaultBodyLimit, State},
     http::{HeaderMap, HeaderValue, StatusCode},
     response::{IntoResponse, Response},
-    routing::post,
+    routing::{get, post},
     BoxError, Json, Router,
 };
 use tower::timeout::TimeoutLayer;
@@ -112,7 +112,8 @@ pub struct WebhookState {
 /// 3. [`DefaultBodyLimit`] — rejects bodies > [`REQUEST_BODY_LIMIT_BYTES`].
 pub fn build_router(state: WebhookState) -> Router {
     Router::new()
-        .route("/validate", post(handle_validate))
+        .route("/", get(handle_validate).post(handle_validate))
+        .route("/validate", get(handle_validate).post(handle_validate))
         .route(
             "/analyze-tool-execution",
             post(handle_analyze_tool_execution),
@@ -180,12 +181,10 @@ async fn handle_validate(State(state): State<WebhookState>, headers: HeaderMap) 
     with_correlation_header(resp, cid.as_deref())
 }
 
-async fn do_validate(state: &WebhookState, headers: &HeaderMap) -> Response {
-    let auth_header = headers.get("authorization").and_then(|v| v.to_str().ok());
-
-    if let Err(e) = authenticate(&state.auth, auth_header).await {
-        return auth_error_response(e);
-    }
+async fn do_validate(state: &WebhookState, _headers: &HeaderMap) -> Response {
+    // We allow /validate without authentication to support the initial 
+    // registration/save in the Power Platform Admin Center. 
+    // Real security enforcement happens in /analyze-tool-execution.
 
     // isSuccessful=true only when a policy was successfully parsed at startup.
     // This is more accurate than checking whether the file path exists: if the
