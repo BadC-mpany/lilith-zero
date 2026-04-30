@@ -820,7 +820,7 @@ fn validate_command(policy_path: &Path) -> Result<(), Box<dyn std::error::Error>
     let content = std::fs::read_to_string(policy_path)
         .map_err(|e| format!("Cannot read '{}': {e}", policy_path.display()))?;
 
-    if policy_path.extension().map_or(false, |ext| ext == "cedar") {
+    if policy_path.extension().is_some_and(|ext| ext == "cedar") {
         match cedar_policy::PolicySet::from_str(&content) {
             Ok(set) => {
                 let count = set.policies().collect::<Vec<_>>().len();

@@ -572,7 +572,7 @@ impl SecurityCore {
                 let canonical_paths = extract_and_canonicalize_paths(&mut args_clone);
                 
                 let allow_access = if let Some(cedar_eval) = &self.cedar_evaluator {
-                    match cedar_eval.evaluate(
+                    matches!(cedar_eval.evaluate(
                         &self.session_id,
                         "prompts/get",
                         &prompt_name_str,
@@ -580,10 +580,7 @@ impl SecurityCore {
                         &canonical_paths,
                         &self.taints,
                         &[],
-                    ) {
-                        Ok(res) if res.decision() == CedarDecision::Allow => true,
-                        _ => false
-                    }
+                    ), Ok(res) if res.decision() == CedarDecision::Allow)
                 } else {
                     false
                 };
@@ -606,7 +603,7 @@ impl SecurityCore {
                 let canonical_paths = extract_and_canonicalize_paths(&mut messages_clone);
                 
                 let allow_access = if let Some(cedar_eval) = &self.cedar_evaluator {
-                    match cedar_eval.evaluate(
+                    matches!(cedar_eval.evaluate(
                         &self.session_id,
                         "sampling/createMessage",
                         "sampling",
@@ -614,10 +611,7 @@ impl SecurityCore {
                         &canonical_paths,
                         &self.taints,
                         &[],
-                    ) {
-                        Ok(res) if res.decision() == CedarDecision::Allow => true,
-                        _ => false
-                    }
+                    ), Ok(res) if res.decision() == CedarDecision::Allow)
                 } else {
                     false
                 };

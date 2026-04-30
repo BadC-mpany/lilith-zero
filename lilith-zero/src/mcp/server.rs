@@ -123,7 +123,7 @@ impl McpMiddleware {
         );
 
         if let Some(ref path) = self.core.config.policies_yaml_path {
-            if path.extension().map_or(false, |ext| ext == "cedar") {
+            if path.extension().is_some_and(|ext| ext == "cedar") {
                 match std::fs::read_to_string(path.as_path()) {
                     Ok(content) => match cedar_policy::PolicySet::from_str(&content) {
                         Ok(policy_set) => {

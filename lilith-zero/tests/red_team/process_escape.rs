@@ -7,7 +7,6 @@ use std::time::Duration;
 use tokio::time::sleep;
 use std::fs;
 use std::io::Write as _;
-use tokio::io::AsyncWriteExt as _;
 
 #[tokio::test]
 async fn test_exploit_daemonization_escape() {

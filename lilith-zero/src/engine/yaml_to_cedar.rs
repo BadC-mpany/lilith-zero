@@ -120,7 +120,7 @@ forbid(
         
         let default_resource_permit = Policy::parse(
             Some(PolicyId::from_str(&Self::sanitize_id("default_resource_permit")).unwrap()),
-            &format!(r#"permit(principal, action == Action::"resources/read", resource) when {{ true{} }};"#, final_order_cond),
+            format!(r#"permit(principal, action == Action::"resources/read", resource) when {{ true{} }};"#, final_order_cond),
         ).unwrap();
         set.add(default_resource_permit).map_err(|e| e.to_string())?;
 
