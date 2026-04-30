@@ -746,17 +746,21 @@ async fn run_webhook_server(
     };
 
     // Parse the policy once at startup so each request doesn't pay a disk read.
-    let policy = if let Some(ref path) = config.policies_yaml_path {
+    let mut policy = None;
+    let mut cedar_policy_set = None;
+
+    if let Some(ref path) = config.policies_yaml_path {
         if path.extension().map_or(false, |ext| ext == "cedar") {
             let content = std::fs::read_to_string(path)
                 .map_err(|e| format!("Cannot read Cedar policy '{}': {e}", path.display()))?;
-            let _policy_set = cedar_policy::PolicySet::from_str(&content)
+            let policy_set = cedar_policy::PolicySet::from_str(&content)
                 .map_err(|e| format!("Cannot parse Cedar policy '{}': {e}", path.display()))?;
             
-            // We need a dummy PolicyDefinition for the webhook state, or we update WebhookState
-            // to support both. For now, we'll just log and fail if it's cedar in webhook until fully supported.
-            tracing::info!("Native Cedar policies are supported in 'run' and 'hook' modes.");
-            None
+            tracing::info!(
+                "Cedar policy set loaded at startup ({} policies)",
+                policy_set.policies().collect::<Vec<_>>().len()
+            );
+            cedar_policy_set = Some(Arc::new(policy_set));
         } else {
             let content = std::fs::read_to_string(path)
                 .map_err(|e| format!("Cannot read policy '{}': {e}", path.display()))?;
@@ -769,18 +773,18 @@ async fn run_webhook_server(
                 pol.static_rules.len(),
                 pol.taint_rules.len()
             );
-            Some(Arc::new(pol))
+            policy = Some(Arc::new(pol));
         }
     } else {
         tracing::warn!("No policy configured — all tool calls will be fail-closed denied");
-        None
-    };
+    }
 
     let state = WebhookState {
         config: Arc::new(config),
         audit_log_path: audit_logs,
         auth,
         policy,
+        cedar_policy: cedar_policy_set,
     };
 
     serve(&bind, state).await?;

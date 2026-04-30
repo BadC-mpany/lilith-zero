@@ -96,6 +96,8 @@ pub struct WebhookState {
     /// which would otherwise consume a significant fraction of the 900 ms
     /// evaluation budget and risk triggering the timeout → Copilot Studio allow.
     pub policy: Option<Arc<crate::engine_core::models::PolicyDefinition>>,
+    /// Native Cedar policy set parsed once at server startup.
+    pub cedar_policy: Option<Arc<cedar_policy::PolicySet>>,
 }
 
 // ---------------------------------------------------------------------------
@@ -189,7 +191,7 @@ async fn do_validate(state: &WebhookState, headers: &HeaderMap) -> Response {
     // This is more accurate than checking whether the file path exists: if the
     // policy failed to parse, the file might still be present but the server
     // would be running in fail-closed deny-all mode without enforcing real rules.
-    let validation = if state.policy.is_some() {
+    let validation = if state.policy.is_some() || state.cedar_policy.is_some() {
         ValidationResponse::ok()
     } else {
         ValidationResponse::not_ready("NO_POLICY_LOADED")
@@ -266,6 +268,7 @@ async fn do_analyze(
         state.config.clone(),
         state.audit_log_path.clone(),
         state.policy.clone(),
+        state.cedar_policy.clone(),
     ) {
         Ok(h) => h,
         Err(e) => {
