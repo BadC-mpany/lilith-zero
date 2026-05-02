@@ -37,12 +37,14 @@ pub async fn supervisor_main(
     {
         // Become a subreaper on Linux so we catch all orphans
         #[cfg(target_os = "linux")]
+        // SAFETY: PR_SET_CHILD_SUBREAPER ensures the supervisor process inherits orphaned grandchildren.
         unsafe {
             let _ = libc::prctl(libc::PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0);
         }
 
         let mut command = Command::new(&cmd);
-        command.args(&args)
+        command
+            .args(&args)
             .stdin(Stdio::inherit())
             .stdout(Stdio::inherit())
             .stderr(Stdio::inherit());
@@ -55,7 +57,7 @@ pub async fn supervisor_main(
                 if ret != 0 {
                     let err = std::io::Error::last_os_error();
                     if err.raw_os_error() != Some(libc::EPERM) {
-                        let _ = eprintln!("lilith-zero supervisor: setpgid(0,0) failed: {}", err);
+                        eprintln!("lilith-zero supervisor: setpgid(0,0) failed: {}", err);
                     }
                 }
                 Ok(())
@@ -72,6 +74,7 @@ pub async fn supervisor_main(
         let parent_died = async move {
             loop {
                 // kill(pid, 0) checks if the process exists
+                // SAFETY: We are just checking for process existence, no signals are sent.
                 if unsafe { libc::kill(parent_pid as i32, 0) } != 0 {
                     break;
                 }
@@ -88,7 +91,9 @@ pub async fn supervisor_main(
         let kill_pg = || {
             if child_pid > 0 {
                 // SAFETY: sending kill to negative PID (process group)
-                unsafe { libc::kill(-child_pid, libc::SIGKILL); }
+                unsafe {
+                    libc::kill(-child_pid, libc::SIGKILL);
+                }
             }
 
             #[cfg(target_os = "linux")]
@@ -100,7 +105,9 @@ pub async fn supervisor_main(
                     for entry in entries.flatten() {
                         if let Ok(file_name) = entry.file_name().into_string() {
                             if let Ok(pid) = file_name.parse::<i32>() {
-                                if pid == my_pid || pid == child_pid { continue; }
+                                if pid == my_pid || pid == child_pid {
+                                    continue;
+                                }
                                 let stat_path = format!("/proc/{}/stat", pid);
                                 if let Ok(stat) = std::fs::read_to_string(stat_path) {
                                     let parts: Vec<&str> = stat.split_whitespace().collect();
@@ -108,8 +115,11 @@ pub async fn supervisor_main(
                                         if let Ok(ppid) = parts[3].parse::<i32>() {
                                             if ppid == my_pid {
                                                 // Kill this orphaned descendant's process group just to be safe
-                                                unsafe { libc::kill(-pid, libc::SIGKILL); }
-                                                unsafe { libc::kill(pid, libc::SIGKILL); }
+                                                // SAFETY: Sending SIGKILL to a process group or a specific PID is safe here as we are cleaning up orphaned children in a supervisor context.
+                                                unsafe {
+                                                    libc::kill(-pid, libc::SIGKILL);
+                                                    libc::kill(pid, libc::SIGKILL);
+                                                }
                                             }
                                         }
                                     }

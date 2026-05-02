@@ -123,7 +123,7 @@ impl McpMiddleware {
         );
 
         if let Some(ref path) = self.core.config.policies_yaml_path {
-            if path.extension().map_or(false, |ext| ext == "cedar") {
+            if path.extension().is_some_and(|ext| ext == "cedar") {
                 match std::fs::read_to_string(path.as_path()) {
                     Ok(content) => match cedar_policy::PolicySet::from_str(&content) {
                         Ok(policy_set) => {
@@ -449,7 +449,7 @@ impl McpMiddleware {
             if let Some(result) = &resp.result {
                 if let Some(tools_arr) = result.get("tools").and_then(|v| v.as_array()) {
                     let mut pairs: Vec<(String, String)> = Vec::new();
-                    
+
                     for t in tools_arr {
                         if let Some(name) = t.get("name").and_then(|n| n.as_str()) {
                             let desc = t
@@ -458,23 +458,25 @@ impl McpMiddleware {
                                 .unwrap_or("")
                                 .to_string();
                             pairs.push((name.to_string(), desc));
-                            
+
                             let mut dynamic_classes = Vec::new();
-                            
+
                             // Check for single string taintClass
                             if let Some(tc) = t.get("taintClass").and_then(|tc| tc.as_str()) {
                                 dynamic_classes.push(tc.to_string());
                             }
-                            
+
                             // Check for array of security classes (2025.11 standard)
-                            if let Some(classes_arr) = t.get("securityClasses").and_then(|c| c.as_array()) {
+                            if let Some(classes_arr) =
+                                t.get("securityClasses").and_then(|c| c.as_array())
+                            {
                                 for c in classes_arr {
                                     if let Some(c_str) = c.as_str() {
                                         dynamic_classes.push(c_str.to_string());
                                     }
                                 }
                             }
-                            
+
                             self.core.register_tool_classes(name, dynamic_classes);
                         }
                     }

@@ -1,0 +1,50 @@
+[
+  {
+    "name": "template-content.action.WorkIQCopilotPreview",
+    "display_name": "Work IQ Copilot (Preview)",
+    "operation_id": "mcp_m365copilot",
+    "bot_id": "77236ced-1146-f111-bec6-7ced8d71fac9"
+  },
+  {
+    "name": "template-content.action.WorkIQUserPreview",
+    "display_name": "Work IQ User (Preview)",
+    "operation_id": "mcp_MeServer",
+    "bot_id": "77236ced-1146-f111-bec6-7ced8d71fac9"
+  },
+  {
+    "name": "template-content.action.ExcelOnlineBusinessAddarowintoatable",
+    "display_name": "Add a row into a table",
+    "operation_id": "AddRowV2",
+    "bot_id": "77236ced-1146-f111-bec6-7ced8d71fac9"
+  },
+  {
+    "name": "template-content.action.MicrosoftDataverseMicrosoftDataverseMCPServerPreview",
+    "display_name": "Microsoft Dataverse MCP Server (Preview)",
+    "operation_id": "InvokeMCPPreview",
+    "bot_id": "5be3e14e-2e46-f111-bec6-7c1e52344333"
+  },
+  {
+    "name": "template-content.action.ExcelOnlineBusinessCreatetable",
+    "display_name": "Create table",
+    "operation_id": "CreateTable",
+    "bot_id": "5be3e14e-2e46-f111-bec6-7c1e52344333"
+  },
+  {
+    "name": "template-content.action.ExcelOnlineBusinessGettables",
+    "display_name": "Get tables",
+    "operation_id": "GetTables",
+    "bot_id": "5be3e14e-2e46-f111-bec6-7c1e52344333"
+  },
+  {
+    "name": "template-content.action.WorkIQCopilotPreview",
+    "display_name": "Work IQ Copilot (Preview)",
+    "operation_id": "mcp_m365copilot",
+    "bot_id": "5be3e14e-2e46-f111-bec6-7c1e52344333"
+  },
+  {
+    "name": "template-content.action.WorkIQUserPreview",
+    "display_name": "Work IQ User (Preview)",
+    "operation_id": "mcp_MeServer",
+    "bot_id": "5be3e14e-2e46-f111-bec6-7c1e52344333"
+  }
+]

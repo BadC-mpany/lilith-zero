@@ -40,7 +40,7 @@ use axum::{
     extract::{DefaultBodyLimit, State},
     http::{HeaderMap, HeaderValue, StatusCode},
     response::{IntoResponse, Response},
-    routing::post,
+    routing::{get, post},
     BoxError, Json, Router,
 };
 use tower::timeout::TimeoutLayer;
@@ -96,6 +96,8 @@ pub struct WebhookState {
     /// which would otherwise consume a significant fraction of the 900 ms
     /// evaluation budget and risk triggering the timeout → Copilot Studio allow.
     pub policy: Option<Arc<crate::engine_core::models::PolicyDefinition>>,
+    /// Native Cedar policy sets mapped by agent ID.
+    pub cedar_policies: std::collections::HashMap<String, Arc<cedar_policy::PolicySet>>,
 }
 
 // ---------------------------------------------------------------------------
@@ -110,7 +112,8 @@ pub struct WebhookState {
 /// 3. [`DefaultBodyLimit`] — rejects bodies > [`REQUEST_BODY_LIMIT_BYTES`].
 pub fn build_router(state: WebhookState) -> Router {
     Router::new()
-        .route("/validate", post(handle_validate))
+        .route("/", get(handle_validate).post(handle_validate))
+        .route("/validate", get(handle_validate).post(handle_validate))
         .route(
             "/analyze-tool-execution",
             post(handle_analyze_tool_execution),
@@ -178,18 +181,16 @@ async fn handle_validate(State(state): State<WebhookState>, headers: HeaderMap) 
     with_correlation_header(resp, cid.as_deref())
 }
 
-async fn do_validate(state: &WebhookState, headers: &HeaderMap) -> Response {
-    let auth_header = headers.get("authorization").and_then(|v| v.to_str().ok());
-
-    if let Err(e) = authenticate(&state.auth, auth_header).await {
-        return auth_error_response(e);
-    }
+async fn do_validate(state: &WebhookState, _headers: &HeaderMap) -> Response {
+    // We allow /validate without authentication to support the initial
+    // registration/save in the Power Platform Admin Center.
+    // Real security enforcement happens in /analyze-tool-execution.
 
     // isSuccessful=true only when a policy was successfully parsed at startup.
     // This is more accurate than checking whether the file path exists: if the
     // policy failed to parse, the file might still be present but the server
     // would be running in fail-closed deny-all mode without enforcing real rules.
-    let validation = if state.policy.is_some() {
+    let validation = if state.policy.is_some() || !state.cedar_policies.is_empty() {
         ValidationResponse::ok()
     } else {
         ValidationResponse::not_ready("NO_POLICY_LOADED")
@@ -223,6 +224,12 @@ async fn do_analyze(
     body: axum::body::Bytes,
     correlation_id: Option<&str>,
 ) -> Response {
+    if state.config.webhook_debug {
+        if let Ok(body_str) = std::str::from_utf8(&body) {
+            tracing::info!("RAW_WEBHOOK_PAYLOAD: {}", body_str);
+        }
+    }
+
     // 1. Authenticate.
     let auth_header = headers.get("authorization").and_then(|v| v.to_str().ok());
     if let Err(e) = authenticate(&state.auth, auth_header).await {
@@ -252,20 +259,39 @@ async fn do_analyze(
         .clone()
         .unwrap_or_else(|| "unknown".to_string());
 
+    let agent_id = &request.conversation_metadata.agent.id;
+    let conversation_id = &request.conversation_metadata.conversation_id;
+
     tracing::info!(
-        tool_name = %tool_name,
-        conversation_id = %request.conversation_metadata.conversation_id,
+        agent_id = %agent_id,
+        conversation_id = %conversation_id,
         correlation_id = correlation_id.unwrap_or("-"),
+        tool = %tool_name,
+        args = ?hook_input.tool_input,
         "evaluating tool execution request"
     );
 
     // 4. Evaluate through the security engine.
-    // Use the pre-parsed policy from WebhookState to avoid a blocking disk read
-    // on every request (which would erode the 900 ms evaluation budget).
+    let cedar_policy = state.cedar_policies.get(agent_id).cloned();
+
+    // If we have policies loaded but this agent_id isn't found, deny
+    if !state.cedar_policies.is_empty() && cedar_policy.is_none() {
+        tracing::warn!(agent_id = %agent_id, "Denying request: no policy found for agent");
+        return (
+            StatusCode::OK,
+            Json(AnalyzeToolExecutionResponse::block(
+                reason_codes::NO_POLICY,
+                format!("No policy loaded for agent_id {}", agent_id),
+            )),
+        )
+            .into_response();
+    }
+
     let mut handler = match HookHandler::with_policy(
         state.config.clone(),
         state.audit_log_path.clone(),
         state.policy.clone(),
+        cedar_policy,
     ) {
         Ok(h) => h,
         Err(e) => {
@@ -282,33 +308,44 @@ async fn do_analyze(
         }
     };
 
-    let exit_code = match handler.handle(hook_input).await {
-        Ok(code) => code,
+    let result = handler.handle(hook_input).await;
+
+    // 5. Translate result to Copilot Studio response.
+    let response = match result {
+        Ok(0) => {
+            tracing::info!(
+                agent_id = %agent_id,
+                conversation_id = %conversation_id,
+                tool = %tool_name,
+                "Decision: ALLOW"
+            );
+            AnalyzeToolExecutionResponse::allow()
+        }
+        Ok(_) => {
+            tracing::warn!(
+                agent_id = %agent_id,
+                conversation_id = %conversation_id,
+                tool = %tool_name,
+                "Decision: DENY (blocked by policy)"
+            );
+            AnalyzeToolExecutionResponse::block(
+                reason_codes::STATIC_DENY,
+                "blocked by Lilith Zero security policy",
+            )
+        }
         Err(e) => {
             tracing::error!(
-                tool_name = %tool_name,
-                correlation_id = correlation_id.unwrap_or("-"),
-                "HookHandler evaluation error: {e}"
+                agent_id = %agent_id,
+                conversation_id = %conversation_id,
+                tool = %tool_name,
+                error = %e,
+                "Decision: DENY (evaluation error)"
             );
-            return (
-                StatusCode::OK,
-                Json(AnalyzeToolExecutionResponse::block(
-                    reason_codes::EVAL_ERROR,
-                    format!("security evaluation failed: {e}"),
-                )),
+            AnalyzeToolExecutionResponse::block(
+                reason_codes::EVAL_ERROR,
+                format!("security evaluation failed: {e}"),
             )
-                .into_response();
         }
-    };
-
-    // 5. Translate exit code to Copilot Studio response.
-    let response = if exit_code == 0 {
-        AnalyzeToolExecutionResponse::allow()
-    } else {
-        AnalyzeToolExecutionResponse::block(
-            reason_codes::STATIC_DENY,
-            "blocked by Lilith Zero security policy",
-        )
     };
 
     (StatusCode::OK, Json(response)).into_response()

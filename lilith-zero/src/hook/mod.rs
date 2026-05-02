@@ -63,9 +63,10 @@ impl HookHandler {
 
         if let Some(path) = &config.policies_yaml_path {
             tracing::info!("Loading hook policy from {:?}", path);
-            if path.extension().map_or(false, |ext| ext == "cedar") {
-                let content = std::fs::read_to_string(path)
-                    .map_err(|e| anyhow::anyhow!("Failed to read Cedar policy file {:?}: {}", path, e))?;
+            if path.extension().is_some_and(|ext| ext == "cedar") {
+                let content = std::fs::read_to_string(path).map_err(|e| {
+                    anyhow::anyhow!("Failed to read Cedar policy file {:?}: {}", path, e)
+                })?;
                 let policy_set = cedar_policy::PolicySet::from_str(&content)
                     .map_err(|e| anyhow::anyhow!("Failed to parse Cedar policy: {}", e))?;
                 core.set_cedar_policy(policy_set);
@@ -91,6 +92,7 @@ impl HookHandler {
         config: Arc<Config>,
         audit_logs: Option<std::path::PathBuf>,
         policy: Option<Arc<crate::engine_core::models::PolicyDefinition>>,
+        cedar_policy: Option<Arc<cedar_policy::PolicySet>>,
     ) -> Result<Self> {
         let signer = crate::engine_core::crypto::CryptoSigner::try_new()
             .map_err(|e| anyhow::anyhow!("Crypto init failed: {}", e))?;
@@ -100,6 +102,9 @@ impl HookHandler {
 
         if let Some(p) = policy {
             core.set_policy((*p).clone());
+        }
+        if let Some(cp) = cedar_policy {
+            core.set_cedar_policy((*cp).clone());
         }
         let persistence = PersistenceLayer::default_local();
 
