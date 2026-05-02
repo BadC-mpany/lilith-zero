@@ -7,9 +7,9 @@
 // See the License for the specific language governing permissions and
 
 use cedar_policy::{Authorizer, Context, Entities, EntityUid, PolicySet, Request};
+use serde_json::Value;
 use std::collections::HashSet;
 use std::str::FromStr;
-use serde_json::Value;
 
 use crate::engine_core::errors::InterceptorError;
 
@@ -55,7 +55,10 @@ impl CedarEvaluator {
 
         // Context contains active taints, safe paths, and original args (for reference, though typed schemas are better)
         let taints_list: Vec<Value> = taints.iter().map(|t| Value::String(t.clone())).collect();
-        let paths_list: Vec<Value> = canonical_paths.iter().map(|p| Value::String(p.clone())).collect();
+        let paths_list: Vec<Value> = canonical_paths
+            .iter()
+            .map(|p| Value::String(p.clone()))
+            .collect();
         let classes_list: Vec<Value> = classes.iter().map(|c| Value::String(c.clone())).collect();
 
         let path = if canonical_paths.len() == 1 {
@@ -70,7 +73,7 @@ impl CedarEvaluator {
             tool_args.clone()
         };
 
-        // Serialize Context to JSON 
+        // Serialize Context to JSON
         let context_json = serde_json::json!({
             "taints": taints_list,
             "paths": paths_list,
@@ -79,21 +82,30 @@ impl CedarEvaluator {
             "classes": classes_list
         });
 
-        let context = Context::from_json_value(context_json, None)
-            .map_err(|e| InterceptorError::StateError(format!("Context conversion failed: {}", e)))?;
+        let context = Context::from_json_value(context_json, None).map_err(|e| {
+            InterceptorError::StateError(format!("Context conversion failed: {}", e))
+        })?;
 
-        let request = Request::new(principal, action_uid, resource_uid, context, None)
-            .map_err(|e| InterceptorError::StateError(format!("Request construction failed: {}", e)))?;
+        let request =
+            Request::new(principal, action_uid, resource_uid, context, None).map_err(|e| {
+                InterceptorError::StateError(format!("Request construction failed: {}", e))
+            })?;
 
         let entities = Entities::empty();
 
-        let response = self.authorizer.is_authorized(&request, &self.policy_set, &entities);
+        let response = self
+            .authorizer
+            .is_authorized(&request, &self.policy_set, &entities);
 
         Ok(response)
     }
 
     /// Retrieve an annotation value from a policy by ID.
-    pub fn get_policy_annotation(&self, policy_id: &cedar_policy::PolicyId, key: &str) -> Option<String> {
+    pub fn get_policy_annotation(
+        &self,
+        policy_id: &cedar_policy::PolicyId,
+        key: &str,
+    ) -> Option<String> {
         self.policy_set
             .policy(policy_id)
             .and_then(|p| p.annotation(key))

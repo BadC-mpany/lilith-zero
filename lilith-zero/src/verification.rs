@@ -332,8 +332,6 @@ mod tests {
         assert!(taints.contains("SECRET"));
     }
 
-
-
     #[test]
     fn test_lethal_trifecta_detection() {
         // Description: Executes the test_lethal_trifecta_detection logic.

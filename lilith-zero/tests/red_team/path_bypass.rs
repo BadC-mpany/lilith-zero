@@ -14,7 +14,7 @@ fn test_exploit_toctou_path_mutation() {
 
     // Verification: Lilith-Zero MUST mutate the payload so the tool never sees the original string.
     let paths = extract_and_canonicalize_paths(&mut payload);
-    
+
     assert!(paths.contains(&"etc/shadow".to_string()));
     assert_eq!(payload["path"], "etc/shadow");
     assert!(!payload["path"].as_str().unwrap().contains(".."));
@@ -28,10 +28,10 @@ fn test_exploit_key_based_bypass() {
     });
 
     let paths = extract_and_canonicalize_paths(&mut payload);
-    
+
     // Verification: The key itself must be canonicalized and identified as a path.
     assert!(paths.contains(&"etc/passwd".to_string()));
-    
+
     // The payload must be mutated to use the clean key.
     let obj = payload.as_object().unwrap();
     assert!(obj.contains_key("etc/passwd"));

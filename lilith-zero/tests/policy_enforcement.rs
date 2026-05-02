@@ -58,7 +58,8 @@ fn create_test_policy(protect_trifecta: bool) -> PolicyDefinition {
         forbidden_tags: None,
         required_taints: None,
         error: None,
-        match_args: None, pattern: None,
+        match_args: None,
+        pattern: None,
         exceptions: None,
     })
     .collect();
@@ -92,7 +93,9 @@ fn create_test_policy(protect_trifecta: bool) -> PolicyDefinition {
         tool_classes: vec![
             ("send_email".to_string(), vec!["EXFILTRATION".to_string()]),
             ("post_api".to_string(), vec!["EXFILTRATION".to_string()]),
-        ].into_iter().collect(),
+        ]
+        .into_iter()
+        .collect(),
         rate_limit: None,
         replay_window_secs: 0,
         pin_mode: None,

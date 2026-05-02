@@ -106,6 +106,9 @@ pub struct Config {
     ///
     /// Set by `--upstream-cmd` / `-u`.  Mutually exclusive with `upstream_http_url`.
     pub upstream_cmd: Option<String>,
+
+    /// When `true`, log the full RAW_WEBHOOK_PAYLOAD in the webhook server.
+    pub webhook_debug: bool,
 }
 
 impl Config {
@@ -150,6 +153,9 @@ impl Config {
                 .unwrap_or(PinMode::Audit),
             upstream_http_url: env::var("LILITH_ZERO_UPSTREAM_HTTP_URL").ok(),
             upstream_cmd: None,
+            webhook_debug: env::var("LILITH_ZERO_WEBHOOK_DEBUG")
+                .map(|v| v.to_lowercase() == "true" || v == "1")
+                .unwrap_or(false),
         })
     }
 
@@ -184,6 +190,7 @@ impl Default for Config {
             pin_mode: PinMode::Audit,
             upstream_http_url: None,
             upstream_cmd: None,
+            webhook_debug: false,
         }
     }
 }

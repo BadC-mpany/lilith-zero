@@ -711,7 +711,9 @@ class Lilith:
         except Exception:
             pass
 
-    def _parse_audit_entry(self, signature: str, payload_raw: str | dict[str, Any]) -> None:
+    def _parse_audit_entry(
+        self, signature: str, payload_raw: str | dict[str, Any]
+    ) -> None:
         """Helper to parse a signed audit entry and append to logs."""
         try:
             payload = (
