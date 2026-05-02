@@ -95,3 +95,7 @@ target/*
 .ruff_cache/
 site/
 resources/
+
+
+
+examples/copilot_studio/skills/pac*
