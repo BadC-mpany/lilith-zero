@@ -224,6 +224,10 @@ async fn do_analyze(
     body: axum::body::Bytes,
     correlation_id: Option<&str>,
 ) -> Response {
+    if let Ok(body_str) = std::str::from_utf8(&body) {
+        tracing::info!("RAW_WEBHOOK_PAYLOAD: {}", body_str);
+    }
+
     // 1. Authenticate.
     let auth_header = headers.get("authorization").and_then(|v| v.to_str().ok());
     if let Err(e) = authenticate(&state.auth, auth_header).await {
