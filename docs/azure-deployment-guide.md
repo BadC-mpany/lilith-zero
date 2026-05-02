@@ -87,3 +87,9 @@ In **Power Platform Admin Center** > **Security** > **Threat detection**:
 - **Persistence:** Lilith stores taints in `/home/.lilith/sessions`. In Azure App Service Linux, the `/home` directory is persistent across restarts.
 - **Port:** Ensure `WEBSITES_PORT=8080` (or your app's port) is set in App Settings.
 - **Logs:** Use `az webapp log tail` for real-time debugging of policy evaluations.
+
+## 7. Multi-Tenant Edge Routing
+Lilith Zero handles multi-tenancy at the webhook edge rather than inside the core engine.
+- Configure `--policy` to point to a directory of `.cedar` files.
+- Name each file with the convention `policy_<agent_id>.cedar` (e.g., `policy_77236ced-1146-f111-bec6-7ced8d71fac9.cedar`).
+- The webhook automatically parses the `agent.id` from the Copilot Studio `AnalyzeToolExecutionRequest` payload and routes the evaluation to the matching isolated policy.
