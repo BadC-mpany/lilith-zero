@@ -762,30 +762,37 @@ async fn run_webhook_server(
                             } else {
                                 file_stem
                             };
-                            let content = std::fs::read_to_string(&path)
-                                .unwrap_or_else(|e| panic!("Cannot read Cedar policy '{}': {e}", path.display()));
+                            let content = std::fs::read_to_string(&path).unwrap_or_else(|e| {
+                                panic!("Cannot read Cedar policy '{}': {e}", path.display())
+                            });
                             let policy_set = cedar_policy::PolicySet::from_str(&content)
-                                .unwrap_or_else(|e| panic!("Cannot parse Cedar policy '{}': {e}", path.display()));
+                                .unwrap_or_else(|e| {
+                                    panic!("Cannot parse Cedar policy '{}': {e}", path.display())
+                                });
                             cedar_policies.insert(agent_id.to_string(), Arc::new(policy_set));
                             count += 1;
                         }
                     }
                 }
             }
-            tracing::info!("Loaded {} Cedar policy sets from directory {}", count, path.display());
+            tracing::info!(
+                "Loaded {} Cedar policy sets from directory {}",
+                count,
+                path.display()
+            );
         } else if path.extension().map_or(false, |ext| ext == "cedar") {
             let content = std::fs::read_to_string(path)
                 .map_err(|e| format!("Cannot read Cedar policy '{}': {e}", path.display()))?;
             let policy_set = cedar_policy::PolicySet::from_str(&content)
                 .map_err(|e| format!("Cannot parse Cedar policy '{}': {e}", path.display()))?;
-            
+
             let file_stem = path.file_stem().unwrap().to_str().unwrap();
             let agent_id = if file_stem.starts_with("policy_") {
                 file_stem.strip_prefix("policy_").unwrap()
             } else {
                 file_stem
             };
-            
+
             tracing::info!(
                 "Cedar policy set loaded at startup for agent_id {} ({} policies)",
                 agent_id,

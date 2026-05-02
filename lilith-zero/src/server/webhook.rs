@@ -278,7 +278,8 @@ async fn do_analyze(
                 reason_codes::NO_POLICY,
                 format!("No policy loaded for agent_id {}", agent_id),
             )),
-        ).into_response();
+        )
+            .into_response();
     }
 
     let mut handler = match HookHandler::with_policy(

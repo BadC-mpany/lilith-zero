@@ -1071,30 +1071,73 @@ async fn test_webhook_analyze_multi_tenant_cedar_isolation() {
     // 1. agent_a calling "allowed_tool" -> ALLOW
     let mut body_a1 = analyze_request("conv-a1", "allowed_tool", json!({}));
     body_a1["conversationMetadata"]["agent"]["id"] = json!("agent_a");
-    let resp_a1 = post_json(&client, &format!("{base}/analyze-tool-execution"), None, Some(body_a1)).await;
+    let resp_a1 = post_json(
+        &client,
+        &format!("{base}/analyze-tool-execution"),
+        None,
+        Some(body_a1),
+    )
+    .await;
     let json_a1: Value = resp_a1.json().await.unwrap();
-    assert_eq!(json_a1["blockAction"].as_bool(), Some(false), "agent_a should be allowed to run allowed_tool");
+    assert_eq!(
+        json_a1["blockAction"].as_bool(),
+        Some(false),
+        "agent_a should be allowed to run allowed_tool"
+    );
 
     // 2. agent_a calling "other_tool" -> DENY
     let mut body_a2 = analyze_request("conv-a2", "other_tool", json!({}));
     body_a2["conversationMetadata"]["agent"]["id"] = json!("agent_a");
-    let resp_a2 = post_json(&client, &format!("{base}/analyze-tool-execution"), None, Some(body_a2)).await;
+    let resp_a2 = post_json(
+        &client,
+        &format!("{base}/analyze-tool-execution"),
+        None,
+        Some(body_a2),
+    )
+    .await;
     let json_a2: Value = resp_a2.json().await.unwrap();
-    assert_eq!(json_a2["blockAction"].as_bool(), Some(true), "agent_a should be denied other_tool");
+    assert_eq!(
+        json_a2["blockAction"].as_bool(),
+        Some(true),
+        "agent_a should be denied other_tool"
+    );
 
     // 3. agent_b calling "other_tool" -> ALLOW
     let mut body_b1 = analyze_request("conv-b1", "other_tool", json!({}));
     body_b1["conversationMetadata"]["agent"]["id"] = json!("agent_b");
-    let resp_b1 = post_json(&client, &format!("{base}/analyze-tool-execution"), None, Some(body_b1)).await;
+    let resp_b1 = post_json(
+        &client,
+        &format!("{base}/analyze-tool-execution"),
+        None,
+        Some(body_b1),
+    )
+    .await;
     let json_b1: Value = resp_b1.json().await.unwrap();
-    assert_eq!(json_b1["blockAction"].as_bool(), Some(false), "agent_b should be allowed to run other_tool");
+    assert_eq!(
+        json_b1["blockAction"].as_bool(),
+        Some(false),
+        "agent_b should be allowed to run other_tool"
+    );
 
     // 4. agent_c calling "allowed_tool" -> DENY (no policy loaded for agent_c)
     let mut body_c1 = analyze_request("conv-c1", "allowed_tool", json!({}));
     body_c1["conversationMetadata"]["agent"]["id"] = json!("agent_c");
-    let resp_c1 = post_json(&client, &format!("{base}/analyze-tool-execution"), None, Some(body_c1)).await;
+    let resp_c1 = post_json(
+        &client,
+        &format!("{base}/analyze-tool-execution"),
+        None,
+        Some(body_c1),
+    )
+    .await;
     let json_c1: Value = resp_c1.json().await.unwrap();
-    assert_eq!(json_c1["blockAction"].as_bool(), Some(true), "agent_c should be denied due to missing policy");
+    assert_eq!(
+        json_c1["blockAction"].as_bool(),
+        Some(true),
+        "agent_c should be denied due to missing policy"
+    );
     let reason = json_c1["reason"].as_str().unwrap_or("");
-    assert!(reason.contains("No policy loaded for agent_id agent_c"), "Must specify why it was blocked");
+    assert!(
+        reason.contains("No policy loaded for agent_id agent_c"),
+        "Must specify why it was blocked"
+    );
 }
