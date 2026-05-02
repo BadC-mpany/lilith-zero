@@ -1,116 +1,50 @@
 [
   {
-    "name": "template-content.topic.Forecasting",
-    "display_name": "Forecasting",
-    "description": "This tool identifies if the user's query is an attempt of predicting future conditions or outcomes related to capital markets, economic indicators, companies or their business activities and performance.\n\nKeywords & Phrases:\n- Forecast: forecast, expectation, predict, impact, estimate, future, outlook, anticipate, trends, projections, speculation.\n\nRequests about a period that has not yet fully ended should be classified as forecasting.\n\nExamples:\n\"What is the forecast for the S&P 500 next quarter?\"\n\"Can you predict the future inflation rate?\"\n\"What do experts expect for tech stocks in 2025?\"\n\"How is the capital market likely to perform next year?\"\n\"What are the anticipated trends in real estate investment?\"\n\"Can you provide an estimate of future commodity prices?\"\n\"What is the economic outlook for emerging markets?\"\n\nExclusions:\n- Do not classify if the query requests an expert's analysis.\n- Do not classify if the query centers on historical data without future expectations.",
-    "bot_id": "77236ced-1146-f111-bec6-7ced8d71fac9"
-  },
-  {
-    "name": "template-content.topic.Greeting",
-    "display_name": "Greeting",
-    "description": "",
-    "bot_id": "77236ced-1146-f111-bec6-7ced8d71fac9"
-  },
-  {
-    "name": "template-content.topic.Adviceseeking",
-    "display_name": "Advice seeking",
-    "description": "This tool detects whether a user is seeking financial advice, unless explicitly asking for an expert's or analyst's opinion.\nAction-Oriented Language\n   Examples: \"Should I invest in...?\", \"How can I improve my...?, \"what should I do...?\"\nSpecific Product/Decision Requests\n   Comparative context for products, investments or services:\n   Examples: \"Which investment is better?\", \"Is it a good idea to buy...?\"\nPersonal Situation References\n   Mentions of personal circumstances, especially financial or legal:\n   Examples: \"With my income, should I...?\", \"I am in debt, what should I do?\"\nAdvice-Related Keywords\n   Words like \"advice,\" \"recommend,\" \"opinion,\" or \"help me with.\":\n   Examples: \"Do you recommend...?\", \"I need help deciding between...\"\nDecision or Outcome Seeking\n   Best course of action:\n   Examples: \"What's the safest option?\", \"What's the best strategy?\"\nJudgment/Evaluation Requests\n   Opinions or assessments:\n   Examples: \"Is it worth...?\", \"What's your opinion on...?\"",
-    "bot_id": "77236ced-1146-f111-bec6-7ced8d71fac9"
-  },
-  {
-    "name": "template-content.topic.Resetconversation",
-    "display_name": "Reset conversation",
-    "description": "",
-    "bot_id": "77236ced-1146-f111-bec6-7ced8d71fac9"
-  },
-  {
-    "name": "template-content.topic.Signin",
-    "display_name": "Sign in ",
-    "description": "",
-    "bot_id": "77236ced-1146-f111-bec6-7ced8d71fac9"
-  },
-  {
-    "name": "template-content.topic.Endofconversation",
-    "display_name": "End of conversation",
-    "description": "",
-    "bot_id": "77236ced-1146-f111-bec6-7ced8d71fac9"
-  },
-  {
-    "name": "template-content.topic.Startover",
-    "display_name": "Start over",
-    "description": "",
-    "bot_id": "77236ced-1146-f111-bec6-7ced8d71fac9"
-  },
-  {
-    "name": "template-content.topic.Goodbye",
-    "display_name": "Goodbye",
-    "description": "",
-    "bot_id": "77236ced-1146-f111-bec6-7ced8d71fac9"
-  },
-  {
-    "name": "template-content.topic.Queryyourrepository",
-    "display_name": "Query your repository",
-    "description": "This tool can identify user queries that:\n1. Seek for information from a proprietary entity such as analyst reports or experts.\n2. Seek for information from a proprietary source such as specific, database, publication, system or report.\n\nSample queries:\n- \"What are the latest sales figures from our internal database?\"\n- \"Can you provide the market analysis report from my documents/repository\" \n- \"What is the Value A based on my Report B\"\n- \"What do analysts recommend for stock XYZ?\"\n- \"What do experts say about...?\"\n- \"Can you share an analyst's opinion on...?\" - \"What is expert's opinion on...?\"\n- \"How do experts view the impact of ...?\"\n- \"What is ... based on analyst reports\"",
-    "bot_id": "77236ced-1146-f111-bec6-7ced8d71fac9"
-  },
-  {
     "name": "template-content.action.WorkIQCopilotPreview",
     "display_name": "Work IQ Copilot (Preview)",
-    "description": "",
-    "bot_id": "77236ced-1146-f111-bec6-7ced8d71fac9"
-  },
-  {
-    "name": "template-content.topic.Adviceorforecastingdetected",
-    "display_name": "Advice or forecasting detected",
-    "description": "",
-    "bot_id": "77236ced-1146-f111-bec6-7ced8d71fac9"
-  },
-  {
-    "name": "template-content.topic.Conversationalboosting",
-    "display_name": "Conversational boosting",
-    "description": "",
-    "bot_id": "77236ced-1146-f111-bec6-7ced8d71fac9"
-  },
-  {
-    "name": "template-content.topic.Nonfinancial",
-    "display_name": "Non financial",
-    "description": "This tool identifies when a user asks questions and starts conversation that is not related to financial topics.\nfor example, \"tell me a joke\", \"what is the weather\", \"recommend me good recipes\"",
-    "bot_id": "77236ced-1146-f111-bec6-7ced8d71fac9"
-  },
-  {
-    "name": "template-content.topic.Onerror",
-    "display_name": "On error",
-    "description": "",
+    "operation_id": "mcp_m365copilot",
     "bot_id": "77236ced-1146-f111-bec6-7ced8d71fac9"
   },
   {
     "name": "template-content.action.WorkIQUserPreview",
     "display_name": "Work IQ User (Preview)",
-    "description": "",
+    "operation_id": "mcp_MeServer",
     "bot_id": "77236ced-1146-f111-bec6-7ced8d71fac9"
   },
   {
     "name": "template-content.action.ExcelOnlineBusinessAddarowintoatable",
-    "display_name": "Excel Online (Business) - Add a row into a table",
-    "description": "Add a new row into the Excel table.",
-    "bot_id": "77236ced-1146-f111-bec6-7ced8d71fac9"
-  },
-  {
-    "name": "AddRowV2",
     "display_name": "Add a row into a table",
-    "description": "Add a new row into the Excel table.",
+    "operation_id": "AddRowV2",
     "bot_id": "77236ced-1146-f111-bec6-7ced8d71fac9"
   },
   {
-    "name": "template-content.topic.Conversationstart",
-    "display_name": "Conversation start",
-    "description": "",
-    "bot_id": "77236ced-1146-f111-bec6-7ced8d71fac9"
+    "name": "template-content.action.MicrosoftDataverseMicrosoftDataverseMCPServerPreview",
+    "display_name": "Microsoft Dataverse MCP Server (Preview)",
+    "operation_id": "InvokeMCPPreview",
+    "bot_id": "5be3e14e-2e46-f111-bec6-7c1e52344333"
   },
   {
-    "name": "template-content.topic.Thankyou",
-    "display_name": "Thank you",
-    "description": "",
-    "bot_id": "77236ced-1146-f111-bec6-7ced8d71fac9"
+    "name": "template-content.action.ExcelOnlineBusinessCreatetable",
+    "display_name": "Create table",
+    "operation_id": "CreateTable",
+    "bot_id": "5be3e14e-2e46-f111-bec6-7c1e52344333"
+  },
+  {
+    "name": "template-content.action.ExcelOnlineBusinessGettables",
+    "display_name": "Get tables",
+    "operation_id": "GetTables",
+    "bot_id": "5be3e14e-2e46-f111-bec6-7c1e52344333"
+  },
+  {
+    "name": "template-content.action.WorkIQCopilotPreview",
+    "display_name": "Work IQ Copilot (Preview)",
+    "operation_id": "mcp_m365copilot",
+    "bot_id": "5be3e14e-2e46-f111-bec6-7c1e52344333"
+  },
+  {
+    "name": "template-content.action.WorkIQUserPreview",
+    "display_name": "Work IQ User (Preview)",
+    "operation_id": "mcp_MeServer",
+    "bot_id": "5be3e14e-2e46-f111-bec6-7c1e52344333"
   }
 ]

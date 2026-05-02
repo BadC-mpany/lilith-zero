@@ -5,5 +5,6 @@
 # Only include exactly what the Dockerfile needs
 !Dockerfile
 !lilith-zero/target/release/lilith-zero
-!policy.cedar
+!examples/copilot_studio/policies
+!examples/copilot_studio/policies/*
 
