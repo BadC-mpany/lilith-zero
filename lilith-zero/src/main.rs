@@ -758,7 +758,9 @@ async fn run_webhook_server(
                     if path.extension().map_or(false, |ext| ext == "cedar") {
                         if let Some(file_stem) = path.file_stem().and_then(|s| s.to_str()) {
                             let agent_id = if file_stem.starts_with("policy_") {
-                                file_stem.strip_prefix("policy_").unwrap()
+                                file_stem
+                                    .strip_prefix("policy_")
+                                    .expect("invariant: starts_with('policy_') check passed")
                             } else {
                                 file_stem
                             };
@@ -786,9 +788,14 @@ async fn run_webhook_server(
             let policy_set = cedar_policy::PolicySet::from_str(&content)
                 .map_err(|e| format!("Cannot parse Cedar policy '{}': {e}", path.display()))?;
 
-            let file_stem = path.file_stem().unwrap().to_str().unwrap();
+            let file_stem = path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .expect("invariant: .cedar file must have valid UTF-8 stem");
             let agent_id = if file_stem.starts_with("policy_") {
-                file_stem.strip_prefix("policy_").unwrap()
+                file_stem
+                    .strip_prefix("policy_")
+                    .expect("invariant: starts_with('policy_') check passed")
             } else {
                 file_stem
             };

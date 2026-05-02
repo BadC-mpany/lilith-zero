@@ -44,7 +44,10 @@ forbid(
             };
 
             let policy = Policy::parse(
-                Some(PolicyId::from_str(&Self::sanitize_id(&format!("static_{}", tool))).unwrap()),
+                Some(
+                    PolicyId::from_str(&Self::sanitize_id(&format!("static_{}", tool)))
+                        .expect("invariant: sanitize_id produces only [a-zA-Z0-9:_] chars"),
+                ),
                 &policy_src,
             )
             .map_err(|e| format!("Failed to compile static rule for {}: {}", tool, e))?;
@@ -100,7 +103,7 @@ forbid(
             let policy = Policy::parse(
                 Some(
                     PolicyId::from_str(&Self::sanitize_id(&format!("resource_rule_{}", i)))
-                        .unwrap(),
+                        .expect("invariant: sanitize_id produces only [a-zA-Z0-9:_] chars"),
                 ),
                 &policy_src,
             )
@@ -126,7 +129,7 @@ forbid(
                                 "add_taint:{}:res_{}_{}",
                                 tag, i, j
                             )))
-                            .unwrap(),
+                            .expect("invariant: sanitize_id produces only [a-zA-Z0-9:_] chars"),
                         ),
                         &taint_policy_src,
                     )
@@ -145,9 +148,16 @@ forbid(
         }
 
         let default_resource_permit = Policy::parse(
-            Some(PolicyId::from_str(&Self::sanitize_id("default_resource_permit")).unwrap()),
-            format!(r#"permit(principal, action == Action::"resources/read", resource) when {{ true{} }};"#, final_order_cond),
-        ).unwrap();
+            Some(
+                PolicyId::from_str(&Self::sanitize_id("default_resource_permit"))
+                    .expect("invariant: sanitize_id produces only [a-zA-Z0-9:_] chars"),
+            ),
+            format!(
+                r#"permit(principal, action == Action::"resources/read", resource) when {{ true{} }};"#,
+                final_order_cond
+            ),
+        )
+        .map_err(|e| format!("Failed to compile default resource permit: {}", e))?;
         set.add(default_resource_permit)
             .map_err(|e| e.to_string())?;
 
@@ -268,7 +278,7 @@ forbid(
             let policy = Policy::parse(
                 Some(
                     PolicyId::from_str(&Self::sanitize_id(&format!("{}_{}", policy_id_prefix, i)))
-                        .unwrap(),
+                        .expect("invariant: sanitize_id produces only [a-zA-Z0-9:_] chars"),
                 ),
                 &policy_src,
             )
