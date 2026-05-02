@@ -224,8 +224,10 @@ async fn do_analyze(
     body: axum::body::Bytes,
     correlation_id: Option<&str>,
 ) -> Response {
-    if let Ok(body_str) = std::str::from_utf8(&body) {
-        tracing::info!("RAW_WEBHOOK_PAYLOAD: {}", body_str);
+    if state.config.webhook_debug {
+        if let Ok(body_str) = std::str::from_utf8(&body) {
+            tracing::info!("RAW_WEBHOOK_PAYLOAD: {}", body_str);
+        }
     }
 
     // 1. Authenticate.
@@ -256,22 +258,25 @@ async fn do_analyze(
         .tool_name
         .clone()
         .unwrap_or_else(|| "unknown".to_string());
+    
+    let agent_id = &request.conversation_metadata.agent.id;
+    let conversation_id = &request.conversation_metadata.conversation_id;
 
     tracing::info!(
-        tool_name = %tool_name,
-        conversation_id = %request.conversation_metadata.conversation_id,
+        agent_id = %agent_id,
+        conversation_id = %conversation_id,
         correlation_id = correlation_id.unwrap_or("-"),
+        tool = %tool_name,
+        args = ?hook_input.tool_input,
         "evaluating tool execution request"
     );
 
     // 4. Evaluate through the security engine.
-    // Use the pre-parsed policy from WebhookState to avoid a blocking disk read
-    // on every request (which would erode the 900 ms evaluation budget).
-    let agent_id = &request.conversation_metadata.agent.id;
     let cedar_policy = state.cedar_policies.get(agent_id).cloned();
 
     // If we have policies loaded but this agent_id isn't found, deny
     if !state.cedar_policies.is_empty() && cedar_policy.is_none() {
+        tracing::warn!(agent_id = %agent_id, "Denying request: no policy found for agent");
         return (
             StatusCode::OK,
             Json(AnalyzeToolExecutionResponse::block(
@@ -303,33 +308,44 @@ async fn do_analyze(
         }
     };
 
-    let exit_code = match handler.handle(hook_input).await {
-        Ok(code) => code,
+    let result = handler.handle(hook_input).await;
+    
+    // 5. Translate result to Copilot Studio response.
+    let response = match result {
+        Ok(0) => {
+            tracing::info!(
+                agent_id = %agent_id,
+                conversation_id = %conversation_id,
+                tool = %tool_name,
+                "Decision: ALLOW"
+            );
+            AnalyzeToolExecutionResponse::allow()
+        }
+        Ok(_) => {
+            tracing::warn!(
+                agent_id = %agent_id,
+                conversation_id = %conversation_id,
+                tool = %tool_name,
+                "Decision: DENY (blocked by policy)"
+            );
+            AnalyzeToolExecutionResponse::block(
+                reason_codes::STATIC_DENY,
+                "blocked by Lilith Zero security policy",
+            )
+        }
         Err(e) => {
             tracing::error!(
-                tool_name = %tool_name,
-                correlation_id = correlation_id.unwrap_or("-"),
-                "HookHandler evaluation error: {e}"
+                agent_id = %agent_id,
+                conversation_id = %conversation_id,
+                tool = %tool_name,
+                error = %e,
+                "Decision: DENY (evaluation error)"
             );
-            return (
-                StatusCode::OK,
-                Json(AnalyzeToolExecutionResponse::block(
-                    reason_codes::EVAL_ERROR,
-                    format!("security evaluation failed: {e}"),
-                )),
+            AnalyzeToolExecutionResponse::block(
+                reason_codes::EVAL_ERROR,
+                format!("security evaluation failed: {e}"),
             )
-                .into_response();
         }
-    };
-
-    // 5. Translate exit code to Copilot Studio response.
-    let response = if exit_code == 0 {
-        AnalyzeToolExecutionResponse::allow()
-    } else {
-        AnalyzeToolExecutionResponse::block(
-            reason_codes::STATIC_DENY,
-            "blocked by Lilith Zero security policy",
-        )
     };
 
     (StatusCode::OK, Json(response)).into_response()
