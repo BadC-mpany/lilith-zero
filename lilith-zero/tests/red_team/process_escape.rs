@@ -43,7 +43,7 @@ while True:
 
     // Path to lilith-zero binary
     let lilith_bin = std::env::var("LILITH_ZERO_BINARY_PATH")
-        .unwrap_or_else(|_| "./target/debug/lilith-zero".to_string());
+        .unwrap_or_else(|_| env!("CARGO_BIN_EXE_lilith-zero").to_string());
 
     // dummy policy
     let policy_file = test_dir.path().join("policy.yaml");
