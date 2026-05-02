@@ -41,17 +41,24 @@ Deploy a deterministic, sub-millisecond security middleware (Lilith Zero) to int
 ## 4. Deployment Workflow (The Working Recipe)
 
 ### Phase 1: Docker Prep
-Avoid "Disk Quota" issues by using a `.dockerignore` to exclude the massive Rust `target/` directory, including only the release binary.
+Avoid "Disk Quota" issues by using a `.dockerignore` to exclude the massive Rust `target/` directory.
 
+**Build Command:**
+Always build with the `webhook` feature enabled:
+```bash
+cd lilith-zero && cargo build --release --features webhook
+```
+
+**Dockerfile:**
 ```dockerfile
-# Minimal Dockerfile
 FROM ubuntu:24.04
 RUN apt-get update && apt-get install -y ca-certificates
 WORKDIR /app
 COPY lilith-zero/target/release/lilith-zero /app/lilith-zero
-COPY examples/copilot_studio/copilot_studio_policy.yaml /app/policy.yaml
+# Pointing to a directory enables multi-tenant routing
+COPY examples/copilot_studio/policies /app/policies
 RUN chmod +x /app/lilith-zero
-CMD ["/app/lilith-zero", "serve", "--bind", "0.0.0.0:8080", "--auth-mode", "none", "--policy", "/app/policy.yaml"]
+CMD ["/app/lilith-zero", "serve", "--bind", "0.0.0.0:8080", "--auth-mode", "none", "--policy", "/app/policies"]
 ```
 
 ### Phase 2: Azure CLI Setup
@@ -72,24 +79,32 @@ SUBJECT="/eid1/c/pub/t/<TENANT_B64>/a/<APP_ID_B64>/<URL_B64>"
 
 ---
 
-## 5. Final Power Platform Configuration
+## 5. Tool Extraction & Policy Generation (Robustness)
 
-In **Power Platform Admin Center** > **Security** > **Threat detection**:
+Copilot Studio tool definitions are extracted from bot templates. The `extract_tools.py` script ensures robust matching by:
+1. **Filtering for `TaskDialog`**: Only extracting actual external actions/connectors, ignoring internal system topics (Greeting, Goodbye, etc.).
+2. **Multi-Alias Generation**: Automatically creating permits for `modelDisplayName`, `operationId`, and "slugified" names (e.g., `Create-table` vs `Create table`) to ensure the policy always matches the webhook payload.
 
-1. **App ID:** Your Entra App Client ID.
-2. **Endpoint URL:** `https://lilith-zero.badcompany.xyz` (Your custom domain).
-3. **Handshake:** On "Save", Power Platform calls `GET /validate`. Lilith must return:
-   ```json
-   {"isSuccessful": true, "status": "OK"}
-   ```
+Run extraction before building the image:
+```bash
+python3 examples/copilot_studio/extract_tools.py --environment <ENV_ID>
+```
 
-## 6. Maintenance & Scaling
-- **Persistence:** Lilith stores taints in `/home/.lilith/sessions`. In Azure App Service Linux, the `/home` directory is persistent across restarts.
-- **Port:** Ensure `WEBSITES_PORT=8080` (or your app's port) is set in App Settings.
-- **Logs:** Use `az webapp log tail` for real-time debugging of policy evaluations.
+---
 
-## 7. Multi-Tenant Edge Routing
-Lilith Zero handles multi-tenancy at the webhook edge rather than inside the core engine.
+## 6. Multi-Tenant Edge Routing
+
+Lilith Zero handles multi-tenancy at the webhook edge by mapping the `agent.id` from the payload to specific policy files:
 - Configure `--policy` to point to a directory of `.cedar` files.
-- Name each file with the convention `policy_<agent_id>.cedar` (e.g., `policy_77236ced-1146-f111-bec6-7ced8d71fac9.cedar`).
-- The webhook automatically parses the `agent.id` from the Copilot Studio `AnalyzeToolExecutionRequest` payload and routes the evaluation to the matching isolated policy.
+- Policy filenames must follow the convention: `policy_<agent_id>.cedar`.
+- The webhook dynamically loads and caches the correct policy set for each request, ensuring isolation between different agents in the same tenant.
+
+---
+
+## 7. Maintenance & Debugging
+
+- **Structured Logging**: By default, logs show clean, one-line entries for each tool call and decision.
+- **Debug Mode**: Set `LILITH_ZERO_WEBHOOK_DEBUG=true` in App Settings to log the full `RAW_WEBHOOK_PAYLOAD` JSON for every request.
+- **Persistence**: Taint state persists in `/home/.lilith/sessions` across container restarts.
+- **Port**: Set `WEBSITES_PORT=8080` in Azure App Settings.
+- **Logs**: Use `az webapp log tail` for real-time monitoring.
