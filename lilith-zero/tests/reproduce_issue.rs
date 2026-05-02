@@ -1,13 +1,13 @@
 #![cfg(feature = "webhook")]
 
-use serde_json::json;
-use lilith_zero::server::copilot_studio::{AnalyzeToolExecutionRequest, to_hook_input};
-use lilith_zero::engine_core::security_core::SecurityCore;
-use lilith_zero::engine_core::events::{SecurityDecision, SecurityEvent};
+use cedar_policy::PolicySet;
 use lilith_zero::engine_core::crypto::CryptoSigner;
+use lilith_zero::engine_core::events::{SecurityDecision, SecurityEvent};
+use lilith_zero::engine_core::security_core::SecurityCore;
 use lilith_zero::engine_core::taint::Tainted;
 use lilith_zero::engine_core::types::TaintedString;
-use cedar_policy::PolicySet;
+use lilith_zero::server::copilot_studio::{to_hook_input, AnalyzeToolExecutionRequest};
+use serde_json::json;
 use std::str::FromStr;
 use std::sync::Arc;
 
@@ -17,7 +17,7 @@ async fn setup_core(cedar_policy: PolicySet) -> SecurityCore {
     let mut core = SecurityCore::new(config, signer, None).unwrap();
     core.set_cedar_policy(cedar_policy);
     core.validate_session_tokens = false;
-    
+
     // Perform handshake to initialize session
     let handshake = SecurityEvent::Handshake {
         protocol_version: "test".to_string(),
@@ -26,7 +26,7 @@ async fn setup_core(cedar_policy: PolicySet) -> SecurityCore {
         capabilities: json!({}),
     };
     let _ = core.evaluate(handshake).await;
-    
+
     core
 }
 
@@ -81,7 +81,10 @@ async fn test_reproduce_resource_block() {
     if let SecurityDecision::Deny { reason, .. } = decision {
         println!("Successfully reproduced block: {}", reason);
         // Should be denied by resource rules because of name mismatch
-        assert!(reason.contains("Path 'drive' blocked by resource rules") || reason.contains("denied by policy"));
+        assert!(
+            reason.contains("Path 'drive' blocked by resource rules")
+                || reason.contains("denied by policy")
+        );
     } else {
         panic!("Expected DENY but got ALLOW (Decision: {:?}).", decision);
     }
@@ -133,5 +136,12 @@ async fn test_fix_verification() {
 
     let decision = core.evaluate(event).await;
 
-    assert!(matches!(decision, SecurityDecision::Allow | SecurityDecision::AllowWithTransforms { .. }), "Decision was: {:?}", decision);
+    assert!(
+        matches!(
+            decision,
+            SecurityDecision::Allow | SecurityDecision::AllowWithTransforms { .. }
+        ),
+        "Decision was: {:?}",
+        decision
+    );
 }

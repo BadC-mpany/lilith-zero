@@ -258,7 +258,7 @@ async fn do_analyze(
         .tool_name
         .clone()
         .unwrap_or_else(|| "unknown".to_string());
-    
+
     let agent_id = &request.conversation_metadata.agent.id;
     let conversation_id = &request.conversation_metadata.conversation_id;
 
@@ -309,7 +309,7 @@ async fn do_analyze(
     };
 
     let result = handler.handle(hook_input).await;
-    
+
     // 5. Translate result to Copilot Studio response.
     let response = match result {
         Ok(0) => {
