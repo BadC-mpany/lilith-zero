@@ -104,7 +104,7 @@ fn test_state_no_auth(policy_path: &std::path::Path) -> WebhookState {
         audit_log_path: None,
         auth: Arc::new(NoAuthAuthenticator),
         policy: load_test_policy(policy_path),
-        cedar_policy: None,
+        cedar_policies: std::collections::HashMap::new(),
     }
 }
 
@@ -120,7 +120,7 @@ fn test_state_with_shared_secret_auth(policy_path: &std::path::Path) -> WebhookS
         audit_log_path: None,
         auth: Arc::new(SharedSecretAuthenticator::new("test-webhook-secret", None)),
         policy: load_test_policy(policy_path),
-        cedar_policy: None,
+        cedar_policies: std::collections::HashMap::new(),
     }
 }
 
@@ -212,7 +212,7 @@ async fn test_webhook_validate_returns_not_successful_when_no_policy() {
         audit_log_path: None,
         auth: Arc::new(NoAuthAuthenticator),
         policy: None,
-        cedar_policy: None,
+        cedar_policies: std::collections::HashMap::new(),
     };
     let base = start_test_server(state).await;
     let client = Client::new();
@@ -485,7 +485,7 @@ async fn test_webhook_analyze_no_policy_blocks_all_fail_closed() {
         audit_log_path: None,
         auth: Arc::new(NoAuthAuthenticator),
         policy: None,
-        cedar_policy: None,
+        cedar_policies: std::collections::HashMap::new(),
     };
     let base = start_test_server(state).await;
     let client = Client::new();
@@ -952,7 +952,7 @@ async fn test_webhook_shared_secret_valid_token_accepted_by_validate() {
         audit_log_path: None,
         auth: Arc::new(SharedSecretAuthenticator::new(secret, None)),
         policy: load_test_policy(policy.path()),
-        cedar_policy: None,
+        cedar_policies: std::collections::HashMap::new(),
     };
     let base = start_test_server(state).await;
     let client = Client::new();
@@ -994,7 +994,7 @@ async fn test_webhook_shared_secret_valid_token_accepted_by_analyze() {
         audit_log_path: None,
         auth: Arc::new(SharedSecretAuthenticator::new(secret, None)),
         policy: load_test_policy(policy.path()),
-        cedar_policy: None,
+        cedar_policies: std::collections::HashMap::new(),
     };
     let base = start_test_server(state).await;
     let client = Client::new();
@@ -1020,4 +1020,81 @@ async fn test_webhook_shared_secret_valid_token_accepted_by_analyze() {
         Some(false),
         "allowed_tool must be allowed when valid token is presented"
     );
+}
+
+// ---------------------------------------------------------------------------
+// Multi-tenant Edge Routing Tests
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn test_webhook_analyze_multi_tenant_cedar_isolation() {
+    use std::str::FromStr;
+
+    let cedar_a = r#"
+        permit(
+            principal,
+            action == Action::"tools/call",
+            resource
+        ) when {
+            resource == Resource::"allowed_tool"
+        };
+    "#;
+
+    let cedar_b = r#"
+        permit(
+            principal,
+            action == Action::"tools/call",
+            resource
+        ) when {
+            resource == Resource::"other_tool"
+        };
+    "#;
+
+    let policy_a = Arc::new(cedar_policy::PolicySet::from_str(cedar_a).unwrap());
+    let policy_b = Arc::new(cedar_policy::PolicySet::from_str(cedar_b).unwrap());
+
+    let mut cedar_policies = std::collections::HashMap::new();
+    cedar_policies.insert("agent_a".to_string(), policy_a);
+    cedar_policies.insert("agent_b".to_string(), policy_b);
+
+    let state = WebhookState {
+        config: Arc::new(Config::default()),
+        audit_log_path: None,
+        auth: Arc::new(NoAuthAuthenticator),
+        policy: None,
+        cedar_policies,
+    };
+
+    let base = start_test_server(state).await;
+    let client = Client::new();
+
+    // 1. agent_a calling "allowed_tool" -> ALLOW
+    let mut body_a1 = analyze_request("conv-a1", "allowed_tool", json!({}));
+    body_a1["conversationMetadata"]["agent"]["id"] = json!("agent_a");
+    let resp_a1 = post_json(&client, &format!("{base}/analyze-tool-execution"), None, Some(body_a1)).await;
+    let json_a1: Value = resp_a1.json().await.unwrap();
+    assert_eq!(json_a1["blockAction"].as_bool(), Some(false), "agent_a should be allowed to run allowed_tool");
+
+    // 2. agent_a calling "other_tool" -> DENY
+    let mut body_a2 = analyze_request("conv-a2", "other_tool", json!({}));
+    body_a2["conversationMetadata"]["agent"]["id"] = json!("agent_a");
+    let resp_a2 = post_json(&client, &format!("{base}/analyze-tool-execution"), None, Some(body_a2)).await;
+    let json_a2: Value = resp_a2.json().await.unwrap();
+    assert_eq!(json_a2["blockAction"].as_bool(), Some(true), "agent_a should be denied other_tool");
+
+    // 3. agent_b calling "other_tool" -> ALLOW
+    let mut body_b1 = analyze_request("conv-b1", "other_tool", json!({}));
+    body_b1["conversationMetadata"]["agent"]["id"] = json!("agent_b");
+    let resp_b1 = post_json(&client, &format!("{base}/analyze-tool-execution"), None, Some(body_b1)).await;
+    let json_b1: Value = resp_b1.json().await.unwrap();
+    assert_eq!(json_b1["blockAction"].as_bool(), Some(false), "agent_b should be allowed to run other_tool");
+
+    // 4. agent_c calling "allowed_tool" -> DENY (no policy loaded for agent_c)
+    let mut body_c1 = analyze_request("conv-c1", "allowed_tool", json!({}));
+    body_c1["conversationMetadata"]["agent"]["id"] = json!("agent_c");
+    let resp_c1 = post_json(&client, &format!("{base}/analyze-tool-execution"), None, Some(body_c1)).await;
+    let json_c1: Value = resp_c1.json().await.unwrap();
+    assert_eq!(json_c1["blockAction"].as_bool(), Some(true), "agent_c should be denied due to missing policy");
+    let reason = json_c1["reason"].as_str().unwrap_or("");
+    assert!(reason.contains("No policy loaded for agent_id agent_c"), "Must specify why it was blocked");
 }
