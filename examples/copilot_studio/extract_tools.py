@@ -6,9 +6,9 @@ import subprocess
 import os
 import sys
 
-# Default values for your environment
-DEFAULT_BOT_ID = "c0b26c67-1544-f111-bec6-7c1e52fad898"
-DEFAULT_ENV_ID = "97bac1f2-0f6c-e8f3-8e7d-3d3752a8c84a"
+# New defaults from your environment
+DEFAULT_ENV_ID = "98e2f7d2-c1d3-4410-b87f-2396f157975f"
+DEFAULT_BOTS = ["77236ced-1146-f111-bec6-7ced8d71fac9"]
 
 def run_command(cmd):
     result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
@@ -18,124 +18,107 @@ def run_command(cmd):
         return None
     return result.stdout
 
-def extract_tools(bot_id, environment_id, output_path):
+def extract_for_bot(bot_id, environment_id):
     temp_yaml = f"temp_{bot_id}.yaml"
-    print(f"[*] Extracting template for bot {bot_id} in environment {environment_id}...")
+    print(f"[*] Extracting template for bot {bot_id}...")
     
-    # Use dnx for Fedora compatibility as per your preference
     cmd = (f"dnx Microsoft.PowerApps.CLI.Tool --yes -- copilot extract-template "
            f"--bot {bot_id} --environment {environment_id} --templateFileName {temp_yaml}")
     
     out = run_command(cmd)
     if out is None or not os.path.exists(temp_yaml):
-        print("[!] Failed to extract template.")
-        return
+        print(f"[!] Failed to extract template for {bot_id}.")
+        return None
 
-    print("[*] Parsing template YAML...")
+    print(f"[*] Parsing template for {bot_id}...")
     try:
         with open(temp_yaml, 'r') as f:
             data = yaml.safe_load(f)
     except Exception as e:
-        print(f"[!] YAML parse error: {e}")
-        return
+        print(f"[!] YAML parse error for {bot_id}: {e}")
+        return None
+    finally:
+        if os.path.exists(temp_yaml):
+            os.remove(temp_yaml)
 
     tools = []
-    
-    # Heuristic schemas for common standard connectors.
-    # In a full production setup, these could be pulled from connector OpenAPI specs.
-    COMMON_SCHEMAS = {
-        "GetItemWithOrganization": {
-            "type": "object",
-            "properties": {
-                "entityName": {"type": "string", "description": "The name of the entity"},
-                "itemId": {"type": "string", "description": "The ID of the record"}
-            },
-            "required": ["entityName", "itemId"]
-        },
-        "DeleteEmail_V2": {
-            "type": "object",
-            "properties": {
-                "messageId": {"type": "string", "description": "The ID of the email to delete"}
-            },
-            "required": ["messageId"]
-        },
-        "DirectReports_V2": {
-            "type": "object",
-            "properties": {
-                "userPrincipalName": {"type": "string", "description": "UPN of the user"}
-            },
-            "required": ["userPrincipalName"]
-        },
-        "DeleteItem": {
-            "type": "object",
-            "properties": {
-                "id": {"type": "string", "description": "ID of the row to delete"}
-            },
-            "required": ["id"]
-        },
-        "ContactDeleteItem_V2": {
-            "type": "object",
-            "properties": {
-                "contactId": {"type": "string", "description": "ID of the contact"}
-            },
-            "required": ["contactId"]
-        }
-    }
-
     # Extract components which represent tool actions
     components = data.get('components', [])
-    if isinstance(components, list):
-        pass
-    elif isinstance(components, dict):
+    if isinstance(components, dict):
         components = [components]
-    else:
-        components = []
-        
+    
     for comp in components:
+        # Support for DialogComponent (Topics/Actions in modern Copilots)
+        if comp.get('kind') == 'DialogComponent':
+            name = comp.get('schemaName') or comp.get('displayName')
+            if name:
+                dialog = comp.get('dialog', {})
+                desc = dialog.get('modelDescription', '')
+                
+                tools.append({
+                    "name": name,
+                    "display_name": comp.get('displayName'),
+                    "description": desc,
+                    "bot_id": bot_id
+                })
+        
+        # Support for older TaskDialog format (Standard Connectors)
         dialog = comp.get('dialog', {})
         if dialog.get('kind') == 'TaskDialog':
             action = dialog.get('action', {})
             op_id = action.get('operationId')
-            display_name = dialog.get('modelDisplayName', op_id)
-            description = dialog.get('modelDescription', '')
-            
-            tool_name = op_id if op_id else dialog.get('modelDisplayName', 'unknown')
-            
-            tool = {
-                "name": tool_name,
-                "description": description,
-                "inputSchema": COMMON_SCHEMAS.get(op_id, {
-                    "type": "object",
-                    "properties": {},
-                    "required": []
+            if op_id:
+                tools.append({
+                    "name": op_id,
+                    "display_name": dialog.get('modelDisplayName', op_id),
+                    "description": dialog.get('modelDescription', ''),
+                    "bot_id": bot_id
                 })
-            }
-            tools.append(tool)
 
-    output_json = {
-        "agent_id": bot_id,
-        "tools": tools
-    }
+    return tools
 
-    final_path = os.path.join(output_path, "tools.json")
-    with open(final_path, 'w') as f:
-        json.dump(output_json, f, indent=2)
-    
-    print(f"[+] Successfully wrote {len(tools)} tools to {final_path}")
-    
-    # Cleanup
-    if os.path.exists(temp_yaml):
-        os.remove(temp_yaml)
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Extract Copilot Studio tools to tools.json")
-    parser.add_argument("--bot", default=DEFAULT_BOT_ID, help=f"Bot ID (default: {DEFAULT_BOT_ID})")
-    parser.add_argument("--environment", default=DEFAULT_ENV_ID, help=f"Environment ID (default: {DEFAULT_ENV_ID})")
-    parser.add_argument("--output_path", default="./", help="Output directory (default: ./)")
+def main():
+    parser = argparse.ArgumentParser(description="Flexible Copilot Studio tool extractor")
+    parser.add_argument("--bots", nargs="+", default=DEFAULT_BOTS, help="List of Bot IDs")
+    parser.add_argument("--environment", default=DEFAULT_ENV_ID, help="Environment ID")
+    parser.add_argument("--output", default="all_tools.json", help="Output file")
+    parser.add_argument("--cedar", default="generated_policy.cedar", help="Output Cedar policy file")
     
     args = parser.parse_args()
     
-    if not os.path.exists(args.output_path):
-        os.makedirs(args.output_path)
+    all_tools = []
+    for bot_id in args.bots:
+        bot_tools = extract_for_bot(bot_id, args.environment)
+        if bot_tools:
+            all_tools.extend(bot_tools)
+
+    # Write JSON
+    with open(args.output, 'w') as f:
+        json.dump(all_tools, f, indent=2)
+    print(f"[+] Wrote {len(all_tools)} tools to {args.output}")
+
+    # Generate Cedar Policy
+    with open(args.cedar, 'w') as f:
+        f.write("// Automatically generated Cedar policy for Copilot Studio\n")
+        f.write("// Allows all extracted tools by default\n\n")
         
-    extract_tools(args.bot, args.environment, args.output_path)
+        seen = set()
+        for tool in all_tools:
+            key = (tool['bot_id'], tool['name'])
+            if key in seen:
+                continue
+            seen.add(key)
+            
+            f.write(f"// Tool: {tool.get('display_name', tool['name'])} for Bot: {tool['bot_id']}\n")
+            f.write(f"permit(\n")
+            f.write(f"    principal,\n")
+            f.write(f"    action == Action::\"tools/call\",\n")
+            f.write(f"    resource\n")
+            f.write(f") when {{\n")
+            f.write(f"    resource == Resource::\"{tool['name']}\"\n")
+            f.write(f"}};\n\n")
+            
+    print(f"[+] Generated Cedar policy at {args.cedar}")
+
+if __name__ == "__main__":
+    main()
