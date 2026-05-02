@@ -755,7 +755,7 @@ async fn run_webhook_server(
             if let Ok(entries) = std::fs::read_dir(path) {
                 for entry in entries.flatten() {
                     let path = entry.path();
-                    if path.extension().map_or(false, |ext| ext == "cedar") {
+                    if path.extension().is_some_and(|ext| ext == "cedar") {
                         if let Some(file_stem) = path.file_stem().and_then(|s| s.to_str()) {
                             let agent_id = if file_stem.starts_with("policy_") {
                                 file_stem
@@ -782,7 +782,7 @@ async fn run_webhook_server(
                 count,
                 path.display()
             );
-        } else if path.extension().map_or(false, |ext| ext == "cedar") {
+        } else if path.extension().is_some_and(|ext| ext == "cedar") {
             let content = std::fs::read_to_string(path)
                 .map_err(|e| format!("Cannot read Cedar policy '{}': {e}", path.display()))?;
             let policy_set = cedar_policy::PolicySet::from_str(&content)
