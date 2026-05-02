@@ -747,20 +747,51 @@ async fn run_webhook_server(
 
     // Parse the policy once at startup so each request doesn't pay a disk read.
     let mut policy = None;
-    let mut cedar_policy_set = None;
+    let mut cedar_policies = std::collections::HashMap::new();
 
     if let Some(ref path) = config.policies_yaml_path {
-        if path.extension().map_or(false, |ext| ext == "cedar") {
+        if path.is_dir() {
+            let mut count = 0;
+            if let Ok(entries) = std::fs::read_dir(path) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if path.extension().map_or(false, |ext| ext == "cedar") {
+                        if let Some(file_stem) = path.file_stem().and_then(|s| s.to_str()) {
+                            let agent_id = if file_stem.starts_with("policy_") {
+                                file_stem.strip_prefix("policy_").unwrap()
+                            } else {
+                                file_stem
+                            };
+                            let content = std::fs::read_to_string(&path)
+                                .unwrap_or_else(|e| panic!("Cannot read Cedar policy '{}': {e}", path.display()));
+                            let policy_set = cedar_policy::PolicySet::from_str(&content)
+                                .unwrap_or_else(|e| panic!("Cannot parse Cedar policy '{}': {e}", path.display()));
+                            cedar_policies.insert(agent_id.to_string(), Arc::new(policy_set));
+                            count += 1;
+                        }
+                    }
+                }
+            }
+            tracing::info!("Loaded {} Cedar policy sets from directory {}", count, path.display());
+        } else if path.extension().map_or(false, |ext| ext == "cedar") {
             let content = std::fs::read_to_string(path)
                 .map_err(|e| format!("Cannot read Cedar policy '{}': {e}", path.display()))?;
             let policy_set = cedar_policy::PolicySet::from_str(&content)
                 .map_err(|e| format!("Cannot parse Cedar policy '{}': {e}", path.display()))?;
-
+            
+            let file_stem = path.file_stem().unwrap().to_str().unwrap();
+            let agent_id = if file_stem.starts_with("policy_") {
+                file_stem.strip_prefix("policy_").unwrap()
+            } else {
+                file_stem
+            };
+            
             tracing::info!(
-                "Cedar policy set loaded at startup ({} policies)",
+                "Cedar policy set loaded at startup for agent_id {} ({} policies)",
+                agent_id,
                 policy_set.policies().collect::<Vec<_>>().len()
             );
-            cedar_policy_set = Some(Arc::new(policy_set));
+            cedar_policies.insert(agent_id.to_string(), Arc::new(policy_set));
         } else {
             let content = std::fs::read_to_string(path)
                 .map_err(|e| format!("Cannot read policy '{}': {e}", path.display()))?;
@@ -784,7 +815,7 @@ async fn run_webhook_server(
         audit_log_path: audit_logs,
         auth,
         policy,
-        cedar_policy: cedar_policy_set,
+        cedar_policies,
     };
 
     serve(&bind, state).await?;

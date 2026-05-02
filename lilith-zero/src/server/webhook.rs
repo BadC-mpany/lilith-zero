@@ -96,8 +96,8 @@ pub struct WebhookState {
     /// which would otherwise consume a significant fraction of the 900 ms
     /// evaluation budget and risk triggering the timeout → Copilot Studio allow.
     pub policy: Option<Arc<crate::engine_core::models::PolicyDefinition>>,
-    /// Native Cedar policy set parsed once at server startup.
-    pub cedar_policy: Option<Arc<cedar_policy::PolicySet>>,
+    /// Native Cedar policy sets mapped by agent ID.
+    pub cedar_policies: std::collections::HashMap<String, Arc<cedar_policy::PolicySet>>,
 }
 
 // ---------------------------------------------------------------------------
@@ -190,7 +190,7 @@ async fn do_validate(state: &WebhookState, _headers: &HeaderMap) -> Response {
     // This is more accurate than checking whether the file path exists: if the
     // policy failed to parse, the file might still be present but the server
     // would be running in fail-closed deny-all mode without enforcing real rules.
-    let validation = if state.policy.is_some() || state.cedar_policy.is_some() {
+    let validation = if state.policy.is_some() || !state.cedar_policies.is_empty() {
         ValidationResponse::ok()
     } else {
         ValidationResponse::not_ready("NO_POLICY_LOADED")
@@ -267,11 +267,25 @@ async fn do_analyze(
     // 4. Evaluate through the security engine.
     // Use the pre-parsed policy from WebhookState to avoid a blocking disk read
     // on every request (which would erode the 900 ms evaluation budget).
+    let agent_id = &request.conversation_metadata.agent.id;
+    let cedar_policy = state.cedar_policies.get(agent_id).cloned();
+
+    // If we have policies loaded but this agent_id isn't found, deny
+    if !state.cedar_policies.is_empty() && cedar_policy.is_none() {
+        return (
+            StatusCode::OK,
+            Json(AnalyzeToolExecutionResponse::block(
+                reason_codes::NO_POLICY,
+                format!("No policy loaded for agent_id {}", agent_id),
+            )),
+        ).into_response();
+    }
+
     let mut handler = match HookHandler::with_policy(
         state.config.clone(),
         state.audit_log_path.clone(),
         state.policy.clone(),
-        state.cedar_policy.clone(),
+        cedar_policy,
     ) {
         Ok(h) => h,
         Err(e) => {
