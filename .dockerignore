@@ -1,0 +1,9 @@
+# Exclude everything by default
+*
+**/*
+
+# Only include exactly what the Dockerfile needs
+!Dockerfile
+!lilith-zero/target/release/lilith-zero
+!policy.cedar
+
