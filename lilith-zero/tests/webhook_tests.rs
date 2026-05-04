@@ -63,8 +63,8 @@ customer_id: test
 name: Webhook Test Policy
 version: 1
 static_rules:
-  allowed_tool: ALLOW
-  forbidden_tool: DENY
+  tool-allowed_tool: ALLOW
+  tool-forbidden_tool: DENY
 taint_rules: []
 resource_rules: []
 "#
@@ -596,13 +596,13 @@ customer_id: test
 name: Webhook Taint Test
 version: 1
 static_rules:
-  taint_me: ALLOW
-  check_me: ALLOW
+  tool-taint_me: ALLOW
+  tool-check_me: ALLOW
 taint_rules:
-  - tool: taint_me
+  - tool: tool-taint_me
     action: ADD_TAINT
     tag: WEBHOOK_TAINT
-  - tool: check_me
+  - tool: tool-check_me
     action: CHECK_TAINT
     required_taints: ["WEBHOOK_TAINT"]
     error: "blocked when WEBHOOK_TAINT is active"
@@ -665,13 +665,13 @@ customer_id: test
 name: Webhook Isolation Test
 version: 1
 static_rules:
-  taint_source: ALLOW
-  check_tool: ALLOW
+  tool-taint_source: ALLOW
+  tool-check_tool: ALLOW
 taint_rules:
-  - tool: taint_source
+  - tool: tool-taint_source
     action: ADD_TAINT
     tag: ISOLATION_TAINT
-  - tool: check_tool
+  - tool: tool-check_tool
     action: CHECK_TAINT
     required_taints: ["ISOLATION_TAINT"]
     error: "blocked when ISOLATION_TAINT is active"
@@ -1036,7 +1036,7 @@ async fn test_webhook_analyze_multi_tenant_cedar_isolation() {
             action == Action::"tools/call",
             resource
         ) when {
-            resource == Resource::"allowed_tool"
+            resource == Resource::"tool-allowed_tool"
         };
     "#;
 
@@ -1046,7 +1046,7 @@ async fn test_webhook_analyze_multi_tenant_cedar_isolation() {
             action == Action::"tools/call",
             resource
         ) when {
-            resource == Resource::"other_tool"
+            resource == Resource::"tool-other_tool"
         };
     "#;
 

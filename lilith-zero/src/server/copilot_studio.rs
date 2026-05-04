@@ -328,7 +328,7 @@ pub fn to_hook_input(req: &AnalyzeToolExecutionRequest) -> crate::hook::HookInpu
     crate::hook::HookInput {
         session_id: req.conversation_metadata.conversation_id.clone(),
         hook_event_name: "PreToolUse".to_string(),
-        tool_name: Some(req.tool_definition.name.clone()),
+        tool_name: Some(req.tool_definition.id.clone()),
         tool_input: Some(req.input_values.clone()),
         tool_output: None,
         request_id: None,
@@ -448,7 +448,7 @@ mod tests {
     fn test_to_hook_input_maps_tool_name() {
         let req: AnalyzeToolExecutionRequest = serde_json::from_str(MINIMAL_REQUEST).unwrap();
         let hook = to_hook_input(&req);
-        assert_eq!(hook.tool_name.as_deref(), Some("send_email"));
+        assert_eq!(hook.tool_name.as_deref(), Some("tool-1"));
     }
 
     #[test]

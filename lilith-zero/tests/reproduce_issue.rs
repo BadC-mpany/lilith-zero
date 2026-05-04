@@ -60,7 +60,7 @@ async fn test_reproduce_resource_block() {
             action in [Action::"tools/call", Action::"resources/read", Action::"resources/write"],
             resource
         ) when {
-            resource == Resource::"CreateTable"
+            resource == Resource::"Wrong-ID"
         };
     "#;
     let policy_set = PolicySet::from_str(cedar_policy_src).expect("valid policy");
@@ -120,7 +120,7 @@ async fn test_fix_verification() {
             action in [Action::"tools/call", Action::"resources/read", Action::"resources/write"],
             resource
         ) when {
-            resource == Resource::"Create-table"
+            resource == Resource::"tool-1"
         };
     "#;
     let policy_set = PolicySet::from_str(cedar_policy_src).expect("valid policy");

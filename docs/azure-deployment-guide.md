@@ -92,19 +92,36 @@ python3 examples/copilot_studio/extract_tools.py --environment <ENV_ID>
 
 ---
 
-## 6. Multi-Tenant Edge Routing
+## 8. Redeployment Workflow (Updating Tools)
 
-Lilith Zero handles multi-tenancy at the webhook edge by mapping the `agent.id` from the payload to specific policy files:
-- Configure `--policy` to point to a directory of `.cedar` files.
-- Policy filenames must follow the convention: `policy_<agent_id>.cedar`.
-- The webhook dynamically loads and caches the correct policy set for each request, ensuring isolation between different agents in the same tenant.
+When you update tools in Copilot Studio, follow this exact sequence to regenerate policies and update the Azure deployment:
+
+```bash
+# 1. Extract tools and generate Cedar policies
+# Replace <ENV_ID> with your Power Platform Environment ID
+python3 examples/copilot_studio/extract_tools.py --environment <ENV_ID>
+
+# 2. Rebuild the Rust core with webhook features
+cd lilith-zero && cargo build --release --features webhook && cd ..
+
+# 3. Build and Login to ACR
+docker build -t lilithzerocr.azurecr.io/lilith-zero:latest .
+az acr login --name lilithzerocr
+
+# 4. Push to ACR
+docker push lilithzerocr.azurecr.io/lilith-zero:latest
+
+# 5. Restart Azure Web App to apply changes
+az webapp restart --name lilith-zero-webhook --resource-group lilith-zero-rg
+```
 
 ---
 
-## 7. Maintenance & Debugging
+## 9. Persistence & Scaling
 
-- **Structured Logging**: By default, logs show clean, one-line entries for each tool call and decision.
-- **Debug Mode**: Set `LILITH_ZERO_WEBHOOK_DEBUG=true` in App Settings to log the full `RAW_WEBHOOK_PAYLOAD` JSON for every request.
-- **Persistence**: Taint state persists in `/home/.lilith/sessions` across container restarts.
-- **Port**: Set `WEBSITES_PORT=8080` in Azure App Settings.
-- **Logs**: Use `az webapp log tail` for real-time monitoring.
+- **State Persistence**: Taint tracking state is stored in `/home/.lilith/sessions`. In Azure App Service Linux, the `/home` directory is persistent across container restarts, ensuring security context is not lost.
+- **Port Mapping**: Ensure the App Setting `WEBSITES_PORT=8080` is set so Azure correctly routes traffic to the container.
+- **Structured Logs**: By default, logs show clean, one-line entries for each tool call. Set `LILITH_ZERO_WEBHOOK_DEBUG=true` to see raw payloads.
+- **Real-time Monitoring**: Use `az webapp log tail --name <APP_NAME> --resource-group <RG_NAME>`.
+  > [!TIP]
+  > If the logs repeat the same entries, it's because Azure is showing the recent buffer. Trigger a new tool call to push the buffer forward, or use `az webapp log tail --offset 0` to see only new events.
