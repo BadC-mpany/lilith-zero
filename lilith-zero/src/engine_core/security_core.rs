@@ -183,6 +183,11 @@ impl SecurityCore {
         self.seen_request_ids = state.seen_request_ids;
     }
 
+    /// Return the active taints for the current session.
+    pub fn get_taints(&self) -> &HashSet<String> {
+        &self.taints
+    }
+
     /// Evaluate a [`SecurityEvent`] against the loaded policy and session state.
     ///
     /// Returns the [`SecurityDecision`] that should be applied to the request/response.
@@ -424,11 +429,19 @@ impl SecurityCore {
                 } else {
                     match self.config.security_level {
                         crate::config::SecurityLevel::AuditOnly => {
-                            warn!("No security policy loaded. Allowing request due to AuditOnly mode.");
+                            tracing::warn!(
+                                tool = %tool_name_str,
+                                "NO POLICY LOADED: Allowed only because security_level is {:?} (AuditOnly)",
+                                self.config.security_level
+                            );
                             Ok(Decision::Allowed)
                         }
                         crate::config::SecurityLevel::BlockParams => {
-                            warn!("No security policy loaded. Denying request due to strict security settings (Fail-Closed).");
+                            tracing::warn!(
+                                tool = %tool_name_str,
+                                "NO POLICY LOADED: Denying request because security_level is {:?} (Fail-Closed)",
+                                self.config.security_level
+                            );
                             Ok(Decision::Denied {
                                 reason:
                                     "No security policy loaded. lilith-zero defaults to Deny-All."
@@ -722,7 +735,12 @@ impl SecurityCore {
                         reason,
                     }
                 } else {
-                    warn!(tool = %tool_name, %reason, "Policy violation in AuditOnly mode — allowing");
+                    tracing::warn!(
+                        tool = %tool_name, 
+                        %reason, 
+                        "POLICY VIOLATION: Allowed only because security_level is {:?} (AuditOnly)", 
+                        self.config.security_level
+                    );
                     SecurityDecision::Allow
                 }
             }

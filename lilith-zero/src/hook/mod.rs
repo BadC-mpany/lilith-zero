@@ -111,6 +111,16 @@ impl HookHandler {
         Ok(Self { core, persistence })
     }
 
+    /// Import session state from a [`crate::engine_core::security_core::SessionState`] object.
+    pub fn import_state(&mut self, state: crate::engine_core::security_core::SessionState) {
+        self.core.import_state(state);
+    }
+
+    /// Export the current session state.
+    pub fn export_state(&self) -> crate::engine_core::security_core::SessionState {
+        self.core.export_state()
+    }
+
     /// Handle a hook input, returning the appropriate process exit code.
     pub async fn handle(&mut self, input: HookInput) -> Result<i32> {
         // Sanitize the session ID before use: it may originate from an untrusted
@@ -184,11 +194,44 @@ impl HookHandler {
         let event = SecurityEvent::ToolRequest {
             request_id: serde_json::Value::String(req_id),
             tool_name: TaintedString::new(tool_name.to_string()),
-            arguments: Tainted::new(tool_args, vec![]),
+            arguments: Tainted::new(tool_args.clone(), vec![]),
             session_token: Some(input.session_id.clone()),
         };
 
         let decision = self.core.evaluate(event).await;
+
+        if self.core.config.lean_logs {
+            let args_summary = if tool_args.is_null() {
+                "{}".to_string()
+            } else {
+                serde_json::to_string(&tool_args).unwrap_or_else(|_| "{}".to_string())
+            };
+            let taints = self.core.get_taints();
+            let taints_str = if taints.is_empty() { "CLEAN".to_string() } else { format!("{:?}", taints) };
+            eprintln!(
+                "lilith >> tool call: {}({}) [Session: {}] [Taints: {}]",
+                tool_name,
+                args_summary,
+                self.core.session_id,
+                taints_str
+            );
+            
+            match &decision {
+                SecurityDecision::Allow => {
+                    println!("lilith >> decision: ALLOW");
+                }
+                SecurityDecision::AllowWithTransforms { taints_to_add, .. } => {
+                    println!("lilith >> decision: ALLOW");
+                    if !taints_to_add.is_empty() {
+                        println!("lilith >> action: ADD_TAINT {:?}", taints_to_add);
+                    }
+                }
+                SecurityDecision::Deny { reason, .. } => {
+                    println!("lilith >> decision: DENY");
+                    println!("lilith >> reason: {}", reason);
+                }
+            }
+        }
 
         match decision {
             SecurityDecision::Deny { reason, .. } => {
@@ -223,12 +266,13 @@ impl HookHandler {
         // This is where Taint Propagation from tool output happens (if logic is added to SecurityCore).
         let decision = self.core.evaluate(event).await;
 
-        if let SecurityDecision::AllowWithTransforms { taints_to_add, .. } = decision {
+        if let SecurityDecision::AllowWithTransforms { taints_to_add, .. } = &decision {
             if !taints_to_add.is_empty() {
-                // Taint propagation: taints added based on tool output analysis.
-                // These are already handled by process_evaluator_decision inside core.evaluate()
-                // but only if evaluate() supports ToolResponse.
-                tracing::info!("Tool {} propagated taints: {:?}", tool_name, taints_to_add);
+                if self.core.config.lean_logs {
+                    println!("lilith >> tool: {} propagated taints: {:?}", tool_name, taints_to_add);
+                } else {
+                    tracing::info!("Tool {} propagated taints: {:?}", tool_name, taints_to_add);
+                }
             }
         }
 

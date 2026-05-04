@@ -32,6 +32,7 @@
 
 use std::io::Write;
 use std::sync::Arc;
+use tokio::sync::RwLock;
 
 use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
 use reqwest::Client;
@@ -105,6 +106,7 @@ fn test_state_no_auth(policy_path: &std::path::Path) -> WebhookState {
         auth: Arc::new(NoAuthAuthenticator),
         policy: load_test_policy(policy_path),
         cedar_policies: std::collections::HashMap::new(),
+        sessions: Arc::new(RwLock::new(std::collections::HashMap::new())),
     }
 }
 
@@ -121,6 +123,7 @@ fn test_state_with_shared_secret_auth(policy_path: &std::path::Path) -> WebhookS
         auth: Arc::new(SharedSecretAuthenticator::new("test-webhook-secret", None)),
         policy: load_test_policy(policy_path),
         cedar_policies: std::collections::HashMap::new(),
+        sessions: Arc::new(RwLock::new(std::collections::HashMap::new())),
     }
 }
 
@@ -213,6 +216,7 @@ async fn test_webhook_validate_returns_not_successful_when_no_policy() {
         auth: Arc::new(NoAuthAuthenticator),
         policy: None,
         cedar_policies: std::collections::HashMap::new(),
+        sessions: Arc::new(RwLock::new(std::collections::HashMap::new())),
     };
     let base = start_test_server(state).await;
     let client = Client::new();
@@ -486,6 +490,7 @@ async fn test_webhook_analyze_no_policy_blocks_all_fail_closed() {
         auth: Arc::new(NoAuthAuthenticator),
         policy: None,
         cedar_policies: std::collections::HashMap::new(),
+        sessions: Arc::new(RwLock::new(std::collections::HashMap::new())),
     };
     let base = start_test_server(state).await;
     let client = Client::new();
@@ -953,6 +958,7 @@ async fn test_webhook_shared_secret_valid_token_accepted_by_validate() {
         auth: Arc::new(SharedSecretAuthenticator::new(secret, None)),
         policy: load_test_policy(policy.path()),
         cedar_policies: std::collections::HashMap::new(),
+        sessions: Arc::new(RwLock::new(std::collections::HashMap::new())),
     };
     let base = start_test_server(state).await;
     let client = Client::new();
@@ -995,6 +1001,7 @@ async fn test_webhook_shared_secret_valid_token_accepted_by_analyze() {
         auth: Arc::new(SharedSecretAuthenticator::new(secret, None)),
         policy: load_test_policy(policy.path()),
         cedar_policies: std::collections::HashMap::new(),
+        sessions: Arc::new(RwLock::new(std::collections::HashMap::new())),
     };
     let base = start_test_server(state).await;
     let client = Client::new();
@@ -1063,6 +1070,7 @@ async fn test_webhook_analyze_multi_tenant_cedar_isolation() {
         auth: Arc::new(NoAuthAuthenticator),
         policy: None,
         cedar_policies,
+        sessions: Arc::new(RwLock::new(std::collections::HashMap::new())),
     };
 
     let base = start_test_server(state).await;

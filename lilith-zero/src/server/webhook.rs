@@ -80,6 +80,9 @@ const EVALUATION_TIMEOUT_MS: u64 = 900;
 // Shared server state
 // ---------------------------------------------------------------------------
 
+use crate::engine_core::security_core::SessionState;
+use tokio::sync::RwLock;
+
 /// Immutable state shared across all webhook handler invocations.
 #[derive(Clone)]
 pub struct WebhookState {
@@ -98,6 +101,8 @@ pub struct WebhookState {
     pub policy: Option<Arc<crate::engine_core::models::PolicyDefinition>>,
     /// Native Cedar policy sets mapped by agent ID.
     pub cedar_policies: std::collections::HashMap<String, Arc<cedar_policy::PolicySet>>,
+    /// In-memory session store for taint tracking across HTTP requests.
+    pub sessions: Arc<RwLock<std::collections::HashMap<String, SessionState>>>,
 }
 
 // ---------------------------------------------------------------------------
@@ -262,14 +267,16 @@ async fn do_analyze(
     let agent_id = &request.conversation_metadata.agent.id;
     let conversation_id = &request.conversation_metadata.conversation_id;
 
-    tracing::info!(
-        agent_id = %agent_id,
-        conversation_id = %conversation_id,
-        correlation_id = correlation_id.unwrap_or("-"),
-        tool = %tool_name,
-        args = ?hook_input.tool_input,
-        "evaluating tool execution request"
-    );
+    if !state.config.lean_logs {
+        tracing::info!(
+            agent_id = %agent_id,
+            conversation_id = %conversation_id,
+            correlation_id = correlation_id.unwrap_or("-"),
+            tool = %tool_name,
+            args = ?hook_input.tool_input,
+            "evaluating tool execution request"
+        );
+    }
 
     // 4. Evaluate through the security engine.
     let cedar_policy = state.cedar_policies.get(agent_id).cloned();
@@ -308,30 +315,55 @@ async fn do_analyze(
         }
     };
 
+    // Load existing session state for taint tracking
+    {
+        let sessions = state.sessions.read().await;
+        if let Some(session_state) = sessions.get(conversation_id) {
+            handler.import_state(session_state.clone());
+        }
+    }
+
     let result = handler.handle(hook_input).await;
+
+    // Save updated session state back to the store
+    {
+        let session_state = handler.export_state();
+        let mut sessions = state.sessions.write().await;
+        sessions.insert(conversation_id.clone(), session_state);
+    }
 
     // 5. Translate result to Copilot Studio response.
     let response = match result {
         Ok(0) => {
-            tracing::info!(
-                agent_id = %agent_id,
-                conversation_id = %conversation_id,
-                tool = %tool_name,
-                "Decision: ALLOW"
-            );
+            if !state.config.lean_logs {
+                tracing::info!(
+                    agent_id = %agent_id,
+                    conversation_id = %conversation_id,
+                    tool = %tool_name,
+                    "Decision: ALLOW"
+                );
+            }
             AnalyzeToolExecutionResponse::allow()
         }
         Ok(_) => {
-            tracing::warn!(
-                agent_id = %agent_id,
-                conversation_id = %conversation_id,
-                tool = %tool_name,
-                "Decision: DENY (blocked by policy)"
-            );
-            AnalyzeToolExecutionResponse::block(
+            if !state.config.lean_logs {
+                tracing::warn!(
+                    agent_id = %agent_id,
+                    conversation_id = %conversation_id,
+                    tool = %tool_name,
+                    "Decision: DENY (blocked by policy)"
+                );
+            }
+            let mut resp = AnalyzeToolExecutionResponse::block(
                 reason_codes::STATIC_DENY,
                 "blocked by Lilith Zero security policy",
-            )
+            );
+            // Add internal diagnostics for debugging (not shown to end users if configured)
+            resp.diagnostics = Some(format!(
+                "tool: {}, session: {}, policy: {}",
+                tool_name, conversation_id, agent_id
+            ));
+            resp
         }
         Err(e) => {
             tracing::error!(
@@ -413,12 +445,23 @@ fn auth_error_response(e: AuthError) -> Response {
 /// Start the webhook server and block until the listener exits.
 pub async fn serve(bind_addr: &str, state: WebhookState) -> anyhow::Result<()> {
     tracing::info!(
-        "Lilith Zero webhook server starting on {} (auth: {}, timeout: {}ms, body_limit: {}KiB)",
+        "Lilith Zero webhook server starting on {} (auth: {}, level: {:?}, timeout: {}ms, body_limit: {}KiB)",
         bind_addr,
         state.auth.description(),
+        state.config.security_level,
         EVALUATION_TIMEOUT_MS,
         REQUEST_BODY_LIMIT_BYTES / 1024,
     );
+
+    if state.policy.is_none() && state.cedar_policies.is_empty() {
+        tracing::warn!("NO POLICIES LOADED - Server will run in fail-closed mode (or AuditOnly if configured)");
+    } else {
+        tracing::info!(
+            "Policies loaded: {} Cedar policy sets, {} legacy policy",
+            state.cedar_policies.len(),
+            if state.policy.is_some() { "1" } else { "0" }
+        );
+    }
 
     let app = build_router(state);
     let listener = tokio::net::TcpListener::bind(bind_addr)

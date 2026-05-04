@@ -13,6 +13,8 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::Arc;
+#[cfg(feature = "webhook")]
+use tokio::sync::RwLock;
 use tracing::info;
 
 use lilith_zero::config::Config;
@@ -830,6 +832,7 @@ async fn run_webhook_server(
         auth,
         policy,
         cedar_policies,
+        sessions: Arc::new(RwLock::new(std::collections::HashMap::new())),
     };
 
     serve(&bind, state).await?;

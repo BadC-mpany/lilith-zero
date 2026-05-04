@@ -79,6 +79,7 @@ impl CedarEvaluator {
             "paths": paths_list,
             "path": path,
             "args": sanitized_args,
+            "arguments": sanitized_args, // Alias for better readability in policies
             "classes": classes_list
         });
 

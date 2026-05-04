@@ -109,6 +109,9 @@ pub struct Config {
 
     /// When `true`, log the full RAW_WEBHOOK_PAYLOAD in the webhook server.
     pub webhook_debug: bool,
+
+    /// When `true`, enable a minimal, high-signal logging mode focused on Lilith's decisions.
+    pub lean_logs: bool,
 }
 
 impl Config {
@@ -156,6 +159,9 @@ impl Config {
             webhook_debug: env::var("LILITH_ZERO_WEBHOOK_DEBUG")
                 .map(|v| v.to_lowercase() == "true" || v == "1")
                 .unwrap_or(false),
+            lean_logs: env::var("LILITH_ZERO_LEAN_LOGS")
+                .map(|v| v.to_lowercase() == "true" || v == "1")
+                .unwrap_or(false),
         })
     }
 
@@ -191,6 +197,7 @@ impl Default for Config {
             upstream_http_url: None,
             upstream_cmd: None,
             webhook_debug: false,
+            lean_logs: false,
         }
     }
 }
