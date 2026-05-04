@@ -1,48 +1,136 @@
 [
   {
     "ids": [
-      "cra65_financialInsights.action.WorkIQCopilot(Preview)",
-      "Work IQ Copilot (Preview)",
-      "template-content.action.WorkIQCopilotPreview",
+      "cra65_otpdemo.action.EnterpriseIntegrationService-EnterpriseIntegrationService",
+      "deleteDatabaseRow",
+      "template-content.connectionreference.cra65_otpdemo.shared_cra655fenterprise20integration20service5ff",
+      "template-content.action.EnterpriseIntegrationServiceEnterpriseIntegrationService",
+      "Enterprise Integration Service - Enterprise Integration Service"
+    ],
+    "display_name": "Enterprise Integration Service - Enterprise Integration Service",
+    "bot_id": "5be3e14e-2e46-f111-bec6-7c1e52344333"
+  },
+  {
+    "ids": [
+      "cra65_otpdemo.action.EnterpriseIntegrationService-EnterpriseIntegrationService",
+      "template-content.connectionreference.cra65_otpdemo.shared_cra655fenterprise20integration20service5ff",
+      "template-content.action.EnterpriseIntegrationServiceEnterpriseIntegrationService1",
+      "fetchWebpage",
+      "Enterprise Integration Service - Enterprise Integration Service"
+    ],
+    "display_name": "Enterprise Integration Service - Enterprise Integration Service",
+    "bot_id": "5be3e14e-2e46-f111-bec6-7c1e52344333"
+  },
+  {
+    "ids": [
+      "cra65_otpdemo.action.EnterpriseIntegrationService-EnterpriseIntegrationService",
+      "template-content.connectionreference.cra65_otpdemo.shared_cra655fenterprise20integration20service5ff",
+      "searchWeb",
+      "Enterprise Integration Service - Enterprise Integration Service",
+      "template-content.action.EnterpriseIntegrationServiceEnterpriseIntegrationService2"
+    ],
+    "display_name": "Enterprise Integration Service - Enterprise Integration Service",
+    "bot_id": "5be3e14e-2e46-f111-bec6-7c1e52344333"
+  },
+  {
+    "ids": [
+      "cra65_otpdemo.action.EnterpriseIntegrationService-EnterpriseIntegrationService",
+      "queryDatabase",
+      "template-content.action.EnterpriseIntegrationServiceEnterpriseIntegrationService3",
+      "template-content.connectionreference.cra65_otpdemo.shared_cra655fenterprise20integration20service5ff",
+      "Enterprise Integration Service - Enterprise Integration Service"
+    ],
+    "display_name": "Enterprise Integration Service - Enterprise Integration Service",
+    "bot_id": "5be3e14e-2e46-f111-bec6-7c1e52344333"
+  },
+  {
+    "ids": [
+      "executePythonScript",
+      "cra65_otpdemo.action.EnterpriseIntegrationService-EnterpriseIntegrationService",
+      "template-content.connectionreference.cra65_otpdemo.shared_cra655fenterprise20integration20service5ff",
+      "template-content.action.EnterpriseIntegrationServiceEnterpriseIntegrationService4",
+      "Enterprise Integration Service - Enterprise Integration Service"
+    ],
+    "display_name": "Enterprise Integration Service - Enterprise Integration Service",
+    "bot_id": "5be3e14e-2e46-f111-bec6-7c1e52344333"
+  },
+  {
+    "ids": [
+      "cra65_otpdemo.action.EnterpriseIntegrationService-EnterpriseIntegrationService",
+      "template-content.connectionreference.cra65_otpdemo.shared_cra655fenterprise20integration20service5ff",
+      "template-content.action.EnterpriseIntegrationServiceEnterpriseIntegrationService5",
+      "createExcelTable",
+      "Enterprise Integration Service - Enterprise Integration Service"
+    ],
+    "display_name": "Enterprise Integration Service - Enterprise Integration Service",
+    "bot_id": "5be3e14e-2e46-f111-bec6-7c1e52344333"
+  },
+  {
+    "ids": [
+      "cra65_otpdemo.action.EnterpriseIntegrationService-EnterpriseIntegrationService",
+      "readEmails",
+      "template-content.connectionreference.cra65_otpdemo.shared_cra655fenterprise20integration20service5ff",
+      "Enterprise Integration Service - Enterprise Integration Service",
+      "template-content.action.EnterpriseIntegrationServiceEnterpriseIntegrationService6"
+    ],
+    "display_name": "Enterprise Integration Service - Enterprise Integration Service",
+    "bot_id": "5be3e14e-2e46-f111-bec6-7c1e52344333"
+  },
+  {
+    "ids": [
+      "cra65_otpdemo.action.EnterpriseIntegrationService-EnterpriseIntegrationService",
+      "template-content.action.EnterpriseIntegrationServiceEnterpriseIntegrationService7",
+      "connectMcpServer",
+      "template-content.connectionreference.cra65_otpdemo.shared_cra655fenterprise20integration20service5ff",
+      "Enterprise Integration Service - Enterprise Integration Service"
+    ],
+    "display_name": "Enterprise Integration Service - Enterprise Integration Service",
+    "bot_id": "5be3e14e-2e46-f111-bec6-7c1e52344333"
+  },
+  {
+    "ids": [
+      "cra65_otpdemo.action.EnterpriseIntegrationService-EnterpriseIntegrationService",
+      "template-content.connectionreference.cra65_otpdemo.shared_cra655fenterprise20integration20service5ff",
+      "sendEmail",
+      "template-content.action.EnterpriseIntegrationServiceEnterpriseIntegrationService8",
+      "Enterprise Integration Service - Enterprise Integration Service"
+    ],
+    "display_name": "Enterprise Integration Service - Enterprise Integration Service",
+    "bot_id": "5be3e14e-2e46-f111-bec6-7c1e52344333"
+  },
+  {
+    "ids": [
       "template-content.connectionreference.cra65_financialInsights.shared_a365copilotchatmcp.shareda365cop",
-      "mcp_m365copilot"
+      "mcp_m365copilot",
+      "template-content.action.WorkIQCopilotPreview",
+      "Work IQ Copilot (Preview)",
+      "cra65_financialInsights.action.WorkIQCopilot(Preview)"
     ],
     "display_name": "Work IQ Copilot (Preview)",
     "bot_id": "77236ced-1146-f111-bec6-7ced8d71fac9"
   },
   {
     "ids": [
+      "Work IQ User (Preview)",
       "template-content.connectionreference.cra65_financialInsights.shared_a365memcp.shareda365memcp26ee772",
       "cra65_financialInsights.action.WorkIQUser(Preview)",
-      "mcp_MeServer",
-      "Work IQ User (Preview)",
-      "template-content.action.WorkIQUserPreview"
+      "template-content.action.WorkIQUserPreview",
+      "mcp_MeServer"
     ],
     "display_name": "Work IQ User (Preview)",
     "bot_id": "77236ced-1146-f111-bec6-7ced8d71fac9"
   },
   {
     "ids": [
-      "dynamicProperties",
       "cra65_financialInsights.action.Addarowintoatable",
+      "Excel Online (Business) - Add a row into a table",
+      "AddRowV2",
       "template-content.connectionreference.cra65_financialInsights.shared_excelonlinebusiness.d8386d7cbde0",
       "template-content.action.ExcelOnlineBusinessAddarowintoatable",
-      "AddRowV2",
-      "Add a row into a table",
-      "Excel Online (Business) - Add a row into a table"
+      "dynamicProperties",
+      "Add a row into a table"
     ],
     "display_name": "Add a row into a table",
     "bot_id": "77236ced-1146-f111-bec6-7ced8d71fac9"
-  },
-  {
-    "ids": [
-      "template-content.action.MockActionsAPI3MockActionsAPI3",
-      "Mock Actions API 3 - Mock Actions API 3",
-      "cra65_otpdemo.action.MockActionsAPI3-MockActionsAPI3",
-      "sendEmail",
-      "template-content.connectionreference.cra65_otpdemo.shared_cra655fmock20actions20api2035ff1d9155c6c88"
-    ],
-    "display_name": "Mock Actions API 3 - Mock Actions API 3",
-    "bot_id": "5be3e14e-2e46-f111-bec6-7c1e52344333"
   }
 ]

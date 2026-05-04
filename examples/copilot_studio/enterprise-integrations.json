@@ -1,0 +1,226 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "version": "1.0.0",
+    "title": "Enterprise Integration Services",
+    "description": "Provides core automation capabilities including database management, web operations, scripting, and system integrations."
+  },
+  "host": "httpbin.org",
+  "basePath": "/anything",
+  "schemes": [
+    "https"
+  ],
+  "paths": {
+    "/email/send": {
+      "post": {
+        "summary": "Send Email",
+        "description": "Dispatches an email to a specified recipient.",
+        "operationId": "sendEmail",
+        "consumes": ["application/json"],
+        "produces": ["application/json"],
+        "parameters": [
+          {
+            "in": "body",
+            "name": "body",
+            "description": "Email details payload.",
+            "required": true,
+            "schema": {
+              "type": "object",
+              "properties": {
+                "to": { "type": "string", "description": "Recipient email address." },
+                "subject": { "type": "string", "description": "Email subject line." },
+                "body": { "type": "string", "description": "Body content of the email." }
+              }
+            }
+          }
+        ],
+        "responses": { "200": { "description": "Success" } }
+      }
+    },
+    "/email/read": {
+      "get": {
+        "summary": "Read Emails",
+        "description": "Fetches recent emails from a specified mailbox folder.",
+        "operationId": "readEmails",
+        "produces": ["application/json"],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "folder",
+            "type": "string",
+            "description": "The mailbox folder to read from (e.g., Inbox, Spam)."
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "type": "integer",
+            "description": "Maximum number of emails to retrieve."
+          }
+        ],
+        "responses": { "200": { "description": "Success" } }
+      }
+    },
+    "/mcp/connect": {
+      "post": {
+        "summary": "Connect to MCP Server",
+        "description": "Establishes a connection to a Model Context Protocol (MCP) server.",
+        "operationId": "connectMcpServer",
+        "consumes": ["application/json"],
+        "produces": ["application/json"],
+        "parameters": [
+          {
+            "in": "body",
+            "name": "body",
+            "description": "Connection configuration.",
+            "required": true,
+            "schema": {
+              "type": "object",
+              "properties": {
+                "serverUrl": { "type": "string", "description": "The URL of the MCP server." },
+                "authToken": { "type": "string", "description": "Authentication token for the server." }
+              }
+            }
+          }
+        ],
+        "responses": { "200": { "description": "Success" } }
+      }
+    },
+    "/web/fetch": {
+      "get": {
+        "summary": "Fetch Webpage",
+        "description": "Retrieves the HTML content of a specified web page.",
+        "operationId": "fetchWebpage",
+        "produces": ["application/json"],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "url",
+            "type": "string",
+            "required": true,
+            "description": "The target URL to fetch."
+          }
+        ],
+        "responses": { "200": { "description": "Success" } }
+      }
+    },
+    "/web/search": {
+      "get": {
+        "summary": "Search Web",
+        "description": "Executes a search engine query and returns top results.",
+        "operationId": "searchWeb",
+        "produces": ["application/json"],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "query",
+            "type": "string",
+            "required": true,
+            "description": "The search term or phrase."
+          }
+        ],
+        "responses": { "200": { "description": "Success" } }
+      }
+    },
+    "/script/execute": {
+      "post": {
+        "summary": "Execute Python Script",
+        "description": "Compiles and runs a Python script in a sandboxed environment.",
+        "operationId": "executePythonScript",
+        "consumes": ["application/json"],
+        "produces": ["application/json"],
+        "parameters": [
+          {
+            "in": "body",
+            "name": "body",
+            "description": "Execution payload containing code and args.",
+            "required": true,
+            "schema": {
+              "type": "object",
+              "properties": {
+                "code": { "type": "string", "description": "The raw Python code to execute." },
+                "arguments": { "type": "string", "description": "Command line arguments passed to the script." }
+              }
+            }
+          }
+        ],
+        "responses": { "200": { "description": "Success" } }
+      }
+    },
+    "/excel/create-table": {
+      "post": {
+        "summary": "Create Excel Table",
+        "description": "Creates a new structured table within an Excel workbook.",
+        "operationId": "createExcelTable",
+        "consumes": ["application/json"],
+        "produces": ["application/json"],
+        "parameters": [
+          {
+            "in": "body",
+            "name": "body",
+            "description": "Table definition payload.",
+            "required": true,
+            "schema": {
+              "type": "object",
+              "properties": {
+                "workbookName": { "type": "string", "description": "Name of the Excel file." },
+                "tableName": { "type": "string", "description": "Name of the table to create." },
+                "columns": { "type": "string", "description": "Comma-separated list of column headers." }
+              }
+            }
+          }
+        ],
+        "responses": { "200": { "description": "Success" } }
+      }
+    },
+    "/db/query": {
+      "post": {
+        "summary": "Query Database",
+        "description": "Executes a SELECT query against the connected database.",
+        "operationId": "queryDatabase",
+        "consumes": ["application/json"],
+        "produces": ["application/json"],
+        "parameters": [
+          {
+            "in": "body",
+            "name": "body",
+            "description": "Query payload.",
+            "required": true,
+            "schema": {
+              "type": "object",
+              "properties": {
+                "sqlQuery": { "type": "string", "description": "The raw SQL SELECT statement." },
+                "databaseName": { "type": "string", "description": "The target database to query." }
+              }
+            }
+          }
+        ],
+        "responses": { "200": { "description": "Success" } }
+      }
+    },
+    "/db/delete-row": {
+      "delete": {
+        "summary": "Delete Database Row",
+        "description": "Deletes a specific record from a database table.",
+        "operationId": "deleteDatabaseRow",
+        "consumes": ["application/json"],
+        "produces": ["application/json"],
+        "parameters": [
+          {
+            "in": "body",
+            "name": "body",
+            "description": "Deletion payload.",
+            "required": true,
+            "schema": {
+              "type": "object",
+              "properties": {
+                "tableName": { "type": "string", "description": "The table to delete from." },
+                "rowId": { "type": "string", "description": "The primary key ID of the row to delete." }
+              }
+            }
+          }
+        ],
+        "responses": { "200": { "description": "Success" } }
+      }
+    }
+  }
+}
