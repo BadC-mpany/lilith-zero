@@ -36,6 +36,11 @@ Deploy a deterministic, sub-millisecond security middleware (Lilith Zero) to int
 - **The Catch:** Power Platform constructs the subject using a base64url encoding of the *Endpoint URL*. It typically strips the trailing slash and does NOT include sub-paths like `/validate` in the subject if you configured the base URL.
 - **Correct Subject Format:** `/eid1/c/pub/t/<TenantId_B64>/a/<AppId_B64>/<EndpointURL_B64>`
 
+### D. Tool ID Mismatch (Slugification)
+**Problem:** Custom tools (e.g., 'Send-an-Email') were blocked because the auto-generated Cedar policies did not include the specific, slugified `toolDefinition.id` used in the runtime payload.
+- **The Discovery:** Copilot Studio generates tool IDs using the format `<prefix>.action.<slugified_name>`. The `name` field in the payload is often just a human-readable display string, not the identifier matched by the runtime.
+- **The Solution:** Use `toolDefinition.id` as the primary identifier for policy evaluation. Update `extract_tools.py` to robustly derive these IDs from the bot template by extracting the publisher prefix and applying the correct slugification logic.
+
 ---
 
 ## 4. Deployment Workflow (The Working Recipe)
