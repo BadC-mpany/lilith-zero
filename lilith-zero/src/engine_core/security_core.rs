@@ -389,16 +389,15 @@ impl SecurityCore {
                                     let mut taints_to_add = vec![];
                                     let mut taints_to_remove = vec![];
                                     for policy_id in response.diagnostics().reason() {
-                                        let id_str = policy_id.to_string();
-                                        if let Some(tag) = id_str.strip_prefix("add_taint:") {
-                                            if let Some((t, _)) = tag.split_once(':') {
-                                                taints_to_add.push(t.to_string());
-                                            }
-                                        } else if let Some(tag) =
-                                            id_str.strip_prefix("remove_taint:")
-                                        {
-                                            if let Some((t, _)) = tag.split_once(':') {
-                                                taints_to_remove.push(t.to_string());
+                                        if let Some(id_annotation) = cedar_eval.get_policy_annotation(policy_id, "id") {
+                                            if let Some(tag) = id_annotation.strip_prefix("add_taint:") {
+                                                if let Some((t, _)) = tag.split_once(':') {
+                                                    taints_to_add.push(t.to_string());
+                                                }
+                                            } else if let Some(tag) = id_annotation.strip_prefix("remove_taint:") {
+                                                if let Some((t, _)) = tag.split_once(':') {
+                                                    taints_to_remove.push(t.to_string());
+                                                }
                                             }
                                         }
                                     }
