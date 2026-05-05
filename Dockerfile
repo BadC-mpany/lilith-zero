@@ -17,6 +17,10 @@ RUN chmod +x /app/lilith-zero && \
 # Azure App Service sets PORT env var; default to 8080
 ENV PORT=8080
 ENV RUST_LOG=info
+# Use /home/.lilith/sessions — Azure App Service mounts /home as persistent Azure Files storage.
+# Without this, the app defaults to $HOME/.lilith/sessions = /root/.lilith/sessions,
+# which is ephemeral container storage and is lost on every container restart.
+ENV LILITH_ZERO_SESSION_STORAGE_DIR=/home/.lilith/sessions
 
 # Entry point: run in webhook serve mode
 # Pointing --policy to a directory enables multi-tenant routing based on filenames (policy_<agent_id>.cedar)
