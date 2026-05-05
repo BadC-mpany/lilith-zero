@@ -62,7 +62,13 @@ WORKDIR /app
 COPY lilith-zero/target/release/lilith-zero /app/lilith-zero
 # Pointing to a directory enables multi-tenant routing
 COPY examples/copilot_studio/policies /app/policies
-RUN chmod +x /app/lilith-zero
+RUN chmod +x /app/lilith-zero && mkdir -p /home/.lilith/sessions /home/LogFiles
+ENV PORT=8080
+ENV RUST_LOG=info
+# CRITICAL: point session storage at /home — Azure App Service mounts /home as
+# persistent Azure Files. Without this the app writes to /root/.lilith/sessions
+# (ephemeral container storage) and all taint state is lost on every cold start.
+ENV LILITH_ZERO_SESSION_STORAGE_DIR=/home/.lilith/sessions
 CMD ["/app/lilith-zero", "serve", "--bind", "0.0.0.0:8080", "--auth-mode", "none", "--policy", "/app/policies"]
 ```
 
@@ -124,9 +130,53 @@ az webapp restart --name lilith-zero-webhook --resource-group lilith-zero-rg
 
 ## 9. Persistence & Scaling
 
-- **State Persistence**: Taint tracking state is stored in `/home/.lilith/sessions`. In Azure App Service Linux, the `/home` directory is persistent across container restarts, ensuring security context is not lost.
-- **Port Mapping**: Ensure the App Setting `WEBSITES_PORT=8080` is set so Azure correctly routes traffic to the container.
-- **Structured Logs**: By default, logs show clean, one-line entries for each tool call. Set `LILITH_ZERO_WEBHOOK_DEBUG=true` to see raw payloads.
-- **Real-time Monitoring**: Use `az webapp log tail --name <APP_NAME> --resource-group <RG_NAME>`.
-  > [!TIP]
-  > If the logs repeat the same entries, it's because Azure is showing the recent buffer. Trigger a new tool call to push the buffer forward, or use `az webapp log tail --offset 0` to see only new events.
+### Session storage
+
+Taint state is persisted to `LILITH_ZERO_SESSION_STORAGE_DIR` (default `/home/.lilith/sessions` — set by the Dockerfile). In Azure App Service Linux, `/home` is mounted as persistent Azure Files and survives container restarts. **Do not change this to any path outside `/home`** — other paths are ephemeral and taint state will reset on every cold start (`alwaysOn=false` means cold starts happen after idle periods).
+
+The App Service setting `WEBSITES_ENABLE_APP_SERVICE_STORAGE=true` must be set (it is by default; only disable it if you deliberately want ephemeral storage).
+
+Session files are named `{conversation_id}.json` and cleaned up at server startup when older than `LILITH_ZERO_SESSION_TTL_SECS` (default 86400 = 24 h).
+
+### How policy and taint loading works per request
+
+| What | Keyed by | Loaded |
+|------|----------|--------|
+| Cedar policy (`*.cedar`) | `agent_id` (filename) | Once at startup |
+| Session state (taints) | `conversation_id` | Per request from disk |
+
+Taints are append-only within a session. Nothing removes a taint once set unless an explicit `remove_taint:` Cedar rule fires.
+
+### Required App Service settings
+
+| Setting | Value | Why |
+|---------|-------|-----|
+| `WEBSITES_PORT` | `8080` | Routes traffic to the container port |
+| `WEBSITES_ENABLE_APP_SERVICE_STORAGE` | `true` | Mounts `/home` as persistent storage |
+| `LILITH_ZERO_SESSION_STORAGE_DIR` | `/home/.lilith/sessions` | Belt-and-suspenders over Dockerfile ENV |
+| `RUST_LOG` | `info` (or `debug` for diagnostics) | Controls log verbosity |
+
+### Debugging taint persistence
+
+To verify sessions are being written to Azure, SSH into the container:
+
+```bash
+az webapp ssh --name lilith-zero-webhook --resource-group lilith-zero-rg
+ls -la /home/.lilith/sessions/
+cat /home/.lilith/sessions/<conversation_id>.json
+```
+
+To verify a specific session has the expected taints, check the `taints` array in the JSON. If the directory is empty or missing, check that `LILITH_ZERO_SESSION_STORAGE_DIR` is set correctly and the container has write permission.
+
+### Port Mapping
+Ensure the App Setting `WEBSITES_PORT=8080` is set so Azure correctly routes traffic to the container.
+
+### Structured Logs
+By default, logs show clean one-line entries for each tool call. Set `LILITH_ZERO_WEBHOOK_DEBUG=true` to see raw payloads.
+
+### Real-time Monitoring
+```bash
+az webapp log tail --name <APP_NAME> --resource-group <RG_NAME>
+```
+> [!TIP]
+> If the logs repeat the same entries, Azure is showing the recent buffer. Trigger a new tool call to push the buffer forward.
