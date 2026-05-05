@@ -13,8 +13,6 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::Arc;
-#[cfg(feature = "webhook")]
-use tokio::sync::RwLock;
 use tracing::info;
 
 use lilith_zero::config::Config;
@@ -712,6 +710,7 @@ async fn run_webhook_server(
         EntraAuthenticator, NoAuthAuthenticator, SharedSecretAuthenticator,
     };
     use lilith_zero::server::webhook::{serve, WebhookState};
+    use lilith_zero::engine_core::persistence::PersistenceLayer;
     use std::sync::Arc;
 
     let auth: Arc<dyn lilith_zero::server::auth::Authenticator> = match auth_mode {
@@ -826,13 +825,17 @@ async fn run_webhook_server(
         tracing::warn!("No policy configured — all tool calls will be fail-closed denied");
     }
 
+    let persistence = Arc::new(PersistenceLayer::new(
+        config.session_storage_dir.clone(),
+    ));
+
     let state = WebhookState {
         config: Arc::new(config),
         audit_log_path: audit_logs,
         auth,
         policy,
         cedar_policies,
-        sessions: Arc::new(RwLock::new(std::collections::HashMap::new())),
+        persistence,
     };
 
     serve(&bind, state).await?;

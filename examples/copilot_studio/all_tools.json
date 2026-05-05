@@ -1,134 +1,134 @@
 [
   {
     "ids": [
-      "cra65_otpdemo.action.EnterpriseIntegrationService-EnterpriseIntegrationService",
+      "template-content.connectionreference.cra65_otpdemo.shared_cra655fdelete20database20row5ff1d9155c6c88",
       "deleteDatabaseRow",
-      "template-content.connectionreference.cra65_otpdemo.shared_cra655fenterprise20integration20service5ff",
-      "template-content.action.EnterpriseIntegrationServiceEnterpriseIntegrationService",
-      "Enterprise Integration Service - Enterprise Integration Service"
+      "Delete Database Row - Delete Database Row",
+      "cra65_otpdemo.action.DeleteDatabaseRow-DeleteDatabaseRow",
+      "template-content.action.DeleteDatabaseRowDeleteDatabaseRow"
     ],
-    "display_name": "Enterprise Integration Service - Enterprise Integration Service",
+    "display_name": "Delete Database Row - Delete Database Row",
     "bot_id": "5be3e14e-2e46-f111-bec6-7c1e52344333"
   },
   {
     "ids": [
-      "cra65_otpdemo.action.EnterpriseIntegrationService-EnterpriseIntegrationService",
-      "template-content.connectionreference.cra65_otpdemo.shared_cra655fenterprise20integration20service5ff",
-      "template-content.action.EnterpriseIntegrationServiceEnterpriseIntegrationService1",
-      "fetchWebpage",
-      "Enterprise Integration Service - Enterprise Integration Service"
-    ],
-    "display_name": "Enterprise Integration Service - Enterprise Integration Service",
-    "bot_id": "5be3e14e-2e46-f111-bec6-7c1e52344333"
-  },
-  {
-    "ids": [
-      "cra65_otpdemo.action.EnterpriseIntegrationService-EnterpriseIntegrationService",
-      "template-content.connectionreference.cra65_otpdemo.shared_cra655fenterprise20integration20service5ff",
-      "searchWeb",
-      "Enterprise Integration Service - Enterprise Integration Service",
-      "template-content.action.EnterpriseIntegrationServiceEnterpriseIntegrationService2"
-    ],
-    "display_name": "Enterprise Integration Service - Enterprise Integration Service",
-    "bot_id": "5be3e14e-2e46-f111-bec6-7c1e52344333"
-  },
-  {
-    "ids": [
-      "cra65_otpdemo.action.EnterpriseIntegrationService-EnterpriseIntegrationService",
-      "queryDatabase",
-      "template-content.action.EnterpriseIntegrationServiceEnterpriseIntegrationService3",
-      "template-content.connectionreference.cra65_otpdemo.shared_cra655fenterprise20integration20service5ff",
-      "Enterprise Integration Service - Enterprise Integration Service"
-    ],
-    "display_name": "Enterprise Integration Service - Enterprise Integration Service",
-    "bot_id": "5be3e14e-2e46-f111-bec6-7c1e52344333"
-  },
-  {
-    "ids": [
-      "executePythonScript",
-      "cra65_otpdemo.action.EnterpriseIntegrationService-EnterpriseIntegrationService",
-      "template-content.connectionreference.cra65_otpdemo.shared_cra655fenterprise20integration20service5ff",
-      "template-content.action.EnterpriseIntegrationServiceEnterpriseIntegrationService4",
-      "Enterprise Integration Service - Enterprise Integration Service"
-    ],
-    "display_name": "Enterprise Integration Service - Enterprise Integration Service",
-    "bot_id": "5be3e14e-2e46-f111-bec6-7c1e52344333"
-  },
-  {
-    "ids": [
-      "cra65_otpdemo.action.EnterpriseIntegrationService-EnterpriseIntegrationService",
-      "template-content.connectionreference.cra65_otpdemo.shared_cra655fenterprise20integration20service5ff",
-      "template-content.action.EnterpriseIntegrationServiceEnterpriseIntegrationService5",
-      "createExcelTable",
-      "Enterprise Integration Service - Enterprise Integration Service"
-    ],
-    "display_name": "Enterprise Integration Service - Enterprise Integration Service",
-    "bot_id": "5be3e14e-2e46-f111-bec6-7c1e52344333"
-  },
-  {
-    "ids": [
-      "cra65_otpdemo.action.EnterpriseIntegrationService-EnterpriseIntegrationService",
-      "readEmails",
-      "template-content.connectionreference.cra65_otpdemo.shared_cra655fenterprise20integration20service5ff",
-      "Enterprise Integration Service - Enterprise Integration Service",
-      "template-content.action.EnterpriseIntegrationServiceEnterpriseIntegrationService6"
-    ],
-    "display_name": "Enterprise Integration Service - Enterprise Integration Service",
-    "bot_id": "5be3e14e-2e46-f111-bec6-7c1e52344333"
-  },
-  {
-    "ids": [
-      "cra65_otpdemo.action.EnterpriseIntegrationService-EnterpriseIntegrationService",
-      "template-content.action.EnterpriseIntegrationServiceEnterpriseIntegrationService7",
       "connectMcpServer",
-      "template-content.connectionreference.cra65_otpdemo.shared_cra655fenterprise20integration20service5ff",
-      "Enterprise Integration Service - Enterprise Integration Service"
+      "Connect to MCP Server - Connect to MCP Server",
+      "template-content.action.ConnecttoMCPServerConnecttoMCPServer",
+      "template-content.connectionreference.cra65_otpdemo.shared_cra655fconnect20to20mcp20server5ff1d9155c6",
+      "cra65_otpdemo.action.ConnecttoMCPServer-ConnecttoMCPServer"
     ],
-    "display_name": "Enterprise Integration Service - Enterprise Integration Service",
+    "display_name": "Connect to MCP Server - Connect to MCP Server",
     "bot_id": "5be3e14e-2e46-f111-bec6-7c1e52344333"
   },
   {
     "ids": [
-      "cra65_otpdemo.action.EnterpriseIntegrationService-EnterpriseIntegrationService",
-      "template-content.connectionreference.cra65_otpdemo.shared_cra655fenterprise20integration20service5ff",
-      "sendEmail",
-      "template-content.action.EnterpriseIntegrationServiceEnterpriseIntegrationService8",
-      "Enterprise Integration Service - Enterprise Integration Service"
+      "template-content.action.ExecutePythonScriptExecutePythonScript",
+      "Execute Python Script - Execute Python Script",
+      "template-content.connectionreference.cra65_otpdemo.shared_cra655fexecute20python20script5ff1d9155c6c",
+      "cra65_otpdemo.action.ExecutePythonScript-ExecutePythonScript",
+      "executePythonScript"
     ],
-    "display_name": "Enterprise Integration Service - Enterprise Integration Service",
+    "display_name": "Execute Python Script - Execute Python Script",
     "bot_id": "5be3e14e-2e46-f111-bec6-7c1e52344333"
   },
   {
     "ids": [
-      "template-content.connectionreference.cra65_financialInsights.shared_a365copilotchatmcp.shareda365cop",
-      "mcp_m365copilot",
-      "template-content.action.WorkIQCopilotPreview",
+      "fetchWebpage",
+      "template-content.connectionreference.cra65_otpdemo.shared_cra655ffetch20webpage5ff1d9155c6c8886d4.79",
+      "cra65_otpdemo.action.FetchWebpage-FetchWebpage",
+      "template-content.action.FetchWebpageFetchWebpage",
+      "Fetch Webpage - Fetch Webpage"
+    ],
+    "display_name": "Fetch Webpage - Fetch Webpage",
+    "bot_id": "5be3e14e-2e46-f111-bec6-7c1e52344333"
+  },
+  {
+    "ids": [
+      "template-content.action.SearchWebSearchWeb",
+      "searchWeb",
+      "cra65_otpdemo.action.SearchWeb-SearchWeb",
+      "template-content.connectionreference.cra65_otpdemo.shared_cra655fsearch20web5ff1d9155c6c8886d4.22495",
+      "Search Web - Search Web"
+    ],
+    "display_name": "Search Web - Search Web",
+    "bot_id": "5be3e14e-2e46-f111-bec6-7c1e52344333"
+  },
+  {
+    "ids": [
+      "createExcelTable",
+      "Create Excel Table - Create Excel Table",
+      "template-content.action.CreateExcelTableCreateExcelTable",
+      "template-content.connectionreference.cra65_otpdemo.shared_cra655fcreate20excel20table5ff1d9155c6c888",
+      "cra65_otpdemo.action.CreateExcelTable-CreateExcelTable"
+    ],
+    "display_name": "Create Excel Table - Create Excel Table",
+    "bot_id": "5be3e14e-2e46-f111-bec6-7c1e52344333"
+  },
+  {
+    "ids": [
+      "template-content.connectionreference.cra65_otpdemo.shared_cra655fquery20database5ff1d9155c6c8886d4.d",
+      "cra65_otpdemo.action.QueryDatabase-QueryDatabase",
+      "template-content.action.QueryDatabaseQueryDatabase",
+      "Query Database - Query Database",
+      "queryDatabase"
+    ],
+    "display_name": "Query Database - Query Database",
+    "bot_id": "5be3e14e-2e46-f111-bec6-7c1e52344333"
+  },
+  {
+    "ids": [
+      "Read Emails - Read Emails",
+      "readEmails",
+      "cra65_otpdemo.action.ReadEmails-ReadEmails",
+      "template-content.action.ReadEmailsReadEmails",
+      "template-content.connectionreference.cra65_otpdemo.shared_cra655fread20emails5ff1d9155c6c8886d4.cc76"
+    ],
+    "display_name": "Read Emails - Read Emails",
+    "bot_id": "5be3e14e-2e46-f111-bec6-7c1e52344333"
+  },
+  {
+    "ids": [
+      "Send Email - Send Email",
+      "cra65_otpdemo.action.SendEmail-SendEmail",
+      "template-content.connectionreference.cra65_otpdemo.shared_cra655fsend20email5ff1d9155c6c8886d4.69860",
+      "template-content.action.SendEmailSendEmail",
+      "sendEmail"
+    ],
+    "display_name": "Send Email - Send Email",
+    "bot_id": "5be3e14e-2e46-f111-bec6-7c1e52344333"
+  },
+  {
+    "ids": [
+      "cra65_financialInsights.action.WorkIQCopilot(Preview)",
       "Work IQ Copilot (Preview)",
-      "cra65_financialInsights.action.WorkIQCopilot(Preview)"
+      "template-content.action.WorkIQCopilotPreview",
+      "mcp_m365copilot",
+      "template-content.connectionreference.cra65_financialInsights.shared_a365copilotchatmcp.shareda365cop"
     ],
     "display_name": "Work IQ Copilot (Preview)",
     "bot_id": "77236ced-1146-f111-bec6-7ced8d71fac9"
   },
   {
     "ids": [
-      "Work IQ User (Preview)",
+      "mcp_MeServer",
       "template-content.connectionreference.cra65_financialInsights.shared_a365memcp.shareda365memcp26ee772",
-      "cra65_financialInsights.action.WorkIQUser(Preview)",
       "template-content.action.WorkIQUserPreview",
-      "mcp_MeServer"
+      "Work IQ User (Preview)",
+      "cra65_financialInsights.action.WorkIQUser(Preview)"
     ],
     "display_name": "Work IQ User (Preview)",
     "bot_id": "77236ced-1146-f111-bec6-7ced8d71fac9"
   },
   {
     "ids": [
-      "cra65_financialInsights.action.Addarowintoatable",
-      "Excel Online (Business) - Add a row into a table",
-      "AddRowV2",
-      "template-content.connectionreference.cra65_financialInsights.shared_excelonlinebusiness.d8386d7cbde0",
       "template-content.action.ExcelOnlineBusinessAddarowintoatable",
+      "cra65_financialInsights.action.Addarowintoatable",
       "dynamicProperties",
-      "Add a row into a table"
+      "Excel Online (Business) - Add a row into a table",
+      "Add a row into a table",
+      "AddRowV2",
+      "template-content.connectionreference.cra65_financialInsights.shared_excelonlinebusiness.d8386d7cbde0"
     ],
     "display_name": "Add a row into a table",
     "bot_id": "77236ced-1146-f111-bec6-7ced8d71fac9"

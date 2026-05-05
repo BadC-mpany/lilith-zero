@@ -70,6 +70,12 @@ pub mod config {
     pub const ENV_PIN_FILE: &str = "LILITH_ZERO_PIN_FILE";
     /// Pin enforcement mode: `"audit"` (log only) or `"enforce"` (block on mismatch).
     pub const ENV_PIN_MODE: &str = "LILITH_ZERO_PIN_MODE";
+    /// Directory for persistent session storage (webhook taint persistence).
+    /// Default: `~/.lilith/sessions`. Used to persist conversation taints to disk.
+    pub const ENV_SESSION_STORAGE_DIR: &str = "LILITH_ZERO_SESSION_STORAGE_DIR";
+    /// Session time-to-live in seconds (webhook session cleanup). Default: 86400 (24h).
+    /// Sessions older than this are deleted. Set to 0 to disable automatic cleanup.
+    pub const ENV_SESSION_TTL_SECS: &str = "LILITH_ZERO_SESSION_TTL_SECS";
 }
 
 /// MCP JSON-RPC method name constants.

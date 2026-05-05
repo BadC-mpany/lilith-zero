@@ -80,8 +80,7 @@ const EVALUATION_TIMEOUT_MS: u64 = 900;
 // Shared server state
 // ---------------------------------------------------------------------------
 
-use crate::engine_core::security_core::SessionState;
-use tokio::sync::RwLock;
+use crate::engine_core::persistence::PersistenceLayer;
 
 /// Immutable state shared across all webhook handler invocations.
 #[derive(Clone)]
@@ -101,8 +100,10 @@ pub struct WebhookState {
     pub policy: Option<Arc<crate::engine_core::models::PolicyDefinition>>,
     /// Native Cedar policy sets mapped by agent ID.
     pub cedar_policies: std::collections::HashMap<String, Arc<cedar_policy::PolicySet>>,
-    /// In-memory session store for taint tracking across HTTP requests.
-    pub sessions: Arc<RwLock<std::collections::HashMap<String, SessionState>>>,
+    /// Persistent session store for taint tracking across HTTP requests.
+    /// Sessions are persisted per conversation_id to `{storage_dir}/{conversation_id}.json`.
+    /// This allows taints to survive webhook server restarts.
+    pub persistence: Arc<PersistenceLayer>,
 }
 
 // ---------------------------------------------------------------------------
@@ -294,11 +295,12 @@ async fn do_analyze(
             .into_response();
     }
 
-    let mut handler = match HookHandler::with_policy(
+    let mut handler = match HookHandler::with_policy_and_persistence(
         state.config.clone(),
         state.audit_log_path.clone(),
         state.policy.clone(),
         cedar_policy,
+        PersistenceLayer::new(state.config.session_storage_dir.clone()),
     ) {
         Ok(h) => h,
         Err(e) => {
@@ -315,22 +317,9 @@ async fn do_analyze(
         }
     };
 
-    // Load existing session state for taint tracking
-    {
-        let sessions = state.sessions.read().await;
-        if let Some(session_state) = sessions.get(conversation_id) {
-            handler.import_state(session_state.clone());
-        }
-    }
-
+    // The HookHandler will handle all persistence (lock, load, save) using
+    // the custom persistence layer we passed to it.
     let result = handler.handle(hook_input).await;
-
-    // Save updated session state back to the store
-    {
-        let session_state = handler.export_state();
-        let mut sessions = state.sessions.write().await;
-        sessions.insert(conversation_id.clone(), session_state);
-    }
 
     // 5. Translate result to Copilot Studio response.
     let response = match result {

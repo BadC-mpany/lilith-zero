@@ -9,9 +9,11 @@ use lilith_zero::server::webhook::WebhookState;
 #[cfg(feature = "webhook")]
 use lilith_zero::server::auth::NoAuthAuthenticator;
 #[cfg(feature = "webhook")]
+use lilith_zero::engine_core::persistence::PersistenceLayer;
+#[cfg(feature = "webhook")]
 use std::str::FromStr;
 #[cfg(feature = "webhook")]
-use tokio::sync::RwLock;
+use std::path::PathBuf;
 
 #[cfg(feature = "webhook")]
 #[tokio::main]
@@ -27,13 +29,16 @@ async fn main() -> anyhow::Result<()> {
 
     println!("Loaded policies for: {:?}", cedar_policies.keys().collect::<Vec<_>>());
 
+    let mut config = Config::default();
+    config.session_storage_dir = PathBuf::from("/tmp/lilith-webhook-test");
+
     let state = WebhookState {
-        config: Arc::new(Config::default()),
+        config: Arc::new(config),
         audit_log_path: None,
         auth: Arc::new(NoAuthAuthenticator),
         policy: None,
         cedar_policies,
-        sessions: Arc::new(RwLock::new(HashMap::new())),
+        persistence: Arc::new(PersistenceLayer::new(PathBuf::from("/tmp/lilith-webhook-test"))),
     };
 
     // Simulate do_analyze logic

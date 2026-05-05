@@ -112,6 +112,16 @@ pub struct Config {
 
     /// When `true`, enable a minimal, high-signal logging mode focused on Lilith's decisions.
     pub lean_logs: bool,
+
+    /// Directory for persistent session storage in webhook mode. Taints, history, and rate-limit
+    /// counters are persisted to disk per conversation_id. Default: `~/.lilith/sessions`.
+    /// Used by [`PersistenceLayer`] to load/save session state across webhook restarts.
+    pub session_storage_dir: PathBuf,
+
+    /// Session time-to-live in seconds. Sessions older than this are deleted during cleanup.
+    /// Default: 86400 (24 hours). Set to 0 to disable automatic cleanup.
+    /// This is configurable (not hardcoded) to allow ops teams to tune retention.
+    pub session_ttl_secs: u64,
 }
 
 impl Config {
@@ -162,6 +172,23 @@ impl Config {
             lean_logs: env::var("LILITH_ZERO_LEAN_LOGS")
                 .map(|v| v.to_lowercase() == "true" || v == "1")
                 .unwrap_or(false),
+            session_storage_dir: env::var(
+                crate::engine_core::constants::config::ENV_SESSION_STORAGE_DIR,
+            )
+            .ok()
+            .map(PathBuf::from)
+            .unwrap_or_else(|| {
+                let home = env::var("HOME")
+                    .or_else(|_| env::var("USERPROFILE"))
+                    .unwrap_or_else(|_| ".".to_string());
+                PathBuf::from(home).join(".lilith").join("sessions")
+            }),
+            session_ttl_secs: env::var(
+                crate::engine_core::constants::config::ENV_SESSION_TTL_SECS,
+            )
+            .ok()
+            .and_then(|v| v.parse::<u64>().ok())
+            .unwrap_or(86400), // 24 hours default
         })
     }
 
@@ -182,6 +209,9 @@ impl Config {
 
 impl Default for Config {
     fn default() -> Self {
+        let home = std::env::var("HOME")
+            .or_else(|_| std::env::var("USERPROFILE"))
+            .unwrap_or_else(|_| ".".to_string());
         Self {
             policies_yaml_path: None,
             log_level: "info".to_string(),
@@ -198,6 +228,8 @@ impl Default for Config {
             upstream_cmd: None,
             webhook_debug: false,
             lean_logs: false,
+            session_storage_dir: PathBuf::from(home).join(".lilith").join("sessions"),
+            session_ttl_secs: 86400,
         }
     }
 }

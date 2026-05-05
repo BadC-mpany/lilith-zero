@@ -111,6 +111,34 @@ impl HookHandler {
         Ok(Self { core, persistence })
     }
 
+    /// Create a HookHandler with custom persistence layer.
+    ///
+    /// Used by the webhook server when custom session storage is configured.
+    /// Allows the webhook to pass its own PersistenceLayer instead of using
+    /// the default `~/.lilith/sessions`.
+    pub fn with_policy_and_persistence(
+        config: Arc<Config>,
+        audit_logs: Option<std::path::PathBuf>,
+        policy: Option<Arc<crate::engine_core::models::PolicyDefinition>>,
+        cedar_policy: Option<Arc<cedar_policy::PolicySet>>,
+        persistence: PersistenceLayer,
+    ) -> Result<Self> {
+        let signer = crate::engine_core::crypto::CryptoSigner::try_new()
+            .map_err(|e| anyhow::anyhow!("Crypto init failed: {}", e))?;
+        let mut core = SecurityCore::new(config, signer, audit_logs)
+            .map_err(|e| anyhow::anyhow!("Security Core init failed: {}", e))?;
+        core.validate_session_tokens = false;
+
+        if let Some(p) = policy {
+            core.set_policy((*p).clone());
+        }
+        if let Some(cp) = cedar_policy {
+            core.set_cedar_policy((*cp).clone());
+        }
+
+        Ok(Self { core, persistence })
+    }
+
     /// Import session state from a [`crate::engine_core::security_core::SessionState`] object.
     pub fn import_state(&mut self, state: crate::engine_core::security_core::SessionState) {
         self.core.import_state(state);
