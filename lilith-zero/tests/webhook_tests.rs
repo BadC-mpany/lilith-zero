@@ -41,7 +41,6 @@ use tokio::net::TcpListener;
 
 use lilith_zero::config::Config;
 use lilith_zero::engine_core::models::PolicyDefinition;
-use lilith_zero::engine_core::persistence::PersistenceLayer;
 use lilith_zero::server::auth::{NoAuthAuthenticator, SharedSecretAuthenticator};
 use lilith_zero::server::webhook::{build_router, WebhookState};
 
@@ -111,7 +110,6 @@ fn test_state_no_auth(policy_path: &std::path::Path) -> (WebhookState, TempDir) 
         auth: Arc::new(NoAuthAuthenticator),
         policy: load_test_policy(policy_path),
         cedar_policies: std::collections::HashMap::new(),
-        persistence: Arc::new(PersistenceLayer::new(session_storage)),
     };
 
     (state, temp_dir)
@@ -135,7 +133,6 @@ fn test_state_with_shared_secret_auth(policy_path: &std::path::Path) -> (Webhook
         auth: Arc::new(SharedSecretAuthenticator::new("test-webhook-secret", None)),
         policy: load_test_policy(policy_path),
         cedar_policies: std::collections::HashMap::new(),
-        persistence: Arc::new(PersistenceLayer::new(session_storage)),
     };
 
     (state, temp_dir)
@@ -238,7 +235,6 @@ async fn test_webhook_validate_returns_not_successful_when_no_policy() {
         auth: Arc::new(NoAuthAuthenticator),
         policy: None,
         cedar_policies: std::collections::HashMap::new(),
-        persistence: Arc::new(PersistenceLayer::new(session_storage)),
     };
     let base = start_test_server(state).await;
     let client = Client::new();
@@ -519,7 +515,6 @@ async fn test_webhook_analyze_no_policy_blocks_all_fail_closed() {
         auth: Arc::new(NoAuthAuthenticator),
         policy: None,
         cedar_policies: std::collections::HashMap::new(),
-        persistence: Arc::new(PersistenceLayer::new(session_storage)),
     };
     let base = start_test_server(state).await;
     let client = Client::new();
@@ -994,7 +989,6 @@ async fn test_webhook_shared_secret_valid_token_accepted_by_validate() {
         auth: Arc::new(SharedSecretAuthenticator::new(secret, None)),
         policy: load_test_policy(policy.path()),
         cedar_policies: std::collections::HashMap::new(),
-        persistence: Arc::new(PersistenceLayer::new(session_storage)),
     };
     let base = start_test_server(state).await;
     let client = Client::new();
@@ -1044,7 +1038,6 @@ async fn test_webhook_shared_secret_valid_token_accepted_by_analyze() {
         auth: Arc::new(SharedSecretAuthenticator::new(secret, None)),
         policy: load_test_policy(policy.path()),
         cedar_policies: std::collections::HashMap::new(),
-        persistence: Arc::new(PersistenceLayer::new(session_storage)),
     };
     let base = start_test_server(state).await;
     let client = Client::new();
@@ -1121,7 +1114,6 @@ async fn test_webhook_analyze_multi_tenant_cedar_isolation() {
         auth: Arc::new(NoAuthAuthenticator),
         policy: None,
         cedar_policies,
-        persistence: Arc::new(PersistenceLayer::new(session_storage)),
     };
 
     let base = start_test_server(state).await;

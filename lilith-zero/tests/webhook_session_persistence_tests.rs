@@ -580,8 +580,7 @@ fn test_cleanup_removes_expired_sessions() {
     // Set modification time to 48 hours ago.
     let now = std::time::SystemTime::now();
     let old_time = now - std::time::Duration::from_secs(48 * 3600);
-    filetime::set_file_mtime(&session_file, old_time.into())
-        .expect("failed to set old mtime");
+    filetime::set_file_mtime(&session_file, old_time.into()).expect("failed to set old mtime");
 
     // Run cleanup with 24-hour TTL.
     let deleted = lilith_zero::server::webhook::cleanup_expired_sessions(&storage_dir, 24 * 3600)
@@ -655,16 +654,14 @@ fn test_cleanup_mixed_old_and_new_files() {
     let old_time = now - std::time::Duration::from_secs(48 * 3600);
     for session_key in &old_sessions {
         let file = storage_dir.join(format!("{}.json", session_key));
-        filetime::set_file_mtime(&file, old_time.into())
-            .expect("failed to set old mtime");
+        filetime::set_file_mtime(&file, old_time.into()).expect("failed to set old mtime");
     }
 
     // Set new file to 1 hour ago.
     let recent_time = now - std::time::Duration::from_secs(3600);
     for session_key in &new_sessions {
         let file = storage_dir.join(format!("{}.json", session_key));
-        filetime::set_file_mtime(&file, recent_time.into())
-            .expect("failed to set recent mtime");
+        filetime::set_file_mtime(&file, recent_time.into()).expect("failed to set recent mtime");
     }
 
     // Run cleanup with 24-hour TTL.
@@ -692,9 +689,8 @@ fn test_cleanup_empty_directory() {
     let (_temp_dir, storage_dir) = temp_storage_dir();
 
     // Run cleanup on empty directory.
-    let deleted =
-        lilith_zero::server::webhook::cleanup_expired_sessions(&storage_dir, 24 * 3600)
-            .expect("cleanup failed");
+    let deleted = lilith_zero::server::webhook::cleanup_expired_sessions(&storage_dir, 24 * 3600)
+        .expect("cleanup failed");
 
     assert_eq!(deleted, 0, "Should delete 0 files from empty directory");
 }
@@ -705,9 +701,8 @@ fn test_cleanup_nonexistent_directory() {
     let storage_dir = PathBuf::from("/tmp/lilith-nonexistent-cleanup-dir-12345");
 
     // Run cleanup on non-existent directory (should not panic).
-    let deleted =
-        lilith_zero::server::webhook::cleanup_expired_sessions(&storage_dir, 24 * 3600)
-            .expect("cleanup failed");
+    let deleted = lilith_zero::server::webhook::cleanup_expired_sessions(&storage_dir, 24 * 3600)
+        .expect("cleanup failed");
 
     assert_eq!(deleted, 0, "Should return 0 for non-existent directory");
 }

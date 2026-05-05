@@ -100,10 +100,6 @@ pub struct WebhookState {
     pub policy: Option<Arc<crate::engine_core::models::PolicyDefinition>>,
     /// Native Cedar policy sets mapped by agent ID.
     pub cedar_policies: std::collections::HashMap<String, Arc<cedar_policy::PolicySet>>,
-    /// Persistent session store for taint tracking across HTTP requests.
-    /// Sessions are persisted per conversation_id to `{storage_dir}/{conversation_id}.json`.
-    /// This allows taints to survive webhook server restarts.
-    pub persistence: Arc<PersistenceLayer>,
 }
 
 // ---------------------------------------------------------------------------
@@ -456,9 +452,7 @@ pub fn cleanup_expired_sessions(
         if path.extension() == Some(std::ffi::OsStr::new("json")) {
             match std::fs::metadata(&path) {
                 Ok(metadata) => {
-                    if let Ok(modified) = metadata
-                        .modified()?
-                        .duration_since(std::time::UNIX_EPOCH)
+                    if let Ok(modified) = metadata.modified()?.duration_since(std::time::UNIX_EPOCH)
                     {
                         let modified_secs = modified.as_secs();
                         if now.saturating_sub(modified_secs) > ttl_secs {
@@ -469,10 +463,7 @@ pub fn cleanup_expired_sessions(
                                     e
                                 );
                             } else {
-                                tracing::debug!(
-                                    "Cleaned up expired session: {}",
-                                    path.display()
-                                );
+                                tracing::debug!("Cleaned up expired session: {}", path.display());
                                 deleted += 1;
                             }
                         }

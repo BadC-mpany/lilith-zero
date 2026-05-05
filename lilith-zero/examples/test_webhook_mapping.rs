@@ -1,8 +1,6 @@
 #[cfg(feature = "webhook")]
 use lilith_zero::config::Config;
 #[cfg(feature = "webhook")]
-use lilith_zero::engine_core::persistence::PersistenceLayer;
-#[cfg(feature = "webhook")]
 use lilith_zero::server::auth::NoAuthAuthenticator;
 #[cfg(feature = "webhook")]
 use lilith_zero::server::webhook::WebhookState;
@@ -43,9 +41,6 @@ async fn main() -> anyhow::Result<()> {
         auth: Arc::new(NoAuthAuthenticator),
         policy: None,
         cedar_policies,
-        persistence: Arc::new(PersistenceLayer::new(PathBuf::from(
-            "/tmp/lilith-webhook-test",
-        ))),
     };
 
     // Simulate do_analyze logic
