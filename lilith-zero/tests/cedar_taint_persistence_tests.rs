@@ -65,7 +65,11 @@ resource_rules: []
 }
 
 /// Run `lilith-zero hook` with the given policy file path.
-fn run_hook(policy_path: &std::path::Path, session_id: &str, tool_name: &str) -> assert_cmd::assert::Assert {
+fn run_hook(
+    policy_path: &std::path::Path,
+    session_id: &str,
+    tool_name: &str,
+) -> assert_cmd::assert::Assert {
     let input = format!(
         r#"{{"session_id":"{}","hook_event_name":"PreToolUse","tool_name":"{}","tool_input":{{}}}}"#,
         session_id, tool_name
@@ -83,8 +87,8 @@ fn run_hook_yaml(session_id: &str, tool_name: &str) -> assert_cmd::assert::Asser
 }
 
 fn run_hook_cedar(session_id: &str, tool_name: &str) -> assert_cmd::assert::Assert {
-    let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/fixtures/taint_persistence.cedar");
+    let fixture =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/taint_persistence.cedar");
     run_hook(&fixture, session_id, tool_name)
 }
 
@@ -143,7 +147,10 @@ mod annotation_unit_tests {
         let eval = CedarEvaluator::new(ps);
         let policy_id = cedar_policy::PolicyId::from_str("policy0").expect("valid id");
         let annotation = eval.get_policy_annotation(&policy_id, "id");
-        assert_eq!(annotation.as_deref(), Some("remove_taint:UNTRUSTED_DATA:rule"));
+        assert_eq!(
+            annotation.as_deref(),
+            Some("remove_taint:UNTRUSTED_DATA:rule")
+        );
     }
 
     /// Verify policies WITHOUT @id return None (fallback to policy_id.to_string() applies).
