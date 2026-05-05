@@ -10,8 +10,8 @@
 
 #![cfg(feature = "webhook")]
 
-use lilith_zero::engine_core::security_core::SessionState;
 use lilith_zero::engine_core::persistence::PersistenceLayer;
+use lilith_zero::engine_core::security_core::SessionState;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::PathBuf;
@@ -128,10 +128,7 @@ fn test_webhook_new_session_starts_empty() {
     assert!(expected_file.exists(), "File should exist after lock()");
 
     let contents = std::fs::read_to_string(&expected_file).expect("read file failed");
-    assert!(
-        contents.trim().is_empty(),
-        "File should be empty initially"
-    );
+    assert!(contents.trim().is_empty(), "File should be empty initially");
 }
 
 // ============================================================================
@@ -220,7 +217,9 @@ fn test_webhook_two_conversations_same_agent_isolated() {
     // Verify Conversation 1 still has TAINT_A only.
     {
         let session_key = format!("conv-1-{}", agent_id);
-        let mut lock = persistence.lock(&session_key).expect("lock verify 1 failed");
+        let mut lock = persistence
+            .lock(&session_key)
+            .expect("lock verify 1 failed");
         let loaded = lock.load().expect("load verify 1 failed");
         let state = loaded.unwrap();
         assert!(
@@ -236,7 +235,9 @@ fn test_webhook_two_conversations_same_agent_isolated() {
     // Verify Conversation 2 still has TAINT_B only.
     {
         let session_key = format!("conv-2-{}", agent_id);
-        let mut lock = persistence.lock(&session_key).expect("lock verify 2 failed");
+        let mut lock = persistence
+            .lock(&session_key)
+            .expect("lock verify 2 failed");
         let loaded = lock.load().expect("load verify 2 failed");
         let state = loaded.unwrap();
         assert!(
@@ -294,7 +295,9 @@ fn test_webhook_concurrent_requests_same_conversation() {
     // Verify final state has all 5 increments.
     {
         let persistence = PersistenceLayer::new((*storage_arc).clone());
-        let mut lock = persistence.lock(conversation_id).expect("final lock failed");
+        let mut lock = persistence
+            .lock(conversation_id)
+            .expect("final lock failed");
         let loaded = lock.load().expect("final load failed");
         let state = loaded.expect("final state should exist");
 
@@ -342,7 +345,9 @@ fn test_webhook_concurrent_requests_different_conversations() {
         let persistence = PersistenceLayer::new((*storage_arc).clone());
         for i in 0..num_threads {
             let conversation_id = format!("conv-{}", i);
-            let mut lock = persistence.lock(&conversation_id).expect("verify lock failed");
+            let mut lock = persistence
+                .lock(&conversation_id)
+                .expect("verify lock failed");
             let loaded = lock.load().expect("verify load failed");
             let state = loaded.expect("state should exist");
 
@@ -441,7 +446,9 @@ fn test_webhook_new_session_storage_dir_created() {
     let persistence = PersistenceLayer::new(nested_path.clone());
 
     // Calling lock should create the directory if it doesn't exist.
-    let _lock = persistence.lock("conv-001").expect("lock should auto-create dir");
+    let _lock = persistence
+        .lock("conv-001")
+        .expect("lock should auto-create dir");
 
     assert!(
         nested_path.exists(),
@@ -531,7 +538,9 @@ fn test_webhook_replay_detection_state_persisted() {
     {
         let mut lock = persistence.lock(conversation_id).expect("lock 1 failed");
         let mut state = empty_session_state();
-        state.seen_request_ids.insert(request_id.to_string(), 1000u64);
+        state
+            .seen_request_ids
+            .insert(request_id.to_string(), 1000u64);
         lock.save(&state).expect("save 1 failed");
     }
 

@@ -1,19 +1,19 @@
 #[cfg(feature = "webhook")]
-use std::sync::Arc;
-#[cfg(feature = "webhook")]
-use std::collections::HashMap;
-#[cfg(feature = "webhook")]
 use lilith_zero::config::Config;
-#[cfg(feature = "webhook")]
-use lilith_zero::server::webhook::WebhookState;
-#[cfg(feature = "webhook")]
-use lilith_zero::server::auth::NoAuthAuthenticator;
 #[cfg(feature = "webhook")]
 use lilith_zero::engine_core::persistence::PersistenceLayer;
 #[cfg(feature = "webhook")]
-use std::str::FromStr;
+use lilith_zero::server::auth::NoAuthAuthenticator;
+#[cfg(feature = "webhook")]
+use lilith_zero::server::webhook::WebhookState;
+#[cfg(feature = "webhook")]
+use std::collections::HashMap;
 #[cfg(feature = "webhook")]
 use std::path::PathBuf;
+#[cfg(feature = "webhook")]
+use std::str::FromStr;
+#[cfg(feature = "webhook")]
+use std::sync::Arc;
 
 #[cfg(feature = "webhook")]
 #[tokio::main]
@@ -27,10 +27,15 @@ async fn main() -> anyhow::Result<()> {
     let mut cedar_policies = HashMap::new();
     cedar_policies.insert(agent_id.to_string(), Arc::new(policy_set));
 
-    println!("Loaded policies for: {:?}", cedar_policies.keys().collect::<Vec<_>>());
+    println!(
+        "Loaded policies for: {:?}",
+        cedar_policies.keys().collect::<Vec<_>>()
+    );
 
-    let mut config = Config::default();
-    config.session_storage_dir = PathBuf::from("/tmp/lilith-webhook-test");
+    let config = Config {
+        session_storage_dir: PathBuf::from("/tmp/lilith-webhook-test"),
+        ..Default::default()
+    };
 
     let state = WebhookState {
         config: Arc::new(config),
@@ -38,14 +43,20 @@ async fn main() -> anyhow::Result<()> {
         auth: Arc::new(NoAuthAuthenticator),
         policy: None,
         cedar_policies,
-        persistence: Arc::new(PersistenceLayer::new(PathBuf::from("/tmp/lilith-webhook-test"))),
+        persistence: Arc::new(PersistenceLayer::new(PathBuf::from(
+            "/tmp/lilith-webhook-test",
+        ))),
     };
 
     // Simulate do_analyze logic
     let test_agent_id = "5be3e14e-2e46-f111-bec6-7c1e52344333";
     let cedar_policy = state.cedar_policies.get(test_agent_id).cloned();
-    
-    println!("Found policy for {}: {}", test_agent_id, cedar_policy.is_some());
+
+    println!(
+        "Found policy for {}: {}",
+        test_agent_id,
+        cedar_policy.is_some()
+    );
 
     if !state.cedar_policies.is_empty() && cedar_policy.is_none() {
         println!("RESULT: Would DENY (No policy for agent)");
@@ -57,7 +68,8 @@ async fn main() -> anyhow::Result<()> {
             None,
             None,
             cedar_policy,
-        ).unwrap();
+        )
+        .unwrap();
 
         let input = lilith_zero::hook::HookInput {
             session_id: "test-session".to_string(),

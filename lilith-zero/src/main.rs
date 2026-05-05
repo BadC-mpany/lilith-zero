@@ -706,11 +706,11 @@ async fn run_webhook_server(
     audit_logs: Option<PathBuf>,
     config: Config,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    use lilith_zero::engine_core::persistence::PersistenceLayer;
     use lilith_zero::server::auth::{
         EntraAuthenticator, NoAuthAuthenticator, SharedSecretAuthenticator,
     };
     use lilith_zero::server::webhook::{serve, WebhookState};
-    use lilith_zero::engine_core::persistence::PersistenceLayer;
     use std::sync::Arc;
 
     let auth: Arc<dyn lilith_zero::server::auth::Authenticator> = match auth_mode {
@@ -825,9 +825,7 @@ async fn run_webhook_server(
         tracing::warn!("No policy configured — all tool calls will be fail-closed denied");
     }
 
-    let persistence = Arc::new(PersistenceLayer::new(
-        config.session_storage_dir.clone(),
-    ));
+    let persistence = Arc::new(PersistenceLayer::new(config.session_storage_dir.clone()));
 
     let state = WebhookState {
         config: Arc::new(config),

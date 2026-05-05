@@ -183,12 +183,10 @@ impl Config {
                     .unwrap_or_else(|_| ".".to_string());
                 PathBuf::from(home).join(".lilith").join("sessions")
             }),
-            session_ttl_secs: env::var(
-                crate::engine_core::constants::config::ENV_SESSION_TTL_SECS,
-            )
-            .ok()
-            .and_then(|v| v.parse::<u64>().ok())
-            .unwrap_or(86400), // 24 hours default
+            session_ttl_secs: env::var(crate::engine_core::constants::config::ENV_SESSION_TTL_SECS)
+                .ok()
+                .and_then(|v| v.parse::<u64>().ok())
+                .unwrap_or(86400), // 24 hours default
         })
     }
 

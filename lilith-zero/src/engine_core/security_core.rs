@@ -389,15 +389,16 @@ impl SecurityCore {
                                     let mut taints_to_add = vec![];
                                     let mut taints_to_remove = vec![];
                                     for policy_id in response.diagnostics().reason() {
-                                        if let Some(id_annotation) = cedar_eval.get_policy_annotation(policy_id, "id") {
-                                            if let Some(tag) = id_annotation.strip_prefix("add_taint:") {
-                                                if let Some((t, _)) = tag.split_once(':') {
-                                                    taints_to_add.push(t.to_string());
-                                                }
-                                            } else if let Some(tag) = id_annotation.strip_prefix("remove_taint:") {
-                                                if let Some((t, _)) = tag.split_once(':') {
-                                                    taints_to_remove.push(t.to_string());
-                                                }
+                                        let id_str = policy_id.to_string();
+                                        if let Some(tag) = id_str.strip_prefix("add_taint:") {
+                                            if let Some((t, _)) = tag.split_once(':') {
+                                                taints_to_add.push(t.to_string());
+                                            }
+                                        } else if let Some(tag) =
+                                            id_str.strip_prefix("remove_taint:")
+                                        {
+                                            if let Some((t, _)) = tag.split_once(':') {
+                                                taints_to_remove.push(t.to_string());
                                             }
                                         }
                                     }
@@ -735,9 +736,9 @@ impl SecurityCore {
                     }
                 } else {
                     tracing::warn!(
-                        tool = %tool_name, 
-                        %reason, 
-                        "POLICY VIOLATION: Allowed only because security_level is {:?} (AuditOnly)", 
+                        tool = %tool_name,
+                        %reason,
+                        "POLICY VIOLATION: Allowed only because security_level is {:?} (AuditOnly)",
                         self.config.security_level
                     );
                     SecurityDecision::Allow

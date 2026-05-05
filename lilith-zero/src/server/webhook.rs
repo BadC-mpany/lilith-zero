@@ -443,7 +443,9 @@ pub async fn serve(bind_addr: &str, state: WebhookState) -> anyhow::Result<()> {
     );
 
     if state.policy.is_none() && state.cedar_policies.is_empty() {
-        tracing::warn!("NO POLICIES LOADED - Server will run in fail-closed mode (or AuditOnly if configured)");
+        tracing::warn!(
+            "NO POLICIES LOADED - Server will run in fail-closed mode (or AuditOnly if configured)"
+        );
     } else {
         tracing::info!(
             "Policies loaded: {} Cedar policy sets, {} legacy policy",

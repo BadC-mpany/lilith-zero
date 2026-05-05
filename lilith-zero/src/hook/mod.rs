@@ -235,15 +235,16 @@ impl HookHandler {
                 serde_json::to_string(&tool_args).unwrap_or_else(|_| "{}".to_string())
             };
             let taints = self.core.get_taints();
-            let taints_str = if taints.is_empty() { "CLEAN".to_string() } else { format!("{:?}", taints) };
+            let taints_str = if taints.is_empty() {
+                "CLEAN".to_string()
+            } else {
+                format!("{:?}", taints)
+            };
             eprintln!(
                 "lilith >> tool call: {}({}) [Session: {}] [Taints: {}]",
-                tool_name,
-                args_summary,
-                self.core.session_id,
-                taints_str
+                tool_name, args_summary, self.core.session_id, taints_str
             );
-            
+
             match &decision {
                 SecurityDecision::Allow => {
                     println!("lilith >> decision: ALLOW");
@@ -297,7 +298,10 @@ impl HookHandler {
         if let SecurityDecision::AllowWithTransforms { taints_to_add, .. } = &decision {
             if !taints_to_add.is_empty() {
                 if self.core.config.lean_logs {
-                    println!("lilith >> tool: {} propagated taints: {:?}", tool_name, taints_to_add);
+                    println!(
+                        "lilith >> tool: {} propagated taints: {:?}",
+                        tool_name, taints_to_add
+                    );
                 } else {
                     tracing::info!("Tool {} propagated taints: {:?}", tool_name, taints_to_add);
                 }

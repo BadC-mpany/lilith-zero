@@ -32,7 +32,6 @@
 
 use std::io::Write;
 use std::sync::Arc;
-use std::path::PathBuf;
 
 use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
 use reqwest::Client;
@@ -223,12 +222,15 @@ async fn test_webhook_validate_returns_200_no_auth_mode() {
 /// engine is not actually evaluating rules — isSuccessful=false makes this
 /// explicit so the configuration mistake is caught during initial setup.
 #[tokio::test]
+#[allow(clippy::field_reassign_with_default)]
 async fn test_webhook_validate_returns_not_successful_when_no_policy() {
     let _temp_dir = TempDir::new().expect("temp dir");
     let session_storage = _temp_dir.path().to_path_buf();
 
-    let mut config = Config::default(); // no policies_yaml_path
-    config.session_storage_dir = session_storage.clone();
+    let config = Config {
+        session_storage_dir: session_storage.clone(),
+        ..Default::default()
+    };
 
     let state = WebhookState {
         config: Arc::new(config),
@@ -506,8 +508,10 @@ async fn test_webhook_analyze_no_policy_blocks_all_fail_closed() {
     let _temp_dir = TempDir::new().expect("temp dir");
     let session_storage = _temp_dir.path().to_path_buf();
 
-    let mut config = Config::default(); // no policies_yaml_path
-    config.session_storage_dir = session_storage.clone();
+    let config = Config {
+        session_storage_dir: session_storage.clone(),
+        ..Default::default()
+    };
 
     let state = WebhookState {
         config: Arc::new(config),
@@ -1106,8 +1110,10 @@ async fn test_webhook_analyze_multi_tenant_cedar_isolation() {
     cedar_policies.insert("agent_a".to_string(), policy_a);
     cedar_policies.insert("agent_b".to_string(), policy_b);
 
-    let mut config = Config::default();
-    config.session_storage_dir = session_storage.clone();
+    let config = Config {
+        session_storage_dir: session_storage.clone(),
+        ..Default::default()
+    };
 
     let state = WebhookState {
         config: Arc::new(config),
