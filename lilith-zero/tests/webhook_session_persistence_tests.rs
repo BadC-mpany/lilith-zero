@@ -554,3 +554,160 @@ fn test_webhook_replay_detection_state_persisted() {
         );
     }
 }
+
+// ============================================================================
+// TTL & Cleanup Tests
+// ============================================================================
+
+/// Test that cleanup_expired_sessions removes files older than TTL.
+#[test]
+fn test_cleanup_removes_expired_sessions() {
+    let (_temp_dir, storage_dir) = temp_storage_dir();
+    let persistence = PersistenceLayer::new(storage_dir.clone());
+
+    // Create a session file and save state.
+    let session_key = "expired-session";
+    {
+        let mut lock = persistence.lock(session_key).expect("lock failed");
+        let mut state = empty_session_state();
+        state.taints.insert("OLD_TAINT".to_string());
+        lock.save(&state).expect("save failed");
+    }
+
+    let session_file = storage_dir.join(format!("{}.json", session_key));
+    assert!(session_file.exists(), "Session file should be created");
+
+    // Set modification time to 48 hours ago.
+    let now = std::time::SystemTime::now();
+    let old_time = now - std::time::Duration::from_secs(48 * 3600);
+    filetime::set_file_mtime(&session_file, old_time.into())
+        .expect("failed to set old mtime");
+
+    // Run cleanup with 24-hour TTL.
+    let deleted = lilith_zero::server::webhook::cleanup_expired_sessions(&storage_dir, 24 * 3600)
+        .expect("cleanup failed");
+
+    assert_eq!(deleted, 1, "Should have deleted 1 expired file");
+    assert!(
+        !session_file.exists(),
+        "Expired session file should be deleted"
+    );
+}
+
+/// Test that cleanup_expired_sessions keeps files younger than TTL.
+#[test]
+fn test_cleanup_keeps_recent_sessions() {
+    let (_temp_dir, storage_dir) = temp_storage_dir();
+    let persistence = PersistenceLayer::new(storage_dir.clone());
+
+    // Create a session file and save state.
+    let session_key = "recent-session";
+    {
+        let mut lock = persistence.lock(session_key).expect("lock failed");
+        let mut state = empty_session_state();
+        state.taints.insert("FRESH_TAINT".to_string());
+        lock.save(&state).expect("save failed");
+    }
+
+    let session_file = storage_dir.join(format!("{}.json", session_key));
+    assert!(session_file.exists(), "Session file should be created");
+
+    // Set modification time to 1 hour ago (well within 24-hour TTL).
+    let now = std::time::SystemTime::now();
+    let recent_time = now - std::time::Duration::from_secs(3600);
+    filetime::set_file_mtime(&session_file, recent_time.into())
+        .expect("failed to set recent mtime");
+
+    // Run cleanup with 24-hour TTL.
+    let deleted = lilith_zero::server::webhook::cleanup_expired_sessions(&storage_dir, 24 * 3600)
+        .expect("cleanup failed");
+
+    assert_eq!(deleted, 0, "Should not delete recent files");
+    assert!(session_file.exists(), "Recent session file should be kept");
+
+    // Verify file contents are intact.
+    let mut lock = persistence.lock(session_key).expect("lock failed");
+    let loaded_state = lock.load().expect("load failed").unwrap();
+    assert!(
+        loaded_state.taints.contains("FRESH_TAINT"),
+        "Taint should still be present"
+    );
+}
+
+/// Test cleanup with mixed old and new files.
+#[test]
+fn test_cleanup_mixed_old_and_new_files() {
+    let (_temp_dir, storage_dir) = temp_storage_dir();
+    let persistence = PersistenceLayer::new(storage_dir.clone());
+
+    // Create 3 session files: 2 old, 1 new.
+    let old_sessions = vec!["old-session-1", "old-session-2"];
+    let new_sessions = vec!["new-session"];
+
+    for session_key in old_sessions.iter().chain(new_sessions.iter()) {
+        let mut lock = persistence.lock(session_key).expect("lock failed");
+        let state = empty_session_state();
+        lock.save(&state).expect("save failed");
+    }
+
+    // Set old files to 48 hours ago.
+    let now = std::time::SystemTime::now();
+    let old_time = now - std::time::Duration::from_secs(48 * 3600);
+    for session_key in &old_sessions {
+        let file = storage_dir.join(format!("{}.json", session_key));
+        filetime::set_file_mtime(&file, old_time.into())
+            .expect("failed to set old mtime");
+    }
+
+    // Set new file to 1 hour ago.
+    let recent_time = now - std::time::Duration::from_secs(3600);
+    for session_key in &new_sessions {
+        let file = storage_dir.join(format!("{}.json", session_key));
+        filetime::set_file_mtime(&file, recent_time.into())
+            .expect("failed to set recent mtime");
+    }
+
+    // Run cleanup with 24-hour TTL.
+    let deleted = lilith_zero::server::webhook::cleanup_expired_sessions(&storage_dir, 24 * 3600)
+        .expect("cleanup failed");
+
+    assert_eq!(deleted, 2, "Should have deleted 2 old files");
+
+    // Verify old files are gone.
+    for session_key in &old_sessions {
+        let file = storage_dir.join(format!("{}.json", session_key));
+        assert!(!file.exists(), "Old file {} should be deleted", session_key);
+    }
+
+    // Verify new file still exists.
+    for session_key in &new_sessions {
+        let file = storage_dir.join(format!("{}.json", session_key));
+        assert!(file.exists(), "New file {} should be kept", session_key);
+    }
+}
+
+/// Test cleanup with empty directory.
+#[test]
+fn test_cleanup_empty_directory() {
+    let (_temp_dir, storage_dir) = temp_storage_dir();
+
+    // Run cleanup on empty directory.
+    let deleted =
+        lilith_zero::server::webhook::cleanup_expired_sessions(&storage_dir, 24 * 3600)
+            .expect("cleanup failed");
+
+    assert_eq!(deleted, 0, "Should delete 0 files from empty directory");
+}
+
+/// Test cleanup on non-existent directory.
+#[test]
+fn test_cleanup_nonexistent_directory() {
+    let storage_dir = PathBuf::from("/tmp/lilith-nonexistent-cleanup-dir-12345");
+
+    // Run cleanup on non-existent directory (should not panic).
+    let deleted =
+        lilith_zero::server::webhook::cleanup_expired_sessions(&storage_dir, 24 * 3600)
+            .expect("cleanup failed");
+
+    assert_eq!(deleted, 0, "Should return 0 for non-existent directory");
+}

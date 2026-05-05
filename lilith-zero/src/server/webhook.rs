@@ -428,6 +428,68 @@ fn auth_error_response(e: AuthError) -> Response {
 }
 
 // ---------------------------------------------------------------------------
+// Session TTL & Cleanup
+// ---------------------------------------------------------------------------
+
+/// Remove expired session files based on TTL.
+///
+/// Iterates through session storage directory and deletes `.json` files
+/// with modification time older than the given TTL. Logs the count of deleted files.
+/// Errors during cleanup are logged but don't fail the function (resilient).
+pub fn cleanup_expired_sessions(
+    storage_dir: &std::path::Path,
+    ttl_secs: u64,
+) -> anyhow::Result<usize> {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)?
+        .as_secs();
+
+    let mut deleted = 0;
+
+    // Silently skip if directory doesn't exist (fresh server)
+    if !storage_dir.exists() {
+        return Ok(0);
+    }
+
+    for entry in std::fs::read_dir(storage_dir)? {
+        let path = entry?.path();
+        if path.extension() == Some(std::ffi::OsStr::new("json")) {
+            match std::fs::metadata(&path) {
+                Ok(metadata) => {
+                    if let Ok(modified) = metadata
+                        .modified()?
+                        .duration_since(std::time::UNIX_EPOCH)
+                    {
+                        let modified_secs = modified.as_secs();
+                        if now.saturating_sub(modified_secs) > ttl_secs {
+                            if let Err(e) = std::fs::remove_file(&path) {
+                                tracing::warn!(
+                                    "Failed to delete expired session {}: {}",
+                                    path.display(),
+                                    e
+                                );
+                            } else {
+                                tracing::debug!(
+                                    "Cleaned up expired session: {}",
+                                    path.display()
+                                );
+                                deleted += 1;
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to stat session file {}: {}", path.display(), e);
+                }
+            }
+        }
+    }
+
+    tracing::info!("Session TTL cleanup: removed {} expired files", deleted);
+    Ok(deleted)
+}
+
+// ---------------------------------------------------------------------------
 // Server startup
 // ---------------------------------------------------------------------------
 
@@ -452,6 +514,13 @@ pub async fn serve(bind_addr: &str, state: WebhookState) -> anyhow::Result<()> {
             state.cedar_policies.len(),
             if state.policy.is_some() { "1" } else { "0" }
         );
+    }
+
+    if let Err(e) = cleanup_expired_sessions(
+        &state.config.session_storage_dir,
+        state.config.session_ttl_secs,
+    ) {
+        tracing::warn!("Session cleanup on startup failed (non-critical): {}", e);
     }
 
     let app = build_router(state);
