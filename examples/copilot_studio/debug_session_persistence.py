@@ -7,11 +7,13 @@ Sends same conversation_id multiple times and checks if taints persist.
 import requests
 import json
 import sys
+import time
 from typing import Dict, Any
 
 BASE_URL = "https://lilith-zero.badcompany.xyz"
 AGENT_ID = "5be3e14e-2e46-f111-bec6-7c1e52344333"
-CONVERSATION_ID = "debug-test-12345"
+# Fresh ID each run so there's no stale taint state from previous test runs.
+CONVERSATION_ID = f"debug-test-{int(time.time())}"
 
 def send_request(tool_id: str, tool_name: str, input_values: Dict[str, Any]):
     """Send a single webhook request."""

@@ -1,15 +1,21 @@
-//! Cedar-native tests for taint persistence across hook invocations.
+//! Cedar taint persistence tests — two complementary paths:
 //!
-//! This test suite creates Cedar policies programmatically with proper "id" annotations
-//! to test taint operations:
-//! - Adding taints (via policies with @id("add_taint:TAG_NAME:..."))
-//! - Checking taints (via policies that forbid when taints are present)
-//! - Removing taints (via policies with @id("remove_taint:TAG_NAME:..."))
-//! - Persisting taints across invocations (same session_id across processes)
+//! **Path A — YAML-compiled Cedar (hook --policy <yaml>)**
+//! The `yaml_to_cedar` compiler sets PolicyIds directly as `"add_taint:TAG:..."`,
+//! so taint extraction falls through to `policy_id.to_string()`. Tests here
+//! verify the YAML → Cedar compilation path end-to-end.
 //!
-//! Note: Cedar policies don't natively support annotations in .cedar files.
-//! Annotations are metadata that must be attached programmatically via PolicyId.
-//! This is handled by creating a temporary YAML policy on-the-fly that gets compiled to Cedar.
+//! **Path B — Native Cedar files (hook --policy <file.cedar>)**
+//! Cedar assigns auto-incremented PolicyIds (`policy0`, `policy1`, …).
+//! Taint directives live in `@id("add_taint:TAG:...")` annotations and are read
+//! via `get_policy_annotation(policy_id, "id")`. This is the path used in
+//! production Copilot Studio deployments. Tests here cover the annotation lookup
+//! that was the root cause of the taint persistence bug (fixed 2026-05-05).
+//!
+//! **Unit tests**
+//! Direct verification that `get_policy_annotation` returns `@id` annotation
+//! values correctly — the single most critical unit to keep covered given past
+//! breakage.
 
 #![cfg(not(miri))]
 
@@ -27,9 +33,8 @@ fn bin_path() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_lilith-zero"))
 }
 
-/// Create a temporary YAML policy with taint rules configured for the test.
-/// This lets us define taint behavior in a native format that the SecurityCore understands.
-fn create_taint_test_policy() -> NamedTempFile {
+/// Create a temporary YAML policy. Goes through yaml_to_cedar compilation.
+fn create_yaml_taint_policy() -> NamedTempFile {
     let yaml = r#"
 id: cedar-taint-test
 customer_id: test
@@ -54,41 +59,38 @@ taint_rules:
     tag: UNTRUSTED_DATA
 resource_rules: []
 "#;
-
-    let mut f = NamedTempFile::new().expect("failed to create temp policy");
-    f.write_all(yaml.as_bytes())
-        .expect("failed to write policy");
+    let mut f = NamedTempFile::new().expect("temp file");
+    f.write_all(yaml.as_bytes()).expect("write yaml");
     f
 }
 
-/// Run `lilith-zero hook` with the taint test policy and return the exit code assertion.
-fn run_hook_with_taint_policy(
-    session_id: &str,
-    tool_name: &str,
-    event_name: &str,
-) -> assert_cmd::assert::Assert {
-    let policy = create_taint_test_policy();
-
+/// Run `lilith-zero hook` with the given policy file path.
+fn run_hook(policy_path: &std::path::Path, session_id: &str, tool_name: &str) -> assert_cmd::assert::Assert {
     let input = format!(
-        r#"{{"session_id":"{}","hook_event_name":"{}","tool_name":"{}","tool_input":{{}}}}"#,
-        session_id, event_name, tool_name
+        r#"{{"session_id":"{}","hook_event_name":"PreToolUse","tool_name":"{}","tool_input":{{}}}}"#,
+        session_id, tool_name
     );
-
-    let mut cmd = Command::new(bin_path());
-    cmd.arg("hook")
-        .arg("--format")
-        .arg("claude")
-        .arg("--policy")
-        .arg(policy.path())
-        .write_stdin(input.as_bytes().to_vec());
-
-    cmd.assert()
+    Command::new(bin_path())
+        .args(["hook", "--format", "claude", "--policy"])
+        .arg(policy_path)
+        .write_stdin(input.as_bytes().to_vec())
+        .assert()
 }
 
-/// Cleanup session file after test.
+fn run_hook_yaml(session_id: &str, tool_name: &str) -> assert_cmd::assert::Assert {
+    let policy = create_yaml_taint_policy();
+    run_hook(policy.path(), session_id, tool_name)
+}
+
+fn run_hook_cedar(session_id: &str, tool_name: &str) -> assert_cmd::assert::Assert {
+    let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/taint_persistence.cedar");
+    run_hook(&fixture, session_id, tool_name)
+}
+
 fn cleanup_session(session_id: &str) {
     let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
-    let path = std::path::PathBuf::from(home)
+    let path = PathBuf::from(home)
         .join(".lilith")
         .join("sessions")
         .join(format!("{}.json", session_id));
@@ -96,188 +98,208 @@ fn cleanup_session(session_id: &str) {
 }
 
 // ---------------------------------------------------------------------------
-// Unit Tests: Basic Cedar operations
+// Unit tests: get_policy_annotation returns @id annotation values
+//
+// This is the single most critical unit to cover — it was the root cause of
+// the taint persistence bug. Cedar auto-assigns PolicyIds as "policy0", …;
+// taint directives are encoded in @id annotations, not in the PolicyId.
 // ---------------------------------------------------------------------------
 
-/// Test that taint_source_tool is permitted (exit code 0).
-/// This is a baseline test to verify the Cedar policy allows the tool.
-#[test]
-fn test_cedar_taint_source_tool_permitted() {
-    let session_id = format!("cedar-baseline-{}", process_id());
-    run_hook_with_taint_policy(&session_id, "taint_source_tool", "PreToolUse").code(0);
-    cleanup_session(&session_id);
-}
+#[cfg(feature = "webhook")]
+mod annotation_unit_tests {
+    use lilith_zero::engine::cedar_evaluator::CedarEvaluator;
+    use std::str::FromStr;
 
-/// Test that allowed_tool is permitted (exit code 0).
-/// Baseline: tool without any taint effects.
-#[test]
-fn test_cedar_allowed_tool_permitted() {
-    let session_id = format!("cedar-neutral-{}", process_id());
-    run_hook_with_taint_policy(&session_id, "allowed_tool", "PreToolUse").code(0);
-    cleanup_session(&session_id);
-}
+    /// Verify that get_policy_annotation("id") returns the @id annotation value.
+    /// This is the lookup that taint extraction depends on.
+    #[test]
+    fn test_get_policy_annotation_returns_id_value() {
+        let policy_text = r#"
+            @id("add_taint:UNTRUSTED_DATA:rule")
+            permit(principal, action == Action::"tools/call", resource == Resource::"some_tool");
+        "#;
+        let ps = cedar_policy::PolicySet::from_str(policy_text).expect("valid cedar");
+        let eval = CedarEvaluator::new(ps.clone());
 
-/// Test that check_untrusted_tool is permitted when NO taint is present (exit code 0).
-/// This verifies the CHECK_TAINT rule: forbid only when taint IS present.
-#[test]
-fn test_cedar_check_tool_allowed_without_taint() {
-    let session_id = format!("cedar-no-taint-{}", process_id());
+        // The policy_id assigned by Cedar will be "policy0" (auto-increment).
+        // We look up its @id annotation to get the taint directive.
+        let policy_id = cedar_policy::PolicyId::from_str("policy0").expect("valid id");
+        let annotation = eval.get_policy_annotation(&policy_id, "id");
+        assert_eq!(
+            annotation.as_deref(),
+            Some("add_taint:UNTRUSTED_DATA:rule"),
+            "get_policy_annotation must return the @id annotation value, not the auto-assigned PolicyId"
+        );
+    }
 
-    // Single invocation: check_untrusted_tool should be allowed (no taint yet).
-    run_hook_with_taint_policy(&session_id, "check_untrusted_tool", "PreToolUse").code(0);
+    /// Verify remove_taint @id annotation is also retrievable.
+    #[test]
+    fn test_get_policy_annotation_remove_taint() {
+        let policy_text = r#"
+            @id("remove_taint:UNTRUSTED_DATA:rule")
+            permit(principal, action == Action::"tools/call", resource == Resource::"clean_tool");
+        "#;
+        let ps = cedar_policy::PolicySet::from_str(policy_text).expect("valid cedar");
+        let eval = CedarEvaluator::new(ps);
+        let policy_id = cedar_policy::PolicyId::from_str("policy0").expect("valid id");
+        let annotation = eval.get_policy_annotation(&policy_id, "id");
+        assert_eq!(annotation.as_deref(), Some("remove_taint:UNTRUSTED_DATA:rule"));
+    }
 
-    cleanup_session(&session_id);
-}
-
-/// Test that unknown tools are denied (exit code 2).
-/// Baseline: Cedar default deny for tools not in the policy.
-#[test]
-fn test_cedar_unknown_tool_denied() {
-    let session_id = format!("cedar-unknown-{}", process_id());
-    run_hook_with_taint_policy(&session_id, "nonexistent_tool", "PreToolUse").code(2);
-    cleanup_session(&session_id);
-}
-
-// ---------------------------------------------------------------------------
-// Integration Tests: Taint persistence across invocations
-// ---------------------------------------------------------------------------
-
-/// Core test: Taint added in invocation 1 must block tool in invocation 2.
-///
-/// This is the canonical taint persistence test:
-/// 1. Call taint_source_tool (adds UNTRUSTED_DATA taint) → expect allow (0)
-/// 2. Call check_untrusted_tool in SAME session → expect deny (2)
-///
-/// This verifies the session state is being maintained and the taint is present.
-#[test]
-fn test_cedar_taint_persists_single_session() {
-    let session_id = format!("cedar-persist-same-{}", process_id());
-
-    // Invocation 1: Add taint (should succeed with exit 0).
-    run_hook_with_taint_policy(&session_id, "taint_source_tool", "PreToolUse").code(0);
-
-    // Invocation 2: Check for taint (should deny with exit 2 because taint is present).
-    run_hook_with_taint_policy(&session_id, "check_untrusted_tool", "PreToolUse").code(2);
-
-    cleanup_session(&session_id);
-}
-
-/// Taint must persist across separate invocations (different processes).
-///
-/// This tests the CORE persistence mechanism: taints saved to disk in process 1
-/// must be loaded in process 2.
-///
-/// 1. Process 1: Call taint_source_tool → adds taint, saves to ~/.lilith/sessions/{session_id}.json
-/// 2. Process 2: Call check_untrusted_tool → loads taint from disk, denies
-#[test]
-fn test_cedar_taint_persists_across_separate_invocations() {
-    let session_id = format!("cedar-persist-cross-process-{}", process_id());
-
-    // First invocation (Process 1): Add taint.
-    run_hook_with_taint_policy(&session_id, "taint_source_tool", "PreToolUse").code(0);
-
-    // Second invocation (Process 2): Load taint from disk and check it.
-    // This is a NEW process, so it must deserialize the session state from disk.
-    run_hook_with_taint_policy(&session_id, "check_untrusted_tool", "PreToolUse").code(2);
-
-    cleanup_session(&session_id);
-}
-
-/// Sequence test: Add → Check (deny) → Remove → Check (allow).
-///
-/// This tests the full lifecycle:
-/// 1. Add taint
-/// 2. Verify taint blocks subsequent tools
-/// 3. Remove taint
-/// 4. Verify taint no longer blocks tools
-#[test]
-fn test_cedar_taint_lifecycle_full() {
-    let session_id = format!("cedar-lifecycle-{}", process_id());
-
-    // Step 1: Add taint.
-    run_hook_with_taint_policy(&session_id, "taint_source_tool", "PreToolUse").code(0);
-
-    // Step 2: Verify taint blocks check_untrusted_tool.
-    run_hook_with_taint_policy(&session_id, "check_untrusted_tool", "PreToolUse").code(2);
-
-    // Step 3: Remove taint.
-    run_hook_with_taint_policy(&session_id, "remove_taint_tool", "PreToolUse").code(0);
-
-    // Step 4: Verify taint no longer blocks check_untrusted_tool.
-    run_hook_with_taint_policy(&session_id, "check_untrusted_tool", "PreToolUse").code(0);
-
-    cleanup_session(&session_id);
-}
-
-/// Multiple taint additions: multiple taints can coexist.
-/// (Note: This test uses only UNTRUSTED_DATA, but the infrastructure supports multiple.)
-#[test]
-fn test_cedar_multiple_taint_additions() {
-    let session_id = format!("cedar-multi-{}", process_id());
-
-    // Add taint once.
-    run_hook_with_taint_policy(&session_id, "taint_source_tool", "PreToolUse").code(0);
-
-    // Add taint again (idempotent: should still be blocked).
-    run_hook_with_taint_policy(&session_id, "taint_source_tool", "PreToolUse").code(0);
-
-    // Verify taint is still blocking.
-    run_hook_with_taint_policy(&session_id, "check_untrusted_tool", "PreToolUse").code(2);
-
-    // Remove taint once (should clear it completely).
-    run_hook_with_taint_policy(&session_id, "remove_taint_tool", "PreToolUse").code(0);
-
-    // Verify removal is complete.
-    run_hook_with_taint_policy(&session_id, "check_untrusted_tool", "PreToolUse").code(0);
-
-    cleanup_session(&session_id);
-}
-
-/// Cross-session isolation: Session A's taints must NOT affect Session B.
-#[test]
-fn test_cedar_taint_isolation_between_sessions() {
-    let session_a = format!("cedar-session-a-{}", process_id());
-    let session_b = format!("cedar-session-b-{}", process_id());
-
-    // Session A: Add taint.
-    run_hook_with_taint_policy(&session_a, "taint_source_tool", "PreToolUse").code(0);
-
-    // Session A: Verify taint blocks.
-    run_hook_with_taint_policy(&session_a, "check_untrusted_tool", "PreToolUse").code(2);
-
-    // Session B: Check tool should be allowed (no taint in session B).
-    run_hook_with_taint_policy(&session_b, "check_untrusted_tool", "PreToolUse").code(0);
-
-    // Session B: Add its own taint.
-    run_hook_with_taint_policy(&session_b, "taint_source_tool", "PreToolUse").code(0);
-
-    // Session B: Now blocked.
-    run_hook_with_taint_policy(&session_b, "check_untrusted_tool", "PreToolUse").code(2);
-
-    // Session A: Still blocked (not affected by B).
-    run_hook_with_taint_policy(&session_a, "check_untrusted_tool", "PreToolUse").code(2);
-
-    cleanup_session(&session_a);
-    cleanup_session(&session_b);
+    /// Verify policies WITHOUT @id return None (fallback to policy_id.to_string() applies).
+    #[test]
+    fn test_get_policy_annotation_no_id_returns_none() {
+        let policy_text = r#"
+            permit(principal, action == Action::"tools/call", resource == Resource::"plain_tool");
+        "#;
+        let ps = cedar_policy::PolicySet::from_str(policy_text).expect("valid cedar");
+        let eval = CedarEvaluator::new(ps);
+        let policy_id = cedar_policy::PolicyId::from_str("policy0").expect("valid id");
+        let annotation = eval.get_policy_annotation(&policy_id, "id");
+        assert_eq!(annotation, None, "policies without @id must return None");
+    }
 }
 
 // ---------------------------------------------------------------------------
-// Event type coverage
+// Path A: YAML-compiled Cedar
+// Tests the yaml_to_cedar → Cedar PolicySet path. PolicyIds are set directly
+// as "add_taint:TAG:..." by the compiler so no annotation lookup is needed.
 // ---------------------------------------------------------------------------
 
-/// Taints persist across different tool names in same session.
 #[test]
-fn test_cedar_taint_with_different_tools() {
-    let session_id = format!("cedar-different-tools-{}", process_id());
+fn test_yaml_taint_source_permitted() {
+    let s = format!("yaml-baseline-{}", process_id());
+    run_hook_yaml(&s, "taint_source_tool").code(0);
+    cleanup_session(&s);
+}
 
-    // Call 1: taint_source_tool (adds taint).
-    run_hook_with_taint_policy(&session_id, "taint_source_tool", "PreToolUse").code(0);
+#[test]
+fn test_yaml_allowed_tool_permitted() {
+    let s = format!("yaml-neutral-{}", process_id());
+    run_hook_yaml(&s, "allowed_tool").code(0);
+    cleanup_session(&s);
+}
 
-    // Call 2: neutral_tool (should be allowed, no taint check).
-    run_hook_with_taint_policy(&session_id, "neutral_tool", "PreToolUse").code(0);
+#[test]
+fn test_yaml_check_tool_allowed_without_taint() {
+    let s = format!("yaml-no-taint-{}", process_id());
+    run_hook_yaml(&s, "check_untrusted_tool").code(0);
+    cleanup_session(&s);
+}
 
-    // Call 3: check_untrusted_tool (should deny because taint was added).
-    run_hook_with_taint_policy(&session_id, "check_untrusted_tool", "PreToolUse").code(2);
+#[test]
+fn test_yaml_unknown_tool_denied() {
+    let s = format!("yaml-unknown-{}", process_id());
+    run_hook_yaml(&s, "nonexistent_tool").code(2);
+    cleanup_session(&s);
+}
 
-    cleanup_session(&session_id);
+#[test]
+fn test_yaml_taint_persists_single_session() {
+    let s = format!("yaml-persist-{}", process_id());
+    run_hook_yaml(&s, "taint_source_tool").code(0);
+    run_hook_yaml(&s, "check_untrusted_tool").code(2);
+    cleanup_session(&s);
+}
+
+#[test]
+fn test_yaml_taint_lifecycle_full() {
+    let s = format!("yaml-lifecycle-{}", process_id());
+    run_hook_yaml(&s, "taint_source_tool").code(0);
+    run_hook_yaml(&s, "check_untrusted_tool").code(2);
+    run_hook_yaml(&s, "remove_taint_tool").code(0);
+    run_hook_yaml(&s, "check_untrusted_tool").code(0);
+    cleanup_session(&s);
+}
+
+#[test]
+fn test_yaml_taint_isolation_between_sessions() {
+    let a = format!("yaml-session-a-{}", process_id());
+    let b = format!("yaml-session-b-{}", process_id());
+    run_hook_yaml(&a, "taint_source_tool").code(0);
+    run_hook_yaml(&a, "check_untrusted_tool").code(2);
+    run_hook_yaml(&b, "check_untrusted_tool").code(0);
+    run_hook_yaml(&b, "taint_source_tool").code(0);
+    run_hook_yaml(&b, "check_untrusted_tool").code(2);
+    run_hook_yaml(&a, "check_untrusted_tool").code(2);
+    cleanup_session(&a);
+    cleanup_session(&b);
+}
+
+#[test]
+fn test_yaml_multiple_taint_additions_idempotent() {
+    let s = format!("yaml-multi-{}", process_id());
+    run_hook_yaml(&s, "taint_source_tool").code(0);
+    run_hook_yaml(&s, "taint_source_tool").code(0);
+    run_hook_yaml(&s, "check_untrusted_tool").code(2);
+    run_hook_yaml(&s, "remove_taint_tool").code(0);
+    run_hook_yaml(&s, "check_untrusted_tool").code(0);
+    cleanup_session(&s);
+}
+
+// ---------------------------------------------------------------------------
+// Path B: Native Cedar files (the production path for Copilot Studio)
+// Tests the @id annotation lookup in get_policy_annotation.
+// PolicyIds are auto-assigned as "policy0", "policy1", …; taint directives
+// are encoded in @id annotations. This path was the root cause of the bug.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_native_cedar_taint_source_permitted() {
+    let s = format!("cedar-baseline-{}", process_id());
+    run_hook_cedar(&s, "taint_source_tool").code(0);
+    cleanup_session(&s);
+}
+
+#[test]
+fn test_native_cedar_allowed_tool_permitted() {
+    let s = format!("cedar-neutral-{}", process_id());
+    run_hook_cedar(&s, "allowed_tool").code(0);
+    cleanup_session(&s);
+}
+
+#[test]
+fn test_native_cedar_check_tool_allowed_without_taint() {
+    let s = format!("cedar-no-taint-{}", process_id());
+    run_hook_cedar(&s, "check_untrusted_tool").code(0);
+    cleanup_session(&s);
+}
+
+#[test]
+fn test_native_cedar_unknown_tool_denied() {
+    let s = format!("cedar-unknown-{}", process_id());
+    run_hook_cedar(&s, "nonexistent_tool").code(2);
+    cleanup_session(&s);
+}
+
+/// Regression test for the @id annotation taint extraction bug (2026-05-05).
+/// Taint added via @id("add_taint:UNTRUSTED_DATA:rule") in a native .cedar file
+/// must block check_untrusted_tool in the same session.
+#[test]
+fn test_native_cedar_taint_persists_single_session() {
+    let s = format!("cedar-persist-{}", process_id());
+    run_hook_cedar(&s, "taint_source_tool").code(0);
+    run_hook_cedar(&s, "check_untrusted_tool").code(2);
+    cleanup_session(&s);
+}
+
+#[test]
+fn test_native_cedar_taint_lifecycle_full() {
+    let s = format!("cedar-lifecycle-{}", process_id());
+    run_hook_cedar(&s, "taint_source_tool").code(0);
+    run_hook_cedar(&s, "check_untrusted_tool").code(2);
+    run_hook_cedar(&s, "remove_taint_tool").code(0);
+    run_hook_cedar(&s, "check_untrusted_tool").code(0);
+    cleanup_session(&s);
+}
+
+#[test]
+fn test_native_cedar_taint_isolation_between_sessions() {
+    let a = format!("cedar-session-a-{}", process_id());
+    let b = format!("cedar-session-b-{}", process_id());
+    run_hook_cedar(&a, "taint_source_tool").code(0);
+    run_hook_cedar(&a, "check_untrusted_tool").code(2);
+    run_hook_cedar(&b, "check_untrusted_tool").code(0);
+    cleanup_session(&a);
+    cleanup_session(&b);
 }

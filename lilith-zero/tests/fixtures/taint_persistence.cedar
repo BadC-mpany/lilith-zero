@@ -1,67 +1,63 @@
 // Cedar policy for testing taint persistence across hook invocations.
-// This policy defines a security model where:
-// 1. taint_source_tool adds UNTRUSTED_DATA taint
-// 2. check_untrusted_tool denies if UNTRUSTED_DATA taint is present
-// 3. remove_taint_tool removes the UNTRUSTED_DATA taint
-// 4. All other tools (allowed_tool, neutral_tool) are permitted without taint effects
+//
+// Taint conventions (must match SecurityCore taint extraction logic):
+//   @id("add_taint:<TAG>:<discriminator>")    — adds taint on ALLOW
+//   @id("remove_taint:<TAG>:<discriminator>") — removes taint on ALLOW
+//   forbid(...) when { context.taints.contains("<TAG>") } — blocks when taint present
+//
+// NOTE: Cedar assigns auto-incremented PolicyIds (policy0, policy1, …).
+// Taint directives live in the @id *annotation*, read via
+// get_policy_annotation(policy_id, "id"). The colon-separated suffix after the
+// taint name (e.g. ":rule") is required — split_once(':') uses it as a
+// discriminator and the taint name is the left-hand side.
+//
+// Annotations must appear BEFORE the permit/forbid keyword.
 
-// ============================================================================
-// Rule 1: Allow taint_source_tool and add UNTRUSTED_DATA taint
-// ============================================================================
-// This rule permits the tool call and marks it with an annotation that causes
-// the SecurityCore to add the UNTRUSTED_DATA taint to the session state.
+// taint_source_tool: allowed, adds UNTRUSTED_DATA taint.
+@id("add_taint:UNTRUSTED_DATA:rule")
 permit(
     principal,
     action == Action::"tools/call",
-    resource == Resource::"tool-taint_source_tool"
-)
-@id("add_taint:UNTRUSTED_DATA");
+    resource == Resource::"taint_source_tool"
+);
 
-// ============================================================================
-// Rule 2: Deny check_untrusted_tool if UNTRUSTED_DATA taint is present
-// ============================================================================
-// This rule forbids the tool call when the UNTRUSTED_DATA taint is active,
-// testing the core taint persistence: if the taint was added in a previous
-// invocation and persisted to disk, it should be present in context here.
+// check_untrusted_tool: permitted by default; the forbid rule below overrides
+// this permit when the UNTRUSTED_DATA taint is present. Cedar is deny-by-default,
+// so without this permit the tool would always be denied regardless of taints.
+permit(
+    principal,
+    action == Action::"tools/call",
+    resource == Resource::"check_untrusted_tool"
+);
+
+// check_untrusted_tool: blocked when UNTRUSTED_DATA taint is active (overrides the permit above).
+@error("blocked by UNTRUSTED_DATA taint")
 forbid(
     principal,
     action == Action::"tools/call",
-    resource == Resource::"tool-check_untrusted_tool"
+    resource == Resource::"check_untrusted_tool"
 ) when {
     context.taints.contains("UNTRUSTED_DATA")
 };
 
-// ============================================================================
-// Rule 3: Allow remove_taint_tool and remove UNTRUSTED_DATA taint
-// ============================================================================
-// This rule permits the tool call and marks it to remove the taint.
+// remove_taint_tool: allowed, removes UNTRUSTED_DATA taint.
+@id("remove_taint:UNTRUSTED_DATA:rule")
 permit(
     principal,
     action == Action::"tools/call",
-    resource == Resource::"tool-remove_taint_tool"
-)
-@id("remove_taint:UNTRUSTED_DATA");
-
-// ============================================================================
-// Rule 4: Permit allowed_tool unconditionally (no taint effects)
-// ============================================================================
-permit(
-    principal,
-    action == Action::"tools/call",
-    resource == Resource::"tool-allowed_tool"
+    resource == Resource::"remove_taint_tool"
 );
 
-// ============================================================================
-// Rule 5: Permit neutral_tool unconditionally (no taint effects)
-// ============================================================================
+// allowed_tool: permitted with no taint effects.
 permit(
     principal,
     action == Action::"tools/call",
-    resource == Resource::"tool-neutral_tool"
+    resource == Resource::"allowed_tool"
 );
 
-// ============================================================================
-// Default deny: any tool not explicitly permitted is denied
-// ============================================================================
-// Cedar's default is to deny if no permit rule matches, so this is implicit.
-// All other tools will be denied.
+// neutral_tool: permitted with no taint effects.
+permit(
+    principal,
+    action == Action::"tools/call",
+    resource == Resource::"neutral_tool"
+);

@@ -41,11 +41,11 @@ def check_session_files():
 
     username = f"{APP_NAME}\\${APP_NAME}"
 
-    # Check multiple possible session directories
+    # Session storage is set via LILITH_ZERO_SESSION_STORAGE_DIR=/home/.lilith/sessions
+    # (Dockerfile ENV + Azure App Service app setting). /home is mounted as persistent
+    # Azure Files storage, so sessions survive container restarts.
     paths_to_check = [
         "/home/.lilith/sessions",
-        "/home/site/wwwroot/.lilith/sessions",
-        "/tmp/lilith-sessions"
     ]
 
     print(f"\nChecking Azure instance: {APP_NAME}")

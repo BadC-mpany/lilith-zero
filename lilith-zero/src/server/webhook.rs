@@ -452,7 +452,11 @@ pub fn cleanup_expired_sessions(
         if path.extension() == Some(std::ffi::OsStr::new("json")) {
             match std::fs::metadata(&path) {
                 Ok(metadata) => {
-                    if let Ok(modified) = metadata.modified()?.duration_since(std::time::UNIX_EPOCH)
+                    // Use ok() so a single unreadable mtime doesn't abort the whole loop.
+                    if let Some(modified) = metadata
+                        .modified()
+                        .ok()
+                        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
                     {
                         let modified_secs = modified.as_secs();
                         if now.saturating_sub(modified_secs) > ttl_secs {
@@ -493,6 +497,11 @@ pub async fn serve(bind_addr: &str, state: WebhookState) -> anyhow::Result<()> {
         state.config.security_level,
         EVALUATION_TIMEOUT_MS,
         REQUEST_BODY_LIMIT_BYTES / 1024,
+    );
+    tracing::info!(
+        "Session storage: {:?} (TTL: {}s)",
+        state.config.session_storage_dir,
+        state.config.session_ttl_secs,
     );
 
     if state.policy.is_none() && state.cedar_policies.is_empty() {
