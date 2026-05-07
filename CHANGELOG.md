@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.6] - 2026-05-04
+
+### Fixed
+- **Copilot Studio Hardening:** Resolved a security policy mismatch where custom tools (e.g., 'Send-an-Email') were incorrectly blocked.
+  - Updated `extract_tools.py` to robustly derive precise PVA Tool IDs by extracting publisher prefixes and slugifying display names.
+  - Hardened the Rust webhook runtime to use the unique `toolDefinition.id` as the primary security identifier, aligning with the actual identifiers received in runtime payloads.
+  - Updated `copilot_studio.rs` tests to verify correct tool ID mapping.
+
 ## [0.2.5] - 2026-04-28
 
 ### Added

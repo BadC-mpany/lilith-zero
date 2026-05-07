@@ -86,10 +86,10 @@ Taint states in Lilith are tracked per-conversation.
 - **Usage:** This string must be deterministically hashed (using HMAC-SHA256) by Lilith's `Crypto` module to generate the internal `SessionId`.
 
 ### B. Tool Identification
-Policies map permissions against specific tools. Note that `toolDefinition.name` and `toolDefinition.id` can differ.
-- **Source Field:** `toolDefinition.name` (Primary) or `toolDefinition.id` (Fallback)
-- **Example Value:** `"Create-table"`
-- **Usage:** This becomes `tool_name` in the `HookInput` struct. The Cedar policy uses this as `resource.name`.
+Policies map permissions against specific tools. **The `toolDefinition.id` is the single source of truth for runtime identification.**
+- **Source Field:** `toolDefinition.id` (Primary)
+- **Example Value:** `"cra65_otpdemo.action.MockActionsAPI-MockActionsAPI"`
+- **Usage:** This becomes `tool_name` in the `HookInput` struct. The Cedar policy must match this identifier exactly. Note that `toolDefinition.name` (e.g., "Send-an-Email") is often different and unreliable for policy matching.
 
 ### C. Input Parameters (Arguments)
 Tool arguments are evaluated for sensitive data (taints) or blocked patterns.

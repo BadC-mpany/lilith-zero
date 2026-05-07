@@ -80,6 +80,8 @@ const EVALUATION_TIMEOUT_MS: u64 = 900;
 // Shared server state
 // ---------------------------------------------------------------------------
 
+use crate::engine_core::persistence::PersistenceLayer;
+
 /// Immutable state shared across all webhook handler invocations.
 #[derive(Clone)]
 pub struct WebhookState {
@@ -262,14 +264,16 @@ async fn do_analyze(
     let agent_id = &request.conversation_metadata.agent.id;
     let conversation_id = &request.conversation_metadata.conversation_id;
 
-    tracing::info!(
-        agent_id = %agent_id,
-        conversation_id = %conversation_id,
-        correlation_id = correlation_id.unwrap_or("-"),
-        tool = %tool_name,
-        args = ?hook_input.tool_input,
-        "evaluating tool execution request"
-    );
+    if !state.config.lean_logs {
+        tracing::info!(
+            agent_id = %agent_id,
+            conversation_id = %conversation_id,
+            correlation_id = correlation_id.unwrap_or("-"),
+            tool = %tool_name,
+            args = ?hook_input.tool_input,
+            "evaluating tool execution request"
+        );
+    }
 
     // 4. Evaluate through the security engine.
     let cedar_policy = state.cedar_policies.get(agent_id).cloned();
@@ -287,11 +291,12 @@ async fn do_analyze(
             .into_response();
     }
 
-    let mut handler = match HookHandler::with_policy(
+    let mut handler = match HookHandler::with_policy_and_persistence(
         state.config.clone(),
         state.audit_log_path.clone(),
         state.policy.clone(),
         cedar_policy,
+        PersistenceLayer::new(state.config.session_storage_dir.clone()),
     ) {
         Ok(h) => h,
         Err(e) => {
@@ -308,30 +313,42 @@ async fn do_analyze(
         }
     };
 
+    // The HookHandler will handle all persistence (lock, load, save) using
+    // the custom persistence layer we passed to it.
     let result = handler.handle(hook_input).await;
 
     // 5. Translate result to Copilot Studio response.
     let response = match result {
         Ok(0) => {
-            tracing::info!(
-                agent_id = %agent_id,
-                conversation_id = %conversation_id,
-                tool = %tool_name,
-                "Decision: ALLOW"
-            );
+            if !state.config.lean_logs {
+                tracing::info!(
+                    agent_id = %agent_id,
+                    conversation_id = %conversation_id,
+                    tool = %tool_name,
+                    "Decision: ALLOW"
+                );
+            }
             AnalyzeToolExecutionResponse::allow()
         }
         Ok(_) => {
-            tracing::warn!(
-                agent_id = %agent_id,
-                conversation_id = %conversation_id,
-                tool = %tool_name,
-                "Decision: DENY (blocked by policy)"
-            );
-            AnalyzeToolExecutionResponse::block(
+            if !state.config.lean_logs {
+                tracing::warn!(
+                    agent_id = %agent_id,
+                    conversation_id = %conversation_id,
+                    tool = %tool_name,
+                    "Decision: DENY (blocked by policy)"
+                );
+            }
+            let mut resp = AnalyzeToolExecutionResponse::block(
                 reason_codes::STATIC_DENY,
                 "blocked by Lilith Zero security policy",
-            )
+            );
+            // Add internal diagnostics for debugging (not shown to end users if configured)
+            resp.diagnostics = Some(format!(
+                "tool: {}, session: {}, policy: {}",
+                tool_name, conversation_id, agent_id
+            ));
+            resp
         }
         Err(e) => {
             tracing::error!(
@@ -407,18 +424,104 @@ fn auth_error_response(e: AuthError) -> Response {
 }
 
 // ---------------------------------------------------------------------------
+// Session TTL & Cleanup
+// ---------------------------------------------------------------------------
+
+/// Remove expired session files based on TTL.
+///
+/// Iterates through session storage directory and deletes `.json` files
+/// with modification time older than the given TTL. Logs the count of deleted files.
+/// Errors during cleanup are logged but don't fail the function (resilient).
+pub fn cleanup_expired_sessions(
+    storage_dir: &std::path::Path,
+    ttl_secs: u64,
+) -> anyhow::Result<usize> {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)?
+        .as_secs();
+
+    let mut deleted = 0;
+
+    // Silently skip if directory doesn't exist (fresh server)
+    if !storage_dir.exists() {
+        return Ok(0);
+    }
+
+    for entry in std::fs::read_dir(storage_dir)? {
+        let path = entry?.path();
+        if path.extension() == Some(std::ffi::OsStr::new("json")) {
+            match std::fs::metadata(&path) {
+                Ok(metadata) => {
+                    // Use ok() so a single unreadable mtime doesn't abort the whole loop.
+                    if let Some(modified) = metadata
+                        .modified()
+                        .ok()
+                        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                    {
+                        let modified_secs = modified.as_secs();
+                        if now.saturating_sub(modified_secs) > ttl_secs {
+                            if let Err(e) = std::fs::remove_file(&path) {
+                                tracing::warn!(
+                                    "Failed to delete expired session {}: {}",
+                                    path.display(),
+                                    e
+                                );
+                            } else {
+                                tracing::debug!("Cleaned up expired session: {}", path.display());
+                                deleted += 1;
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to stat session file {}: {}", path.display(), e);
+                }
+            }
+        }
+    }
+
+    tracing::info!("Session TTL cleanup: removed {} expired files", deleted);
+    Ok(deleted)
+}
+
+// ---------------------------------------------------------------------------
 // Server startup
 // ---------------------------------------------------------------------------
 
 /// Start the webhook server and block until the listener exits.
 pub async fn serve(bind_addr: &str, state: WebhookState) -> anyhow::Result<()> {
     tracing::info!(
-        "Lilith Zero webhook server starting on {} (auth: {}, timeout: {}ms, body_limit: {}KiB)",
+        "Lilith Zero webhook server starting on {} (auth: {}, level: {:?}, timeout: {}ms, body_limit: {}KiB)",
         bind_addr,
         state.auth.description(),
+        state.config.security_level,
         EVALUATION_TIMEOUT_MS,
         REQUEST_BODY_LIMIT_BYTES / 1024,
     );
+    tracing::info!(
+        "Session storage: {:?} (TTL: {}s)",
+        state.config.session_storage_dir,
+        state.config.session_ttl_secs,
+    );
+
+    if state.policy.is_none() && state.cedar_policies.is_empty() {
+        tracing::warn!(
+            "NO POLICIES LOADED - Server will run in fail-closed mode (or AuditOnly if configured)"
+        );
+    } else {
+        tracing::info!(
+            "Policies loaded: {} Cedar policy sets, {} legacy policy",
+            state.cedar_policies.len(),
+            if state.policy.is_some() { "1" } else { "0" }
+        );
+    }
+
+    if let Err(e) = cleanup_expired_sessions(
+        &state.config.session_storage_dir,
+        state.config.session_ttl_secs,
+    ) {
+        tracing::warn!("Session cleanup on startup failed (non-critical): {}", e);
+    }
 
     let app = build_router(state);
     let listener = tokio::net::TcpListener::bind(bind_addr)

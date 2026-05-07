@@ -1,50 +1,136 @@
 [
   {
-    "name": "template-content.action.WorkIQCopilotPreview",
+    "ids": [
+      "template-content.connectionreference.cra65_otpdemo.shared_cra655fdelete20database20row5ff1d9155c6c88",
+      "deleteDatabaseRow",
+      "Delete Database Row - Delete Database Row",
+      "cra65_otpdemo.action.DeleteDatabaseRow-DeleteDatabaseRow",
+      "template-content.action.DeleteDatabaseRowDeleteDatabaseRow"
+    ],
+    "display_name": "Delete Database Row - Delete Database Row",
+    "bot_id": "5be3e14e-2e46-f111-bec6-7c1e52344333"
+  },
+  {
+    "ids": [
+      "connectMcpServer",
+      "Connect to MCP Server - Connect to MCP Server",
+      "template-content.action.ConnecttoMCPServerConnecttoMCPServer",
+      "template-content.connectionreference.cra65_otpdemo.shared_cra655fconnect20to20mcp20server5ff1d9155c6",
+      "cra65_otpdemo.action.ConnecttoMCPServer-ConnecttoMCPServer"
+    ],
+    "display_name": "Connect to MCP Server - Connect to MCP Server",
+    "bot_id": "5be3e14e-2e46-f111-bec6-7c1e52344333"
+  },
+  {
+    "ids": [
+      "template-content.action.ExecutePythonScriptExecutePythonScript",
+      "Execute Python Script - Execute Python Script",
+      "template-content.connectionreference.cra65_otpdemo.shared_cra655fexecute20python20script5ff1d9155c6c",
+      "cra65_otpdemo.action.ExecutePythonScript-ExecutePythonScript",
+      "executePythonScript"
+    ],
+    "display_name": "Execute Python Script - Execute Python Script",
+    "bot_id": "5be3e14e-2e46-f111-bec6-7c1e52344333"
+  },
+  {
+    "ids": [
+      "fetchWebpage",
+      "template-content.connectionreference.cra65_otpdemo.shared_cra655ffetch20webpage5ff1d9155c6c8886d4.79",
+      "cra65_otpdemo.action.FetchWebpage-FetchWebpage",
+      "template-content.action.FetchWebpageFetchWebpage",
+      "Fetch Webpage - Fetch Webpage"
+    ],
+    "display_name": "Fetch Webpage - Fetch Webpage",
+    "bot_id": "5be3e14e-2e46-f111-bec6-7c1e52344333"
+  },
+  {
+    "ids": [
+      "template-content.action.SearchWebSearchWeb",
+      "searchWeb",
+      "cra65_otpdemo.action.SearchWeb-SearchWeb",
+      "template-content.connectionreference.cra65_otpdemo.shared_cra655fsearch20web5ff1d9155c6c8886d4.22495",
+      "Search Web - Search Web"
+    ],
+    "display_name": "Search Web - Search Web",
+    "bot_id": "5be3e14e-2e46-f111-bec6-7c1e52344333"
+  },
+  {
+    "ids": [
+      "createExcelTable",
+      "Create Excel Table - Create Excel Table",
+      "template-content.action.CreateExcelTableCreateExcelTable",
+      "template-content.connectionreference.cra65_otpdemo.shared_cra655fcreate20excel20table5ff1d9155c6c888",
+      "cra65_otpdemo.action.CreateExcelTable-CreateExcelTable"
+    ],
+    "display_name": "Create Excel Table - Create Excel Table",
+    "bot_id": "5be3e14e-2e46-f111-bec6-7c1e52344333"
+  },
+  {
+    "ids": [
+      "template-content.connectionreference.cra65_otpdemo.shared_cra655fquery20database5ff1d9155c6c8886d4.d",
+      "cra65_otpdemo.action.QueryDatabase-QueryDatabase",
+      "template-content.action.QueryDatabaseQueryDatabase",
+      "Query Database - Query Database",
+      "queryDatabase"
+    ],
+    "display_name": "Query Database - Query Database",
+    "bot_id": "5be3e14e-2e46-f111-bec6-7c1e52344333"
+  },
+  {
+    "ids": [
+      "Read Emails - Read Emails",
+      "readEmails",
+      "cra65_otpdemo.action.ReadEmails-ReadEmails",
+      "template-content.action.ReadEmailsReadEmails",
+      "template-content.connectionreference.cra65_otpdemo.shared_cra655fread20emails5ff1d9155c6c8886d4.cc76"
+    ],
+    "display_name": "Read Emails - Read Emails",
+    "bot_id": "5be3e14e-2e46-f111-bec6-7c1e52344333"
+  },
+  {
+    "ids": [
+      "Send Email - Send Email",
+      "cra65_otpdemo.action.SendEmail-SendEmail",
+      "template-content.connectionreference.cra65_otpdemo.shared_cra655fsend20email5ff1d9155c6c8886d4.69860",
+      "template-content.action.SendEmailSendEmail",
+      "sendEmail"
+    ],
+    "display_name": "Send Email - Send Email",
+    "bot_id": "5be3e14e-2e46-f111-bec6-7c1e52344333"
+  },
+  {
+    "ids": [
+      "cra65_financialInsights.action.WorkIQCopilot(Preview)",
+      "Work IQ Copilot (Preview)",
+      "template-content.action.WorkIQCopilotPreview",
+      "mcp_m365copilot",
+      "template-content.connectionreference.cra65_financialInsights.shared_a365copilotchatmcp.shareda365cop"
+    ],
     "display_name": "Work IQ Copilot (Preview)",
-    "operation_id": "mcp_m365copilot",
     "bot_id": "77236ced-1146-f111-bec6-7ced8d71fac9"
   },
   {
-    "name": "template-content.action.WorkIQUserPreview",
+    "ids": [
+      "mcp_MeServer",
+      "template-content.connectionreference.cra65_financialInsights.shared_a365memcp.shareda365memcp26ee772",
+      "template-content.action.WorkIQUserPreview",
+      "Work IQ User (Preview)",
+      "cra65_financialInsights.action.WorkIQUser(Preview)"
+    ],
     "display_name": "Work IQ User (Preview)",
-    "operation_id": "mcp_MeServer",
     "bot_id": "77236ced-1146-f111-bec6-7ced8d71fac9"
   },
   {
-    "name": "template-content.action.ExcelOnlineBusinessAddarowintoatable",
+    "ids": [
+      "template-content.action.ExcelOnlineBusinessAddarowintoatable",
+      "cra65_financialInsights.action.Addarowintoatable",
+      "dynamicProperties",
+      "Excel Online (Business) - Add a row into a table",
+      "Add a row into a table",
+      "AddRowV2",
+      "template-content.connectionreference.cra65_financialInsights.shared_excelonlinebusiness.d8386d7cbde0"
+    ],
     "display_name": "Add a row into a table",
-    "operation_id": "AddRowV2",
     "bot_id": "77236ced-1146-f111-bec6-7ced8d71fac9"
-  },
-  {
-    "name": "template-content.action.MicrosoftDataverseMicrosoftDataverseMCPServerPreview",
-    "display_name": "Microsoft Dataverse MCP Server (Preview)",
-    "operation_id": "InvokeMCPPreview",
-    "bot_id": "5be3e14e-2e46-f111-bec6-7c1e52344333"
-  },
-  {
-    "name": "template-content.action.ExcelOnlineBusinessCreatetable",
-    "display_name": "Create table",
-    "operation_id": "CreateTable",
-    "bot_id": "5be3e14e-2e46-f111-bec6-7c1e52344333"
-  },
-  {
-    "name": "template-content.action.ExcelOnlineBusinessGettables",
-    "display_name": "Get tables",
-    "operation_id": "GetTables",
-    "bot_id": "5be3e14e-2e46-f111-bec6-7c1e52344333"
-  },
-  {
-    "name": "template-content.action.WorkIQCopilotPreview",
-    "display_name": "Work IQ Copilot (Preview)",
-    "operation_id": "mcp_m365copilot",
-    "bot_id": "5be3e14e-2e46-f111-bec6-7c1e52344333"
-  },
-  {
-    "name": "template-content.action.WorkIQUserPreview",
-    "display_name": "Work IQ User (Preview)",
-    "operation_id": "mcp_MeServer",
-    "bot_id": "5be3e14e-2e46-f111-bec6-7c1e52344333"
   }
 ]

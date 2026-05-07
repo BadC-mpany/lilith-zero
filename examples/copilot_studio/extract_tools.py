@@ -92,13 +92,41 @@ def extract_for_bot(bot_id, environment_id):
                     details = action.get('operationDetails', {})
                     op_id = details.get('operationId')
             
-            schema_name = comp.get('schemaName')
-            display_name = comp.get('displayName')
+            # Deep search for all potential tool identifiers in the component
+            all_ids = set()
+            def deep_extract(obj):
+                if isinstance(obj, dict):
+                    for k, v in obj.items():
+                        if k in ['summary', 'description', 'displayName', 'modelDisplayName', 'name', 'schemaName', 'operationId', 'id']:
+                            if isinstance(v, str) and v:
+                                all_ids.add(v)
+                        deep_extract(v)
+                elif isinstance(obj, list):
+                    for item in obj:
+                        deep_extract(item)
+            
+            deep_extract(comp)
+            
+            display_name = dialog.get('modelDisplayName') or comp.get('displayName') or comp.get('schemaName')
+            
+            # Formulate precise PVA Tool ID (e.g. cra65_otpdemo.action.MockActionsAPI-MockActionsAPI)
+            action = dialog.get('action', {})
+            conn_ref = action.get('connectionReference', '')
+            if not conn_ref and 'operationDetails' in action:
+                conn_ref = action.get('operationDetails', {}).get('connectionReference', '')
+                
+            if conn_ref and display_name:
+                m = re.search(r'connectionreference\.([^\.]+)\.', conn_ref)
+                if m:
+                    prefix = m.group(1)
+                    parts = display_name.split('-')
+                    slugified = '-'.join([''.join(p.split()) for p in parts])
+                    pva_tool_id = f"{prefix}.action.{slugified}"
+                    all_ids.add(pva_tool_id)
             
             tools.append({
-                "name": schema_name or op_id or display_name,
-                "display_name": model_display_name or display_name,
-                "operation_id": op_id,
+                "ids": list(all_ids),
+                "display_name": display_name,
                 "bot_id": bot_id
             })
             
@@ -139,43 +167,65 @@ def main():
                 f.write(f"// Automatically generated Cedar policy for Bot: {bot_id}\n")
                 f.write("// Only includes actual Tools (Actions/Connectors), excluding system topics.\n\n")
                 
+                # Default permit for resources
+                f.write("// Default permit for resources to allow tool arguments (subject, to, etc.) to pass through.\n")
+                f.write("permit(\n")
+                f.write("    principal,\n")
+                f.write("    action in [Action::\"resources/read\", Action::\"resources/write\"],\n")
+                f.write("    resource\n")
+                f.write(");\n\n")
+
                 seen_in_bot = set()
                 for tool in bot_tools:
-                    tool_key = tool['name']
+                    tool_key = tool['display_name']
                     if tool_key in seen_in_bot:
                         continue
                     seen_in_bot.add(tool_key)
                     
-                    resource_names = {tool['name']}
-                    if tool.get('display_name'):
-                        resource_names.add(tool['display_name'])
-                    if tool.get('operation_id'):
-                        resource_names.add(tool['operation_id'])
+                    resource_names = set(tool['ids'])
                     
-                    # Add slugified and normalized versions to handle Copilot Studio webhook variations
+                    # Add slugified and normalized versions
                     additional_names = set()
-                    for n in resource_names:
-                        # Replace spaces with hyphens (common slugification)
+                    for n in list(resource_names):
+                        # 1. PVA slugification (Preserves Case: "Send an Email" -> "Send-an-Email")
                         additional_names.add(n.replace(" ", "-"))
-                        # Remove spaces entirely
+                        additional_names.add(n.replace("_", "-"))
+                        
+                        # 2. Case normalization and part splitting
+                        parts = re.findall(r'[A-Z]?[a-z0-9]+|[A-Z]+(?=[A-Z][a-z0-9]|\b)', n)
+                        if parts:
+                            # Pascal-Hyphen-Case
+                            additional_names.add("-".join([p.capitalize() for p in parts]))
+                            # kebab-case
+                            additional_names.add("-".join([p.lower() for p in parts]))
+                            # PascalCase
+                            additional_names.add("".join([p.capitalize() for p in parts]))
+                            # snake_case
+                            additional_names.add("_".join([p.lower() for p in parts]))
+                        
+                        # 3. Simple cleanup
                         additional_names.add(n.replace(" ", ""))
-                        # If it contains dots, take the last part
                         if "." in n:
                             additional_names.add(n.split(".")[-1])
                     
                     resource_names.update(additional_names)
                     
+                    # Filter out purely numeric names or very short garbage
+                    resource_names = {n for n in resource_names if n and not n.isdigit() and len(n) > 2}
+                    
                     # Convert set to sorted list for deterministic output
                     names_list = sorted(list(resource_names))
                     
-                    f.write(f"// Tool: {tool.get('display_name', tool['name'])}\n")
+                    f.write(f"// Tool: {tool['display_name']}\n")
                     f.write(f"permit(\n")
                     f.write(f"    principal,\n")
-                    f.write(f"    action in [Action::\"tools/call\", Action::\"resources/read\", Action::\"resources/write\"],\n")
+                    f.write(f"    action == Action::\"tools/call\",\n")
                     f.write(f"    resource\n")
                     f.write(f") when {{\n")
                     
-                    if len(names_list) == 1:
+                    if not names_list:
+                         f.write(f"    false // No identifiers found\n")
+                    elif len(names_list) == 1:
                         f.write(f"    resource == Resource::\"{names_list[0]}\"\n")
                     else:
                         names_condition = " || ".join([f"resource == Resource::\"{n}\"" for n in names_list])

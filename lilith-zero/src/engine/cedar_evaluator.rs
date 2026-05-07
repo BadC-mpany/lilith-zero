@@ -79,6 +79,7 @@ impl CedarEvaluator {
             "paths": paths_list,
             "path": path,
             "args": sanitized_args,
+            "arguments": sanitized_args, // Alias for better readability in policies
             "classes": classes_list
         });
 
@@ -96,6 +97,20 @@ impl CedarEvaluator {
         let response = self
             .authorizer
             .is_authorized(&request, &self.policy_set, &entities);
+
+        // DIAGNOSTIC: Log policy IDs for debugging taint persistence issues
+        let policy_ids: Vec<String> = response
+            .diagnostics()
+            .reason()
+            .map(|pid| pid.to_string())
+            .collect();
+        if !policy_ids.is_empty() {
+            tracing::debug!(
+                "Cedar response decision={:?}, policy_ids={:?}",
+                response.decision(),
+                policy_ids
+            );
+        }
 
         Ok(response)
     }

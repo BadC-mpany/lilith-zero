@@ -36,7 +36,7 @@ use std::sync::Arc;
 use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
 use reqwest::Client;
 use serde_json::{json, Value};
-use tempfile::NamedTempFile;
+use tempfile::{NamedTempFile, TempDir};
 use tokio::net::TcpListener;
 
 use lilith_zero::config::Config;
@@ -63,8 +63,8 @@ customer_id: test
 name: Webhook Test Policy
 version: 1
 static_rules:
-  allowed_tool: ALLOW
-  forbidden_tool: DENY
+  tool-allowed_tool: ALLOW
+  tool-forbidden_tool: DENY
 taint_rules: []
 resource_rules: []
 "#
@@ -94,34 +94,48 @@ fn load_test_policy(policy_path: &std::path::Path) -> Option<Arc<PolicyDefinitio
 
 /// Build a `WebhookState` with `NoAuthAuthenticator` — use for all tests
 /// that focus on routing, payload, and policy (not auth itself).
-fn test_state_no_auth(policy_path: &std::path::Path) -> WebhookState {
-    let config = Config {
+fn test_state_no_auth(policy_path: &std::path::Path) -> (WebhookState, TempDir) {
+    let temp_dir = TempDir::new().expect("failed to create temp session dir");
+    let session_storage = temp_dir.path().to_path_buf();
+
+    let mut config = Config {
         policies_yaml_path: Some(policy_path.to_path_buf()),
         ..Config::default()
     };
-    WebhookState {
+    config.session_storage_dir = session_storage.clone();
+
+    let state = WebhookState {
         config: Arc::new(config),
         audit_log_path: None,
         auth: Arc::new(NoAuthAuthenticator),
         policy: load_test_policy(policy_path),
         cedar_policies: std::collections::HashMap::new(),
-    }
+    };
+
+    (state, temp_dir)
 }
 
 /// Build a `WebhookState` with `SharedSecretAuthenticator` — use for auth
 /// rejection tests only (we never need to generate a valid token client-side).
-fn test_state_with_shared_secret_auth(policy_path: &std::path::Path) -> WebhookState {
-    let config = Config {
+fn test_state_with_shared_secret_auth(policy_path: &std::path::Path) -> (WebhookState, TempDir) {
+    let temp_dir = TempDir::new().expect("failed to create temp session dir");
+    let session_storage = temp_dir.path().to_path_buf();
+
+    let mut config = Config {
         policies_yaml_path: Some(policy_path.to_path_buf()),
         ..Config::default()
     };
-    WebhookState {
+    config.session_storage_dir = session_storage.clone();
+
+    let state = WebhookState {
         config: Arc::new(config),
         audit_log_path: None,
         auth: Arc::new(SharedSecretAuthenticator::new("test-webhook-secret", None)),
         policy: load_test_policy(policy_path),
         cedar_policies: std::collections::HashMap::new(),
-    }
+    };
+
+    (state, temp_dir)
 }
 
 /// Build an `analyze-tool-execution` request body JSON.
@@ -186,7 +200,7 @@ fn cleanup_session_file(session_id: &str) {
 #[tokio::test]
 async fn test_webhook_validate_returns_200_no_auth_mode() {
     let policy = write_temp_policy(default_policy_yaml());
-    let state = test_state_no_auth(policy.path());
+    let (state, _temp_dir) = test_state_no_auth(policy.path());
     let base = start_test_server(state).await;
     let client = Client::new();
 
@@ -205,8 +219,16 @@ async fn test_webhook_validate_returns_200_no_auth_mode() {
 /// engine is not actually evaluating rules — isSuccessful=false makes this
 /// explicit so the configuration mistake is caught during initial setup.
 #[tokio::test]
+#[allow(clippy::field_reassign_with_default)]
 async fn test_webhook_validate_returns_not_successful_when_no_policy() {
-    let config = Config::default(); // no policies_yaml_path
+    let _temp_dir = TempDir::new().expect("temp dir");
+    let session_storage = _temp_dir.path().to_path_buf();
+
+    let config = Config {
+        session_storage_dir: session_storage.clone(),
+        ..Default::default()
+    };
+
     let state = WebhookState {
         config: Arc::new(config),
         audit_log_path: None,
@@ -238,7 +260,7 @@ async fn test_webhook_validate_returns_not_successful_when_no_policy() {
 #[tokio::test]
 async fn test_webhook_validate_is_public_with_no_token() {
     let policy = write_temp_policy(default_policy_yaml());
-    let state = test_state_with_shared_secret_auth(policy.path());
+    let (state, _temp_dir) = test_state_with_shared_secret_auth(policy.path());
     let base = start_test_server(state).await;
     let client = Client::new();
 
@@ -250,7 +272,7 @@ async fn test_webhook_validate_is_public_with_no_token() {
 #[tokio::test]
 async fn test_webhook_validate_is_public_with_invalid_token() {
     let policy = write_temp_policy(default_policy_yaml());
-    let state = test_state_with_shared_secret_auth(policy.path());
+    let (state, _temp_dir) = test_state_with_shared_secret_auth(policy.path());
     let base = start_test_server(state).await;
     let client = Client::new();
 
@@ -276,7 +298,7 @@ async fn test_webhook_validate_is_public_with_invalid_token() {
 #[tokio::test]
 async fn test_webhook_analyze_allowed_tool_returns_block_false() {
     let policy = write_temp_policy(default_policy_yaml());
-    let state = test_state_no_auth(policy.path());
+    let (state, _temp_dir) = test_state_no_auth(policy.path());
     let base = start_test_server(state).await;
     let client = Client::new();
 
@@ -302,7 +324,7 @@ async fn test_webhook_analyze_allowed_tool_returns_block_false() {
 #[tokio::test]
 async fn test_webhook_analyze_denied_tool_returns_block_true() {
     let policy = write_temp_policy(default_policy_yaml());
-    let state = test_state_no_auth(policy.path());
+    let (state, _temp_dir) = test_state_no_auth(policy.path());
     let base = start_test_server(state).await;
     let client = Client::new();
 
@@ -328,7 +350,7 @@ async fn test_webhook_analyze_denied_tool_returns_block_true() {
 #[tokio::test]
 async fn test_webhook_analyze_block_includes_human_readable_reason() {
     let policy = write_temp_policy(default_policy_yaml());
-    let state = test_state_no_auth(policy.path());
+    let (state, _temp_dir) = test_state_no_auth(policy.path());
     let base = start_test_server(state).await;
     let client = Client::new();
 
@@ -353,7 +375,7 @@ async fn test_webhook_analyze_block_includes_human_readable_reason() {
 #[tokio::test]
 async fn test_webhook_analyze_block_includes_reason_code() {
     let policy = write_temp_policy(default_policy_yaml());
-    let state = test_state_no_auth(policy.path());
+    let (state, _temp_dir) = test_state_no_auth(policy.path());
     let base = start_test_server(state).await;
     let client = Client::new();
 
@@ -381,7 +403,7 @@ async fn test_webhook_analyze_block_includes_reason_code() {
 #[tokio::test]
 async fn test_webhook_analyze_no_token_returns_401() {
     let policy = write_temp_policy(default_policy_yaml());
-    let state = test_state_with_shared_secret_auth(policy.path());
+    let (state, _temp_dir) = test_state_with_shared_secret_auth(policy.path());
     let base = start_test_server(state).await;
     let client = Client::new();
 
@@ -401,7 +423,7 @@ async fn test_webhook_analyze_no_token_returns_401() {
 #[tokio::test]
 async fn test_webhook_analyze_invalid_token_returns_401() {
     let policy = write_temp_policy(default_policy_yaml());
-    let state = test_state_with_shared_secret_auth(policy.path());
+    let (state, _temp_dir) = test_state_with_shared_secret_auth(policy.path());
     let base = start_test_server(state).await;
     let client = Client::new();
 
@@ -421,7 +443,7 @@ async fn test_webhook_analyze_invalid_token_returns_401() {
 #[tokio::test]
 async fn test_webhook_analyze_malformed_body_returns_400() {
     let policy = write_temp_policy(default_policy_yaml());
-    let state = test_state_no_auth(policy.path());
+    let (state, _temp_dir) = test_state_no_auth(policy.path());
     let base = start_test_server(state).await;
     let client = Client::new();
 
@@ -454,7 +476,7 @@ async fn test_webhook_analyze_malformed_body_returns_400() {
 #[tokio::test]
 async fn test_webhook_analyze_unknown_tool_blocked_fail_closed() {
     let policy = write_temp_policy(default_policy_yaml());
-    let state = test_state_no_auth(policy.path());
+    let (state, _temp_dir) = test_state_no_auth(policy.path());
     let base = start_test_server(state).await;
     let client = Client::new();
 
@@ -479,7 +501,14 @@ async fn test_webhook_analyze_unknown_tool_blocked_fail_closed() {
 /// No policy loaded must block all tools (fail-closed).
 #[tokio::test]
 async fn test_webhook_analyze_no_policy_blocks_all_fail_closed() {
-    let config = Config::default(); // no policies_yaml_path
+    let _temp_dir = TempDir::new().expect("temp dir");
+    let session_storage = _temp_dir.path().to_path_buf();
+
+    let config = Config {
+        session_storage_dir: session_storage.clone(),
+        ..Default::default()
+    };
+
     let state = WebhookState {
         config: Arc::new(config),
         audit_log_path: None,
@@ -516,7 +545,7 @@ async fn test_webhook_analyze_no_policy_blocks_all_fail_closed() {
 #[tokio::test]
 async fn test_webhook_analyze_response_is_valid_json_on_allow() {
     let policy = write_temp_policy(default_policy_yaml());
-    let state = test_state_no_auth(policy.path());
+    let (state, _temp_dir) = test_state_no_auth(policy.path());
     let base = start_test_server(state).await;
     let client = Client::new();
 
@@ -537,7 +566,7 @@ async fn test_webhook_analyze_response_is_valid_json_on_allow() {
 #[tokio::test]
 async fn test_webhook_analyze_response_is_valid_json_on_deny() {
     let policy = write_temp_policy(default_policy_yaml());
-    let state = test_state_no_auth(policy.path());
+    let (state, _temp_dir) = test_state_no_auth(policy.path());
     let base = start_test_server(state).await;
     let client = Client::new();
 
@@ -556,7 +585,7 @@ async fn test_webhook_analyze_response_is_valid_json_on_deny() {
 #[tokio::test]
 async fn test_webhook_analyze_allow_response_has_no_extra_fields() {
     let policy = write_temp_policy(default_policy_yaml());
-    let state = test_state_no_auth(policy.path());
+    let (state, _temp_dir) = test_state_no_auth(policy.path());
     let base = start_test_server(state).await;
     let client = Client::new();
 
@@ -596,20 +625,20 @@ customer_id: test
 name: Webhook Taint Test
 version: 1
 static_rules:
-  taint_me: ALLOW
-  check_me: ALLOW
+  tool-taint_me: ALLOW
+  tool-check_me: ALLOW
 taint_rules:
-  - tool: taint_me
+  - tool: tool-taint_me
     action: ADD_TAINT
     tag: WEBHOOK_TAINT
-  - tool: check_me
+  - tool: tool-check_me
     action: CHECK_TAINT
     required_taints: ["WEBHOOK_TAINT"]
     error: "blocked when WEBHOOK_TAINT is active"
 resource_rules: []
 "#;
     let policy = write_temp_policy(policy_yaml);
-    let state = test_state_no_auth(policy.path());
+    let (state, _temp_dir) = test_state_no_auth(policy.path());
     let base = start_test_server(state).await;
     let client = Client::new();
     let conv_id = format!("webhook-taint-conv-{}", std::process::id());
@@ -665,20 +694,20 @@ customer_id: test
 name: Webhook Isolation Test
 version: 1
 static_rules:
-  taint_source: ALLOW
-  check_tool: ALLOW
+  tool-taint_source: ALLOW
+  tool-check_tool: ALLOW
 taint_rules:
-  - tool: taint_source
+  - tool: tool-taint_source
     action: ADD_TAINT
     tag: ISOLATION_TAINT
-  - tool: check_tool
+  - tool: tool-check_tool
     action: CHECK_TAINT
     required_taints: ["ISOLATION_TAINT"]
     error: "blocked when ISOLATION_TAINT is active"
 resource_rules: []
 "#;
     let policy = write_temp_policy(policy_yaml);
-    let state = test_state_no_auth(policy.path());
+    let (state, _temp_dir) = test_state_no_auth(policy.path());
     let base = start_test_server(state).await;
     let client = Client::new();
     let pid = std::process::id();
@@ -740,7 +769,7 @@ resource_rules: []
 #[tokio::test]
 async fn test_webhook_concurrent_requests_same_conversation_return_valid_json() {
     let policy = write_temp_policy(default_policy_yaml());
-    let state = test_state_no_auth(policy.path());
+    let (state, _temp_dir) = test_state_no_auth(policy.path());
     let base = start_test_server(state).await;
     let client = Arc::new(Client::new());
     let conv_id = format!("concurrent-conv-{}", std::process::id());
@@ -781,7 +810,7 @@ async fn test_webhook_concurrent_requests_same_conversation_return_valid_json() 
 #[tokio::test]
 async fn test_webhook_analyze_oversized_body_returns_413() {
     let policy = write_temp_policy(default_policy_yaml());
-    let state = test_state_no_auth(policy.path());
+    let (state, _temp_dir) = test_state_no_auth(policy.path());
     let base = start_test_server(state).await;
     let client = Client::new();
 
@@ -819,7 +848,7 @@ async fn test_webhook_analyze_oversized_body_returns_413() {
 #[tokio::test]
 async fn test_webhook_analyze_correlation_id_echoed_in_response() {
     let policy = write_temp_policy(default_policy_yaml());
-    let state = test_state_no_auth(policy.path());
+    let (state, _temp_dir) = test_state_no_auth(policy.path());
     let base = start_test_server(state).await;
     let client = Client::new();
 
@@ -852,7 +881,7 @@ async fn test_webhook_analyze_correlation_id_echoed_in_response() {
 #[tokio::test]
 async fn test_webhook_validate_correlation_id_echoed_in_response() {
     let policy = write_temp_policy(default_policy_yaml());
-    let state = test_state_no_auth(policy.path());
+    let (state, _temp_dir) = test_state_no_auth(policy.path());
     let base = start_test_server(state).await;
     let client = Client::new();
 
@@ -881,7 +910,7 @@ async fn test_webhook_validate_correlation_id_echoed_in_response() {
 #[tokio::test]
 async fn test_webhook_analyze_missing_correlation_id_is_not_required() {
     let policy = write_temp_policy(default_policy_yaml());
-    let state = test_state_no_auth(policy.path());
+    let (state, _temp_dir) = test_state_no_auth(policy.path());
     let base = start_test_server(state).await;
     let client = Client::new();
 
@@ -942,13 +971,20 @@ fn make_test_hs256_token(secret: &str) -> String {
 /// covers the full HTTP roundtrip from a signed JWT to an HTTP 200 response.
 #[tokio::test]
 async fn test_webhook_shared_secret_valid_token_accepted_by_validate() {
+    let _temp_dir = TempDir::new().expect("temp dir");
+    let session_storage = _temp_dir.path().to_path_buf();
+
     let secret = "integration-test-shared-secret-32ch";
     let policy = write_temp_policy(default_policy_yaml());
+
+    let mut config = Config {
+        policies_yaml_path: Some(policy.path().to_path_buf()),
+        ..Config::default()
+    };
+    config.session_storage_dir = session_storage.clone();
+
     let state = WebhookState {
-        config: Arc::new(Config {
-            policies_yaml_path: Some(policy.path().to_path_buf()),
-            ..Config::default()
-        }),
+        config: Arc::new(config),
         audit_log_path: None,
         auth: Arc::new(SharedSecretAuthenticator::new(secret, None)),
         policy: load_test_policy(policy.path()),
@@ -984,13 +1020,20 @@ async fn test_webhook_shared_secret_valid_token_accepted_by_validate() {
 /// End-to-end acceptance path: token signed → accepted → policy evaluated → allow.
 #[tokio::test]
 async fn test_webhook_shared_secret_valid_token_accepted_by_analyze() {
+    let _temp_dir = TempDir::new().expect("temp dir");
+    let session_storage = _temp_dir.path().to_path_buf();
+
     let secret = "integration-test-shared-secret-32ch";
     let policy = write_temp_policy(default_policy_yaml());
+
+    let mut config = Config {
+        policies_yaml_path: Some(policy.path().to_path_buf()),
+        ..Config::default()
+    };
+    config.session_storage_dir = session_storage.clone();
+
     let state = WebhookState {
-        config: Arc::new(Config {
-            policies_yaml_path: Some(policy.path().to_path_buf()),
-            ..Config::default()
-        }),
+        config: Arc::new(config),
         audit_log_path: None,
         auth: Arc::new(SharedSecretAuthenticator::new(secret, None)),
         policy: load_test_policy(policy.path()),
@@ -1030,13 +1073,16 @@ async fn test_webhook_shared_secret_valid_token_accepted_by_analyze() {
 async fn test_webhook_analyze_multi_tenant_cedar_isolation() {
     use std::str::FromStr;
 
+    let _temp_dir = TempDir::new().expect("temp dir");
+    let session_storage = _temp_dir.path().to_path_buf();
+
     let cedar_a = r#"
         permit(
             principal,
             action == Action::"tools/call",
             resource
         ) when {
-            resource == Resource::"allowed_tool"
+            resource == Resource::"tool-allowed_tool"
         };
     "#;
 
@@ -1046,7 +1092,7 @@ async fn test_webhook_analyze_multi_tenant_cedar_isolation() {
             action == Action::"tools/call",
             resource
         ) when {
-            resource == Resource::"other_tool"
+            resource == Resource::"tool-other_tool"
         };
     "#;
 
@@ -1057,8 +1103,13 @@ async fn test_webhook_analyze_multi_tenant_cedar_isolation() {
     cedar_policies.insert("agent_a".to_string(), policy_a);
     cedar_policies.insert("agent_b".to_string(), policy_b);
 
+    let config = Config {
+        session_storage_dir: session_storage.clone(),
+        ..Default::default()
+    };
+
     let state = WebhookState {
-        config: Arc::new(Config::default()),
+        config: Arc::new(config),
         audit_log_path: None,
         auth: Arc::new(NoAuthAuthenticator),
         policy: None,

@@ -36,6 +36,11 @@ Deploy a deterministic, sub-millisecond security middleware (Lilith Zero) to int
 - **The Catch:** Power Platform constructs the subject using a base64url encoding of the *Endpoint URL*. It typically strips the trailing slash and does NOT include sub-paths like `/validate` in the subject if you configured the base URL.
 - **Correct Subject Format:** `/eid1/c/pub/t/<TenantId_B64>/a/<AppId_B64>/<EndpointURL_B64>`
 
+### D. Tool ID Mismatch (Slugification)
+**Problem:** Custom tools (e.g., 'Send-an-Email') were blocked because the auto-generated Cedar policies did not include the specific, slugified `toolDefinition.id` used in the runtime payload.
+- **The Discovery:** Copilot Studio generates tool IDs using the format `<prefix>.action.<slugified_name>`. The `name` field in the payload is often just a human-readable display string, not the identifier matched by the runtime.
+- **The Solution:** Use `toolDefinition.id` as the primary identifier for policy evaluation. Update `extract_tools.py` to robustly derive these IDs from the bot template by extracting the publisher prefix and applying the correct slugification logic.
+
 ---
 
 ## 4. Deployment Workflow (The Working Recipe)
@@ -57,7 +62,13 @@ WORKDIR /app
 COPY lilith-zero/target/release/lilith-zero /app/lilith-zero
 # Pointing to a directory enables multi-tenant routing
 COPY examples/copilot_studio/policies /app/policies
-RUN chmod +x /app/lilith-zero
+RUN chmod +x /app/lilith-zero && mkdir -p /home/.lilith/sessions /home/LogFiles
+ENV PORT=8080
+ENV RUST_LOG=info
+# CRITICAL: point session storage at /home — Azure App Service mounts /home as
+# persistent Azure Files. Without this the app writes to /root/.lilith/sessions
+# (ephemeral container storage) and all taint state is lost on every cold start.
+ENV LILITH_ZERO_SESSION_STORAGE_DIR=/home/.lilith/sessions
 CMD ["/app/lilith-zero", "serve", "--bind", "0.0.0.0:8080", "--auth-mode", "none", "--policy", "/app/policies"]
 ```
 
@@ -92,19 +103,80 @@ python3 examples/copilot_studio/extract_tools.py --environment <ENV_ID>
 
 ---
 
-## 6. Multi-Tenant Edge Routing
+## 8. Redeployment Workflow (Updating Tools)
 
-Lilith Zero handles multi-tenancy at the webhook edge by mapping the `agent.id` from the payload to specific policy files:
-- Configure `--policy` to point to a directory of `.cedar` files.
-- Policy filenames must follow the convention: `policy_<agent_id>.cedar`.
-- The webhook dynamically loads and caches the correct policy set for each request, ensuring isolation between different agents in the same tenant.
+When you update tools in Copilot Studio, follow this exact sequence to regenerate policies and update the Azure deployment:
+
+```bash
+# 1. Extract tools and generate Cedar policies
+# Replace <ENV_ID> with your Power Platform Environment ID
+python3 examples/copilot_studio/extract_tools.py --environment <ENV_ID>
+
+# 2. Rebuild the Rust core with webhook features
+cd lilith-zero && cargo build --release --features webhook && cd ..
+
+# 3. Build and Login to ACR
+docker build -t lilithzerocr.azurecr.io/lilith-zero:latest .
+az acr login --name lilithzerocr
+
+# 4. Push to ACR
+docker push lilithzerocr.azurecr.io/lilith-zero:latest
+
+# 5. Restart Azure Web App to apply changes
+az webapp restart --name lilith-zero-webhook --resource-group lilith-zero-rg
+```
 
 ---
 
-## 7. Maintenance & Debugging
+## 9. Persistence & Scaling
 
-- **Structured Logging**: By default, logs show clean, one-line entries for each tool call and decision.
-- **Debug Mode**: Set `LILITH_ZERO_WEBHOOK_DEBUG=true` in App Settings to log the full `RAW_WEBHOOK_PAYLOAD` JSON for every request.
-- **Persistence**: Taint state persists in `/home/.lilith/sessions` across container restarts.
-- **Port**: Set `WEBSITES_PORT=8080` in Azure App Settings.
-- **Logs**: Use `az webapp log tail` for real-time monitoring.
+### Session storage
+
+Taint state is persisted to `LILITH_ZERO_SESSION_STORAGE_DIR` (default `/home/.lilith/sessions` — set by the Dockerfile). In Azure App Service Linux, `/home` is mounted as persistent Azure Files and survives container restarts. **Do not change this to any path outside `/home`** — other paths are ephemeral and taint state will reset on every cold start (`alwaysOn=false` means cold starts happen after idle periods).
+
+The App Service setting `WEBSITES_ENABLE_APP_SERVICE_STORAGE=true` must be set (it is by default; only disable it if you deliberately want ephemeral storage).
+
+Session files are named `{conversation_id}.json` and cleaned up at server startup when older than `LILITH_ZERO_SESSION_TTL_SECS` (default 86400 = 24 h).
+
+### How policy and taint loading works per request
+
+| What | Keyed by | Loaded |
+|------|----------|--------|
+| Cedar policy (`*.cedar`) | `agent_id` (filename) | Once at startup |
+| Session state (taints) | `conversation_id` | Per request from disk |
+
+Taints are append-only within a session. Nothing removes a taint once set unless an explicit `remove_taint:` Cedar rule fires.
+
+### Required App Service settings
+
+| Setting | Value | Why |
+|---------|-------|-----|
+| `WEBSITES_PORT` | `8080` | Routes traffic to the container port |
+| `WEBSITES_ENABLE_APP_SERVICE_STORAGE` | `true` | Mounts `/home` as persistent storage |
+| `LILITH_ZERO_SESSION_STORAGE_DIR` | `/home/.lilith/sessions` | Belt-and-suspenders over Dockerfile ENV |
+| `RUST_LOG` | `info` (or `debug` for diagnostics) | Controls log verbosity |
+
+### Debugging taint persistence
+
+To verify sessions are being written to Azure, SSH into the container:
+
+```bash
+az webapp ssh --name lilith-zero-webhook --resource-group lilith-zero-rg
+ls -la /home/.lilith/sessions/
+cat /home/.lilith/sessions/<conversation_id>.json
+```
+
+To verify a specific session has the expected taints, check the `taints` array in the JSON. If the directory is empty or missing, check that `LILITH_ZERO_SESSION_STORAGE_DIR` is set correctly and the container has write permission.
+
+### Port Mapping
+Ensure the App Setting `WEBSITES_PORT=8080` is set so Azure correctly routes traffic to the container.
+
+### Structured Logs
+By default, logs show clean one-line entries for each tool call. Set `LILITH_ZERO_WEBHOOK_DEBUG=true` to see raw payloads.
+
+### Real-time Monitoring
+```bash
+az webapp log tail --name <APP_NAME> --resource-group <RG_NAME>
+```
+> [!TIP]
+> If the logs repeat the same entries, Azure is showing the recent buffer. Trigger a new tool call to push the buffer forward.

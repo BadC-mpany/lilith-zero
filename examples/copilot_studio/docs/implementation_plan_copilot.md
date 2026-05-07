@@ -1,5 +1,24 @@
 # Implementation Plan: Enterprise Agent & Copilot Integrations
 
+> **Status (2026-05-05):** Features 1–3 are fully implemented and deployed to Azure. Feature 4 (Copilot SDK example) is still pending. See `docs/azure-deployment-guide.md` for the current working deployment reference.
+
+## Current State Summary
+
+| Feature | Status | Location |
+|---------|--------|----------|
+| Copilot-compatible hook payloads | ✅ Done | `src/hook/mod.rs`, `src/server/copilot_studio.rs` |
+| Webhook interface (POST /validate + /analyze-tool-execution) | ✅ Done | `src/server/webhook.rs` |
+| Entra ID / NoAuth JWT validation | ✅ Done | `src/server/auth.rs` |
+| Taint persistence across requests | ✅ Done | `src/engine_core/persistence.rs` |
+| Multi-tenant Cedar policy routing | ✅ Done | `src/main.rs` — filename = agent_id |
+| Copilot SDK business agent example | ❌ Not started | — |
+
+### Taint extraction design note
+
+Cedar auto-assigns policy IDs (`policy0`, `policy1`, …) — the `@id("...")` syntax sets a **user annotation**, not the PolicyId. Taint directives are encoded in `@id` annotations (e.g. `@id("add_taint:UNTRUSTED_SOURCE:search")`). The engine reads them via `get_policy_annotation(policy_id, "id")` and checks for `add_taint:`/`remove_taint:` prefixes. New `.cedar` policies must follow this convention.
+
+---
+
 This document outlines the architecture and implementation steps required to extend Lilith Zero's hook capabilities. The goal is to support various Microsoft Copilot form factors (CodeBox, Windows VS Code, JetBrains, Copilot Studio, and standalone business agents) as requested by the enterprise client.
 
 ## 1. Context & Objectives

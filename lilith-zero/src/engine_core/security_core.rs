@@ -183,6 +183,11 @@ impl SecurityCore {
         self.seen_request_ids = state.seen_request_ids;
     }
 
+    /// Return the active taints for the current session.
+    pub fn get_taints(&self) -> &HashSet<String> {
+        &self.taints
+    }
+
     /// Evaluate a [`SecurityEvent`] against the loaded policy and session state.
     ///
     /// Returns the [`SecurityDecision`] that should be applied to the request/response.
@@ -384,13 +389,19 @@ impl SecurityCore {
                                     let mut taints_to_add = vec![];
                                     let mut taints_to_remove = vec![];
                                     for policy_id in response.diagnostics().reason() {
-                                        let id_str = policy_id.to_string();
-                                        if let Some(tag) = id_str.strip_prefix("add_taint:") {
+                                        // Cedar auto-assigns policy IDs ("policy0", "policy1", …).
+                                        // Taint directives live in the @id annotation, so we
+                                        // look up the annotation value and fall back to the raw
+                                        // policy ID only when no annotation is present.
+                                        let effective_id = cedar_eval
+                                            .get_policy_annotation(policy_id, "id")
+                                            .unwrap_or_else(|| policy_id.to_string());
+                                        if let Some(tag) = effective_id.strip_prefix("add_taint:") {
                                             if let Some((t, _)) = tag.split_once(':') {
                                                 taints_to_add.push(t.to_string());
                                             }
                                         } else if let Some(tag) =
-                                            id_str.strip_prefix("remove_taint:")
+                                            effective_id.strip_prefix("remove_taint:")
                                         {
                                             if let Some((t, _)) = tag.split_once(':') {
                                                 taints_to_remove.push(t.to_string());
@@ -424,11 +435,19 @@ impl SecurityCore {
                 } else {
                     match self.config.security_level {
                         crate::config::SecurityLevel::AuditOnly => {
-                            warn!("No security policy loaded. Allowing request due to AuditOnly mode.");
+                            tracing::warn!(
+                                tool = %tool_name_str,
+                                "NO POLICY LOADED: Allowed only because security_level is {:?} (AuditOnly)",
+                                self.config.security_level
+                            );
                             Ok(Decision::Allowed)
                         }
                         crate::config::SecurityLevel::BlockParams => {
-                            warn!("No security policy loaded. Denying request due to strict security settings (Fail-Closed).");
+                            tracing::warn!(
+                                tool = %tool_name_str,
+                                "NO POLICY LOADED: Denying request because security_level is {:?} (Fail-Closed)",
+                                self.config.security_level
+                            );
                             Ok(Decision::Denied {
                                 reason:
                                     "No security policy loaded. lilith-zero defaults to Deny-All."
@@ -514,8 +533,10 @@ impl SecurityCore {
                         Ok(response) => {
                             if response.decision() == CedarDecision::Allow {
                                 for policy_id in response.diagnostics().reason() {
-                                    let id_str = policy_id.to_string();
-                                    if let Some(tag) = id_str.strip_prefix("add_taint:") {
+                                    let effective_id = cedar_eval
+                                        .get_policy_annotation(policy_id, "id")
+                                        .unwrap_or_else(|| policy_id.to_string());
+                                    if let Some(tag) = effective_id.strip_prefix("add_taint:") {
                                         if let Some((t, _)) = tag.split_once(':') {
                                             taints_to_add.push(t.to_string());
                                         }
@@ -722,7 +743,12 @@ impl SecurityCore {
                         reason,
                     }
                 } else {
-                    warn!(tool = %tool_name, %reason, "Policy violation in AuditOnly mode — allowing");
+                    tracing::warn!(
+                        tool = %tool_name,
+                        %reason,
+                        "POLICY VIOLATION: Allowed only because security_level is {:?} (AuditOnly)",
+                        self.config.security_level
+                    );
                     SecurityDecision::Allow
                 }
             }
