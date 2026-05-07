@@ -419,10 +419,10 @@ impl SecurityCore {
                                 } else {
                                     let mut reason = "Denied by Cedar policy".to_string();
                                     for policy_id in response.diagnostics().reason() {
-                                        if let Some(err_msg) =
-                                            cedar_eval.get_policy_annotation(policy_id, "error")
+                                        if let Some(r) =
+                                            cedar_eval.get_policy_annotation(policy_id, "reason")
                                         {
-                                            reason = err_msg;
+                                            reason = r;
                                             break;
                                         }
                                     }
@@ -547,10 +547,10 @@ impl SecurityCore {
                                 let mut reason =
                                     format!("Access to resource denied by policy: {}", uri_str);
                                 for policy_id in response.diagnostics().reason() {
-                                    if let Some(err_msg) =
-                                        cedar_eval.get_policy_annotation(policy_id, "error")
+                                    if let Some(r) =
+                                        cedar_eval.get_policy_annotation(policy_id, "reason")
                                     {
-                                        reason = err_msg;
+                                        reason = r;
                                         break;
                                     }
                                 }

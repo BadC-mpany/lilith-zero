@@ -315,11 +315,11 @@ async fn do_analyze(
 
     // The HookHandler will handle all persistence (lock, load, save) using
     // the custom persistence layer we passed to it.
-    let result = handler.handle(hook_input).await;
+    let result = handler.handle_with_reason(hook_input).await;
 
     // 5. Translate result to Copilot Studio response.
     let response = match result {
-        Ok(0) => {
+        Ok((0, _)) => {
             if !state.config.lean_logs {
                 tracing::info!(
                     agent_id = %agent_id,
@@ -330,19 +330,19 @@ async fn do_analyze(
             }
             AnalyzeToolExecutionResponse::allow()
         }
-        Ok(_) => {
+        Ok((_, deny_reason)) => {
+            let reason =
+                deny_reason.unwrap_or_else(|| "blocked by Lilith Zero security policy".to_string());
             if !state.config.lean_logs {
                 tracing::warn!(
                     agent_id = %agent_id,
                     conversation_id = %conversation_id,
                     tool = %tool_name,
+                    reason = %reason,
                     "Decision: DENY (blocked by policy)"
                 );
             }
-            let mut resp = AnalyzeToolExecutionResponse::block(
-                reason_codes::STATIC_DENY,
-                "blocked by Lilith Zero security policy",
-            );
+            let mut resp = AnalyzeToolExecutionResponse::block(reason_codes::STATIC_DENY, reason);
             // Add internal diagnostics for debugging (not shown to end users if configured)
             resp.diagnostics = Some(format!(
                 "tool: {}, session: {}, policy: {}",

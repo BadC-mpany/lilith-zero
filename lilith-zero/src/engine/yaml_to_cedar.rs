@@ -33,7 +33,7 @@ impl CedarCompiler {
                 )
             } else {
                 format!(
-                    r#"@error("Blocked by static policy rule for tool: {}")
+                    r#"@reason("Blocked by static policy rule for tool: {}")
 forbid(
     principal,
     action == Action::"tools/call",
@@ -78,7 +78,7 @@ forbid(
             let mut annotations = String::new();
             if effect == "forbid" {
                 annotations = format!(
-                    r#"@error("Resource blocked by rule: {}")"#,
+                    r#"@reason("Resource blocked by rule: {}")"#,
                     rule.uri_pattern
                 );
             }
@@ -261,7 +261,7 @@ forbid(
 
             let mut annotations = String::new();
             if let Some(ref err) = rule.error {
-                annotations = format!("@error(\"{}\")\n", err.replace("\"", "\\\""));
+                annotations = format!("@reason(\"{}\")\n", err.replace("\"", "\\\""));
             }
 
             let policy_src = format!(

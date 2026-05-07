@@ -340,7 +340,7 @@ cd sdk && python -m pytest tests -v
 ### Kani Formal Verification (requires Docker)
 
 ```bash
-# Run via Docker (see run_kani.ps1 for Windows equivalent)
+# Run via Docker (see lilith-zero/scripts/run_kani.ps1 for Windows equivalent)
 docker run --rm -v "$(pwd)":/lilith-zero \
   ghcr.io/model-checking/kani-verifier:latest \
   bash -c "cd /lilith-zero/lilith-zero && cargo kani --tests"
