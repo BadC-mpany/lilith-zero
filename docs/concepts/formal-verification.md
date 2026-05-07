@@ -57,7 +57,7 @@ We maintain **13 proof harnesses** that collectively verify the security-critica
 The harnesses run inside a Docker container with Kani pre-installed. All 13 proofs run in a **single compilation pass**:
 
 ```bash title="Terminal"
-./lilith-zero/run_kani.ps1
+./lilith-zero/scripts/run_kani.ps1
 ```
 
 ```text title="Output"

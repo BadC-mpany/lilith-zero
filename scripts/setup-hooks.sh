@@ -1,18 +1,16 @@
 #!/bin/bash
 # Lilith Zero — one-command setup for VS Code and gh copilot hooks
 #
-# Run from the REPO ROOT:
-#   cd /path/to/lilith-zero
-#   bash setup-hooks.sh
+# Can be run from anywhere:
+#   bash scripts/setup-hooks.sh
 
 set -euo pipefail
-cd "$(dirname "${BASH_SOURCE[0]}")"
 
 GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
 ok()   { printf "${GREEN}✓${NC}  %s\n" "$*"; }
 warn() { printf "${YELLOW}!${NC}  %s\n" "$*"; }
 
-REPO_ROOT="$(pwd)"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CRATE_DIR="$REPO_ROOT/lilith-zero"
 BIN_DIR="$HOME/.local/bin"
 HOOKS_DIR="$REPO_ROOT/.github/hooks"
