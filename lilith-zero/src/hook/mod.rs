@@ -151,6 +151,15 @@ impl HookHandler {
 
     /// Handle a hook input, returning the appropriate process exit code.
     pub async fn handle(&mut self, input: HookInput) -> Result<i32> {
+        self.handle_with_reason(input).await.map(|(code, _)| code)
+    }
+
+    /// Handle a hook input, returning the exit code and the deny reason (if blocked).
+    ///
+    /// The reason is extracted from the Cedar `@reason` or `@error` annotation of the
+    /// matching forbid policy. Used by the Copilot Studio webhook to populate the `reason`
+    /// field of the `AnalyzeToolExecutionResponse`.
+    pub async fn handle_with_reason(&mut self, input: HookInput) -> Result<(i32, Option<String>)> {
         // Sanitize the session ID before use: it may originate from an untrusted
         // JSON payload (Claude Code hook input, Copilot Studio conversationId).
         // Using the raw value would allow control characters or path separators
@@ -178,20 +187,20 @@ impl HookHandler {
             self.perform_silent_handshake().await?;
         }
 
-        // D. Decide exit code based on event
-        let exit_code = match input.hook_event_name.as_str() {
+        // D. Decide exit code and reason based on event
+        let (exit_code, reason) = match input.hook_event_name.as_str() {
             "PreToolUse" => self.handle_pre_tool(&input).await?,
             "PostToolUse" => self.handle_post_tool(&input).await?,
             _ => {
                 tracing::warn!("Unknown hook event: {}", input.hook_event_name);
-                0 // Unknown events are allowed by default
+                (0, None) // Unknown events are allowed by default
             }
         };
 
         // E. Save session state through the locked handle.
         lock.save(&self.core.export_state())?;
 
-        Ok(exit_code)
+        Ok((exit_code, reason))
     }
 
     async fn perform_silent_handshake(&mut self) -> Result<()> {
@@ -207,7 +216,7 @@ impl HookHandler {
         Ok(())
     }
 
-    async fn handle_pre_tool(&mut self, input: &HookInput) -> Result<i32> {
+    async fn handle_pre_tool(&mut self, input: &HookInput) -> Result<(i32, Option<String>)> {
         let tool_name = input.tool_name.as_deref().unwrap_or("unknown");
         let tool_args = input.tool_input.clone().unwrap_or(serde_json::Value::Null);
 
@@ -265,20 +274,20 @@ impl HookHandler {
         match decision {
             SecurityDecision::Deny { reason, .. } => {
                 eprintln!("Blocked action: {}", reason);
-                Ok(2) // Claude Code "Block" exit code
+                Ok((2, Some(reason))) // Claude Code "Block" exit code, reason for diagnostics
             }
             SecurityDecision::AllowWithTransforms {
                 taints_to_add: _, ..
             } => {
                 // If the evaluator adds taints during REQUEST (e.g. static rule), apply them now.
                 // Normally evaluate() updates the internal core state too, but let's be explicit.
-                Ok(0)
+                Ok((0, None))
             }
-            _ => Ok(0),
+            _ => Ok((0, None)),
         }
     }
 
-    async fn handle_post_tool(&mut self, input: &HookInput) -> Result<i32> {
+    async fn handle_post_tool(&mut self, input: &HookInput) -> Result<(i32, Option<String>)> {
         let tool_name = input
             .tool_name
             .clone()
@@ -316,6 +325,6 @@ impl HookHandler {
             }),
         );
 
-        Ok(0)
+        Ok((0, None))
     }
 }

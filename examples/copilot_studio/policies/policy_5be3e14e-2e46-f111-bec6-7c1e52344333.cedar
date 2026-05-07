@@ -59,7 +59,7 @@ permit(
 // These patterns can bypass network controls even when the lethal trifecta
 // is active, so they are blocked unconditionally.
 @id("guardrail:code_injection")
-@error("Blocked: Python code contains prohibited patterns (socket / shell execution)")
+@reason("Blocked: Python code contains prohibited patterns (socket / shell execution)")
 forbid(
     principal,
     action == Action::"tools/call",

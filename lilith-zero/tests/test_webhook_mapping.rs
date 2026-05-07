@@ -40,7 +40,10 @@ mod webhook_mapping {
     fn unknown_agent_id_finds_no_policy() {
         let state = make_state();
         let cedar_policy = state.cedar_policies.get("unknown-id").cloned();
-        assert!(cedar_policy.is_none(), "expected no policy for unknown agent ID");
+        assert!(
+            cedar_policy.is_none(),
+            "expected no policy for unknown agent ID"
+        );
     }
 
     #[tokio::test]
@@ -67,6 +70,9 @@ mod webhook_mapping {
 
         let exit_code = handler.handle(input).await.unwrap();
         // An empty Cedar policy set has no permit rules, so Cedar denies by default.
-        assert_ne!(exit_code, 0, "expected denial exit code for empty Cedar policy (no permit rules)");
+        assert_ne!(
+            exit_code, 0,
+            "expected denial exit code for empty Cedar policy (no permit rules)"
+        );
     }
 }
