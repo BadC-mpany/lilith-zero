@@ -103,28 +103,108 @@ python3 examples/copilot_studio/extract_tools.py --environment <ENV_ID>
 
 ---
 
-## 8. Redeployment Workflow (Updating Tools)
+## 8. Policy Updates and Hot Reload
 
-When you update tools in Copilot Studio, follow this exact sequence to regenerate policies and update the Azure deployment:
+### Initial Setup: Enable Hot Reload
+
+Set the admin token once in Azure App Settings (required to use `/admin/reload-policies`):
+
+```bash
+az webapp config appsettings set \
+  --name lilith-zero-webhook \
+  --resource-group lilith-zero-rg \
+  --settings LILITH_ZERO_ADMIN_TOKEN="$(openssl rand -hex 32)"
+```
+
+Store the token value — you need it to call the reload endpoint. Get the token from the Azure App Setting LILITH_ZERO_ADMIN_TOKEN.
+
+Also configure the policy directory to use Azure Files (survives restarts, no rebuild needed):
+
+```bash
+az webapp config appsettings set \
+  --name lilith-zero-webhook \
+  --resource-group lilith-zero-rg \
+  --settings LILITH_ZERO_POLICY_DIR=/home/policies
+```
+
+### Fast Path: Policy-Only Update (No Docker rebuild, ~5 seconds)
+
+When only policy files change:
 
 ```bash
 # 1. Extract tools and generate Cedar policies
-# Replace <ENV_ID> with your Power Platform Environment ID
 python3 examples/copilot_studio/extract_tools.py --environment <ENV_ID>
 
-# 2. Rebuild the Rust core with webhook features
+# 2. Copy new policy files to Azure Files (persistent /home mount)
+az webapp ssh --name lilith-zero-webhook --resource-group lilith-zero-rg \
+  --command "mkdir -p /home/policies"
+# Upload via az storage or SCP depending on your setup:
+az storage file upload \
+  --account-name <STORAGE_ACCOUNT> \
+  --share-name <FILE_SHARE> \
+  --source examples/copilot_studio/policies/policy_<AGENT_ID>.cedar \
+  --path policies/policy_<AGENT_ID>.cedar
+
+# 3. Trigger in-memory reload (zero downtime, ~5-20ms)
+curl -X POST https://lilith-zero.badcompany.xyz/admin/reload-policies \
+  -H "X-Admin-Token: $LILITH_ZERO_ADMIN_TOKEN"
+# Response: {"reloaded":2,"elapsed_ms":8,"has_legacy":false}
+```
+
+**Result**: New policy is active immediately. No restart, no dropped requests.
+
+### Full Rebuild: Binary or Config Changes
+
+Only needed when the Rust source changes (not for policy updates):
+
+```bash
+# 1. Rebuild the Rust core with webhook features
 cd lilith-zero && cargo build --release --features webhook && cd ..
 
-# 3. Build and Login to ACR
+# 2. Build and Login to ACR
 docker build -t lilithzerocr.azurecr.io/lilith-zero:latest .
 az acr login --name lilithzerocr
 
-# 4. Push to ACR
+# 3. Push to ACR
 docker push lilithzerocr.azurecr.io/lilith-zero:latest
 
-# 5. Restart Azure Web App to apply changes
+# 4. Restart Azure Web App
 az webapp restart --name lilith-zero-webhook --resource-group lilith-zero-rg
 ```
+
+### Optional: Automatic Policy Refresh
+
+To pick up file changes automatically on a timer (no manual reload needed):
+
+```bash
+az webapp config appsettings set \
+  --name lilith-zero-webhook \
+  --resource-group lilith-zero-rg \
+  --settings LILITH_ZERO_POLICY_REFRESH_SECS=3600   # refresh every hour
+```
+
+### Admin Endpoints Reference
+
+| Endpoint | Method | Auth | Purpose |
+|----------|--------|------|---------|
+| `/admin/reload-policies` | POST | `X-Admin-Token` | Atomically reload all policy files from disk |
+| `/admin/status` | GET | `X-Admin-Token` | Policy count, last reload time, elapsed ms |
+
+**Security**: Admin endpoints return HTTP 403 when `LILITH_ZERO_ADMIN_TOKEN` is not set.
+The header `X-Admin-Token` is separate from the Copilot Studio Bearer token.
+
+### Optional: Lazy Loading
+
+When many agents share one deployment but only a subset are active:
+
+```bash
+az webapp config appsettings set \
+  --name lilith-zero-webhook \
+  --resource-group lilith-zero-rg \
+  --settings LILITH_ZERO_POLICY_LAZY_LOAD=true
+```
+
+With lazy loading, unknown agent IDs trigger a disk read on first access. Subsequent requests use the cached in-memory copy.
 
 ---
 
@@ -180,3 +260,20 @@ az webapp log tail --name <APP_NAME> --resource-group <RG_NAME>
 ```
 > [!TIP]
 > If the logs repeat the same entries, Azure is showing the recent buffer. Trigger a new tool call to push the buffer forward.
+
+
+
+
+
+
+### Build and push to Azure
+cd lilith-zero && cargo build --release --features webhook && cd ..
+docker build -t lilithzerocr.azurecr.io/lilith-zero:latest .    
+az acr login --name lilithzerocr                                                                                                                                       
+docker push lilithzerocr.azurecr.io/lilith-zero:latest       
+az webapp config appsettings set --name lilith-zero-webhook --resource-group lilith-zero-rg --settings LILITH_ZERO_ADMIN_TOKEN="$ADMIN_TOKEN"                          
+
+### Trigger reload (should return {"reloaded":N,"elapsed_ms":M,...})                                                                                                  
+curl -X POST https://lilith-zero.badcompany.xyz/admin/reload-policies -H "X-Admin-Token: $ADMIN_TOKEN"
+### Check status                                                                                                                                                      
+curl https://lilith-zero.badcompany.xyz/admin/status -H "X-Admin-Token: $ADMIN_TOKEN"

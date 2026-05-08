@@ -13,6 +13,7 @@ use lilith_zero::engine_core::persistence::PersistenceLayer;
 use lilith_zero::hook::HookHandler;
 use lilith_zero::server::auth::NoAuthAuthenticator;
 use lilith_zero::server::copilot_studio::{to_hook_input, AnalyzeToolExecutionRequest};
+use lilith_zero::server::policy_store::PolicyStore;
 use lilith_zero::server::webhook::WebhookState;
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -91,14 +92,14 @@ fn create_webhook_state(
         session_storage_dir: storage_dir,
         ..Default::default()
     };
-    let mut cedar_policies = std::collections::HashMap::new();
-    cedar_policies.insert(TEST_AGENT_ID.to_string(), Arc::new(cedar_policy));
+    let mut cedar_map = std::collections::HashMap::new();
+    cedar_map.insert(TEST_AGENT_ID.to_string(), Arc::new(cedar_policy));
     WebhookState {
         config: Arc::new(config),
         audit_log_path: None,
         auth: Arc::new(NoAuthAuthenticator),
-        policy: None,
-        cedar_policies,
+        policy_store: Arc::new(PolicyStore::from_map(cedar_map, None, None, false)),
+        admin_token: None,
     }
 }
 
@@ -112,15 +113,6 @@ fn run_tool(
     conversation_id: &str,
     input_values: serde_json::Value,
 ) -> i32 {
-    let mut handler = HookHandler::with_policy_and_persistence(
-        state.config.clone(),
-        None,
-        None,
-        state.cedar_policies.get(TEST_AGENT_ID).cloned(),
-        PersistenceLayer::new(storage_dir),
-    )
-    .expect("handler creation");
-
     let payload = build_payload(
         tool_name,
         tool_id,
@@ -132,10 +124,22 @@ fn run_tool(
         serde_json::from_value(payload).expect("valid payload");
     let hook_input = to_hook_input(&request);
 
+    let policy_store = state.policy_store.clone();
+    let config = state.config.clone();
+
     let runtime = tokio::runtime::Runtime::new().expect("runtime");
-    runtime
-        .block_on(handler.handle(hook_input))
-        .expect("handle")
+    runtime.block_on(async move {
+        let cedar_policy = policy_store.get(TEST_AGENT_ID).await;
+        let mut handler = HookHandler::with_policy_and_persistence(
+            config,
+            None,
+            None,
+            cedar_policy,
+            PersistenceLayer::new(storage_dir),
+        )
+        .expect("handler creation");
+        handler.handle(hook_input).await.expect("handle")
+    })
 }
 
 // ============================================================================

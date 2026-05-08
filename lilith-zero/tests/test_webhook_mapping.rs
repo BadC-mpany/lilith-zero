@@ -2,6 +2,7 @@
 mod webhook_mapping {
     use lilith_zero::config::Config;
     use lilith_zero::server::auth::NoAuthAuthenticator;
+    use lilith_zero::server::policy_store::PolicyStore;
     use lilith_zero::server::webhook::WebhookState;
     use std::collections::HashMap;
     use std::path::PathBuf;
@@ -12,8 +13,8 @@ mod webhook_mapping {
 
     fn make_state() -> WebhookState {
         let policy_set = cedar_policy::PolicySet::from_str("").unwrap();
-        let mut cedar_policies = HashMap::new();
-        cedar_policies.insert(AGENT_ID.to_string(), Arc::new(policy_set));
+        let mut cedar_map = HashMap::new();
+        cedar_map.insert(AGENT_ID.to_string(), Arc::new(policy_set));
 
         let config = Config {
             session_storage_dir: PathBuf::from("/tmp/lilith-webhook-test"),
@@ -24,22 +25,22 @@ mod webhook_mapping {
             config: Arc::new(config),
             audit_log_path: None,
             auth: Arc::new(NoAuthAuthenticator),
-            policy: None,
-            cedar_policies,
+            policy_store: Arc::new(PolicyStore::from_map(cedar_map, None, None, false)),
+            admin_token: None,
         }
     }
 
-    #[test]
-    fn known_agent_id_finds_policy() {
+    #[tokio::test]
+    async fn known_agent_id_finds_policy() {
         let state = make_state();
-        let cedar_policy = state.cedar_policies.get(AGENT_ID).cloned();
+        let cedar_policy = state.policy_store.get(AGENT_ID).await;
         assert!(cedar_policy.is_some(), "expected policy for known agent ID");
     }
 
-    #[test]
-    fn unknown_agent_id_finds_no_policy() {
+    #[tokio::test]
+    async fn unknown_agent_id_finds_no_policy() {
         let state = make_state();
-        let cedar_policy = state.cedar_policies.get("unknown-id").cloned();
+        let cedar_policy = state.policy_store.get("unknown-id").await;
         assert!(
             cedar_policy.is_none(),
             "expected no policy for unknown agent ID"
@@ -49,7 +50,7 @@ mod webhook_mapping {
     #[tokio::test]
     async fn known_agent_empty_policy_allows() {
         let state = make_state();
-        let cedar_policy = state.cedar_policies.get(AGENT_ID).cloned();
+        let cedar_policy = state.policy_store.get(AGENT_ID).await;
 
         let mut handler = lilith_zero::hook::HookHandler::with_policy(
             state.config.clone(),

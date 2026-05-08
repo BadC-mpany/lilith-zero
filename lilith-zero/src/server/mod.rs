@@ -22,4 +22,5 @@
 
 pub mod auth;
 pub mod copilot_studio;
+pub mod policy_store;
 pub mod webhook;

@@ -122,6 +122,21 @@ pub struct Config {
     /// Default: 86400 (24 hours). Set to 0 to disable automatic cleanup.
     /// This is configurable (not hardcoded) to allow ops teams to tune retention.
     pub session_ttl_secs: u64,
+
+    /// Bearer token required for admin endpoints (`/admin/reload-policies`, `/admin/status`).
+    /// Set via `LILITH_ZERO_ADMIN_TOKEN`. When `None`, admin endpoints return 403.
+    pub policy_admin_token: Option<String>,
+
+    /// When `true`, unknown agent IDs trigger a disk load on first access instead of
+    /// returning `None` immediately. Useful when many agents share one deployment but
+    /// only a subset are active at any time. Set via `LILITH_ZERO_POLICY_LAZY_LOAD`.
+    pub policy_lazy_load: bool,
+
+    /// Background policy refresh interval in seconds. When set, Lilith re-reads the
+    /// policy directory on this cadence so file changes are picked up automatically
+    /// without an explicit admin reload. Set via `LILITH_ZERO_POLICY_REFRESH_SECS`.
+    /// `None` disables automatic refresh (explicit reload only).
+    pub policy_refresh_secs: Option<u64>,
 }
 
 impl Config {
@@ -187,6 +202,13 @@ impl Config {
                 .ok()
                 .and_then(|v| v.parse::<u64>().ok())
                 .unwrap_or(86400), // 24 hours default
+            policy_admin_token: env::var("LILITH_ZERO_ADMIN_TOKEN").ok(),
+            policy_lazy_load: env::var("LILITH_ZERO_POLICY_LAZY_LOAD")
+                .map(|v| v.to_lowercase() == "true" || v == "1")
+                .unwrap_or(false),
+            policy_refresh_secs: env::var("LILITH_ZERO_POLICY_REFRESH_SECS")
+                .ok()
+                .and_then(|v| v.parse::<u64>().ok()),
         })
     }
 
@@ -228,6 +250,9 @@ impl Default for Config {
             lean_logs: false,
             session_storage_dir: PathBuf::from(home).join(".lilith").join("sessions"),
             session_ttl_secs: 86400,
+            policy_admin_token: None,
+            policy_lazy_load: false,
+            policy_refresh_secs: None,
         }
     }
 }

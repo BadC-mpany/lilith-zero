@@ -42,6 +42,7 @@ use tokio::net::TcpListener;
 use lilith_zero::config::Config;
 use lilith_zero::engine_core::models::PolicyDefinition;
 use lilith_zero::server::auth::{NoAuthAuthenticator, SharedSecretAuthenticator};
+use lilith_zero::server::policy_store::PolicyStore;
 use lilith_zero::server::webhook::{build_router, WebhookState};
 
 // ---------------------------------------------------------------------------
@@ -85,11 +86,16 @@ async fn start_test_server(state: WebhookState) -> String {
     format!("http://127.0.0.1:{}", addr.port())
 }
 
-/// Parse a policy YAML file into a shared Arc — mirrors what run_webhook_server does.
-fn load_test_policy(policy_path: &std::path::Path) -> Option<Arc<PolicyDefinition>> {
+/// Parse a policy YAML file into a `PolicyStore` (legacy path).
+fn policy_store_from_yaml(policy_path: &std::path::Path) -> Arc<PolicyStore> {
     let yaml = std::fs::read_to_string(policy_path).expect("test policy must be readable");
     let pol: PolicyDefinition = serde_yaml_ng::from_str(&yaml).expect("test policy must parse");
-    Some(Arc::new(pol))
+    Arc::new(PolicyStore::from_map(
+        std::collections::HashMap::new(),
+        Some(Arc::new(pol)),
+        None,
+        false,
+    ))
 }
 
 /// Build a `WebhookState` with `NoAuthAuthenticator` — use for all tests
@@ -102,14 +108,14 @@ fn test_state_no_auth(policy_path: &std::path::Path) -> (WebhookState, TempDir) 
         policies_yaml_path: Some(policy_path.to_path_buf()),
         ..Config::default()
     };
-    config.session_storage_dir = session_storage.clone();
+    config.session_storage_dir = session_storage;
 
     let state = WebhookState {
         config: Arc::new(config),
         audit_log_path: None,
         auth: Arc::new(NoAuthAuthenticator),
-        policy: load_test_policy(policy_path),
-        cedar_policies: std::collections::HashMap::new(),
+        policy_store: policy_store_from_yaml(policy_path),
+        admin_token: None,
     };
 
     (state, temp_dir)
@@ -119,20 +125,19 @@ fn test_state_no_auth(policy_path: &std::path::Path) -> (WebhookState, TempDir) 
 /// rejection tests only (we never need to generate a valid token client-side).
 fn test_state_with_shared_secret_auth(policy_path: &std::path::Path) -> (WebhookState, TempDir) {
     let temp_dir = TempDir::new().expect("failed to create temp session dir");
-    let session_storage = temp_dir.path().to_path_buf();
 
     let mut config = Config {
         policies_yaml_path: Some(policy_path.to_path_buf()),
         ..Config::default()
     };
-    config.session_storage_dir = session_storage.clone();
+    config.session_storage_dir = temp_dir.path().to_path_buf();
 
     let state = WebhookState {
         config: Arc::new(config),
         audit_log_path: None,
         auth: Arc::new(SharedSecretAuthenticator::new("test-webhook-secret", None)),
-        policy: load_test_policy(policy_path),
-        cedar_policies: std::collections::HashMap::new(),
+        policy_store: policy_store_from_yaml(policy_path),
+        admin_token: None,
     };
 
     (state, temp_dir)
@@ -233,8 +238,8 @@ async fn test_webhook_validate_returns_not_successful_when_no_policy() {
         config: Arc::new(config),
         audit_log_path: None,
         auth: Arc::new(NoAuthAuthenticator),
-        policy: None,
-        cedar_policies: std::collections::HashMap::new(),
+        policy_store: Arc::new(PolicyStore::empty()),
+        admin_token: None,
     };
     let base = start_test_server(state).await;
     let client = Client::new();
@@ -513,8 +518,8 @@ async fn test_webhook_analyze_no_policy_blocks_all_fail_closed() {
         config: Arc::new(config),
         audit_log_path: None,
         auth: Arc::new(NoAuthAuthenticator),
-        policy: None,
-        cedar_policies: std::collections::HashMap::new(),
+        policy_store: Arc::new(PolicyStore::empty()),
+        admin_token: None,
     };
     let base = start_test_server(state).await;
     let client = Client::new();
@@ -987,8 +992,8 @@ async fn test_webhook_shared_secret_valid_token_accepted_by_validate() {
         config: Arc::new(config),
         audit_log_path: None,
         auth: Arc::new(SharedSecretAuthenticator::new(secret, None)),
-        policy: load_test_policy(policy.path()),
-        cedar_policies: std::collections::HashMap::new(),
+        policy_store: policy_store_from_yaml(policy.path()),
+        admin_token: None,
     };
     let base = start_test_server(state).await;
     let client = Client::new();
@@ -1036,8 +1041,8 @@ async fn test_webhook_shared_secret_valid_token_accepted_by_analyze() {
         config: Arc::new(config),
         audit_log_path: None,
         auth: Arc::new(SharedSecretAuthenticator::new(secret, None)),
-        policy: load_test_policy(policy.path()),
-        cedar_policies: std::collections::HashMap::new(),
+        policy_store: policy_store_from_yaml(policy.path()),
+        admin_token: None,
     };
     let base = start_test_server(state).await;
     let client = Client::new();
@@ -1099,9 +1104,9 @@ async fn test_webhook_analyze_multi_tenant_cedar_isolation() {
     let policy_a = Arc::new(cedar_policy::PolicySet::from_str(cedar_a).unwrap());
     let policy_b = Arc::new(cedar_policy::PolicySet::from_str(cedar_b).unwrap());
 
-    let mut cedar_policies = std::collections::HashMap::new();
-    cedar_policies.insert("agent_a".to_string(), policy_a);
-    cedar_policies.insert("agent_b".to_string(), policy_b);
+    let mut cedar_map = std::collections::HashMap::new();
+    cedar_map.insert("agent_a".to_string(), policy_a);
+    cedar_map.insert("agent_b".to_string(), policy_b);
 
     let config = Config {
         session_storage_dir: session_storage.clone(),
@@ -1112,8 +1117,8 @@ async fn test_webhook_analyze_multi_tenant_cedar_isolation() {
         config: Arc::new(config),
         audit_log_path: None,
         auth: Arc::new(NoAuthAuthenticator),
-        policy: None,
-        cedar_policies,
+        policy_store: Arc::new(PolicyStore::from_map(cedar_map, None, None, false)),
+        admin_token: None,
     };
 
     let base = start_test_server(state).await;
