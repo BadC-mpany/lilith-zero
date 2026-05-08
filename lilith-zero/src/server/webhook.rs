@@ -110,25 +110,21 @@ pub struct WebhookState {
 
 /// Build the hardened axum [`Router`] with all Copilot Studio webhook routes.
 ///
-/// Layers applied (outermost → innermost):
-/// 1. [`HandleErrorLayer`] — converts tower errors (timeout) to JSON responses.
-/// 2. [`TimeoutLayer`] — enforces [`EVALUATION_TIMEOUT_MS`] per request.
-/// 3. [`DefaultBodyLimit`] — rejects bodies > [`REQUEST_BODY_LIMIT_BYTES`].
+/// Layer strategy:
+/// - Copilot Studio routes (`/validate`, `/analyze-tool-execution`) use `route_layer`
+///   so the 900 ms `TimeoutLayer` + `DefaultBodyLimit` apply only to those routes.
+/// - Admin routes (`/admin/*`) are intentionally outside the evaluation timeout:
+///   policy reload and upload may take several seconds on Azure Files.
 pub fn build_router(state: WebhookState) -> Router {
     Router::new()
+        // Copilot Studio routes — gated by evaluation timeout and body limit.
         .route("/", get(handle_validate).post(handle_validate))
         .route("/validate", get(handle_validate).post(handle_validate))
         .route(
             "/analyze-tool-execution",
             post(handle_analyze_tool_execution),
         )
-        // Admin endpoints — no Copilot Studio auth, separate X-Admin-Token header.
-        // Excluded from the evaluation timeout layer (reload can take up to a few seconds).
-        .route("/admin/reload-policies", post(handle_admin_reload))
-        .route("/admin/upload-policy", post(handle_admin_upload))
-        .route("/admin/status", get(handle_admin_status))
-        .with_state(state)
-        .layer(
+        .route_layer(
             ServiceBuilder::new()
                 .layer(HandleErrorLayer::new(handle_layer_error))
                 .layer(TimeoutLayer::new(Duration::from_millis(
@@ -136,6 +132,11 @@ pub fn build_router(state: WebhookState) -> Router {
                 )))
                 .layer(DefaultBodyLimit::max(REQUEST_BODY_LIMIT_BYTES)),
         )
+        // Admin routes — separate X-Admin-Token auth, no evaluation timeout.
+        .route("/admin/reload-policies", post(handle_admin_reload))
+        .route("/admin/upload-policy", post(handle_admin_upload))
+        .route("/admin/status", get(handle_admin_status))
+        .with_state(state)
 }
 
 /// Convert tower layer errors (timeout, body-limit overflow) into JSON responses.
@@ -424,6 +425,7 @@ fn check_admin_token(state: &WebhookState, headers: &HeaderMap) -> Result<(), Re
 ///      -H "X-Admin-Token: $LILITH_ZERO_ADMIN_TOKEN"
 /// ```
 async fn handle_admin_reload(State(state): State<WebhookState>, headers: HeaderMap) -> Response {
+async fn handle_admin_reload(State(state): State<WebhookState>, headers: HeaderMap) -> Response {
     if let Err(resp) = check_admin_token(&state, &headers) {
         return resp;
     }
@@ -535,19 +537,44 @@ async fn handle_admin_upload(
     }
 
     let file_path = policy_dir.join(format!("{agent_id}.cedar"));
-    if let Err(e) = std::fs::write(&file_path, body) {
-        tracing::error!("Failed to write policy file '{}': {e}", file_path.display());
-        return (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({"error": "failed to write policy file", "detail": e.to_string()})),
-        )
-            .into_response();
-    }
+    let tmp_path = policy_dir.join(format!(".{agent_id}.cedar.tmp"));
+    let body_bytes = body.to_vec();
+    let agent_id_log = agent_id.clone();
+
+    // File I/O on a blocking thread to avoid stalling the async runtime.
+    // Atomic write: write to a temp file then rename so readers never see a partial file.
+    let io_result = tokio::task::spawn_blocking(move || {
+        std::fs::create_dir_all(&policy_dir)?;
+        std::fs::write(&tmp_path, &body_bytes)?;
+        std::fs::rename(&tmp_path, &file_path)?;
+        Ok::<std::path::PathBuf, std::io::Error>(file_path)
+    })
+    .await;
+
+    let final_path = match io_result {
+        Ok(Ok(p)) => p,
+        Ok(Err(e)) => {
+            tracing::error!("Failed to write policy file for '{}': {e}", agent_id_log);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error": "failed to write policy file", "detail": e.to_string()})),
+            )
+                .into_response();
+        }
+        Err(e) => {
+            tracing::error!("spawn_blocking panicked during policy file write: {e}");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error": "internal error during file write"})),
+            )
+                .into_response();
+        }
+    };
 
     tracing::info!(
         agent_id = %agent_id,
-        path = %file_path.display(),
-        "Admin upload: policy file written"
+        path = %final_path.display(),
+        "Admin upload: policy file written atomically"
     );
 
     // Reload in-memory state

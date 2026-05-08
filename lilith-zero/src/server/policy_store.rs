@@ -208,13 +208,15 @@ impl PolicyStore {
 
         // Phase 2: swap atomically
         let count = new_cedar.len();
-        {
+        let has_legacy = new_legacy.is_some();
+        let loaded_at = {
             let mut inner = self.inner.write().await;
             inner.cedar = new_cedar;
             inner.legacy = new_legacy;
             inner.loaded_at = Instant::now();
             inner.last_reload_ms = elapsed_ms;
-        }
+            inner.loaded_at
+        };
 
         tracing::info!(
             "PolicyStore: reloaded {} Cedar policy sets in {}ms",
@@ -224,8 +226,8 @@ impl PolicyStore {
 
         Ok(PolicyStoreStats {
             cedar_count: count,
-            has_legacy: false, // legacy not loaded from dir
-            loaded_at: Instant::now(),
+            has_legacy,
+            loaded_at,
             last_reload_ms: elapsed_ms,
         })
     }
@@ -235,54 +237,64 @@ impl PolicyStore {
     // -----------------------------------------------------------------------
 
     /// Double-checked lazy load for a single agent ID.
+    ///
+    /// File I/O and Cedar parsing run on a blocking thread so the async runtime
+    /// is never stalled during disk access.
     async fn lazy_load_agent(
         &self,
         agent_id: &str,
         dir: &Path,
     ) -> Option<Arc<cedar_policy::PolicySet>> {
-        let policy_set = {
-            // Try both naming conventions synchronously (cheap disk read)
-            let with_prefix = dir.join(format!("policy_{agent_id}.cedar"));
-            let without_prefix = dir.join(format!("{agent_id}.cedar"));
+        let agent_id_owned = agent_id.to_string();
+        let dir_owned = dir.to_path_buf();
+
+        // Disk read + Cedar parse on a blocking thread.
+        let blocking_result = tokio::task::spawn_blocking(move || {
+            let with_prefix = dir_owned.join(format!("policy_{agent_id_owned}.cedar"));
+            let without_prefix = dir_owned.join(format!("{agent_id_owned}.cedar"));
 
             let path = if with_prefix.exists() {
                 with_prefix
             } else if without_prefix.exists() {
                 without_prefix
             } else {
+                return Ok(None);
+            };
+
+            let content = std::fs::read_to_string(&path)
+                .map_err(|e| format!("read '{}': {e}", path.display()))?;
+            let ps = cedar_policy::PolicySet::from_str(&content)
+                .map_err(|e| format!("parse '{}': {e}", path.display()))?;
+            Ok::<Option<Arc<cedar_policy::PolicySet>>, String>(Some(Arc::new(ps)))
+        })
+        .await;
+
+        let policy_set = match blocking_result {
+            Ok(Ok(Some(ps))) => ps,
+            Ok(Ok(None)) => {
                 tracing::debug!(
                     "PolicyStore lazy-load: no Cedar file found for agent '{}'",
                     agent_id
                 );
                 return None;
-            };
-
-            match std::fs::read_to_string(&path) {
-                Ok(content) => match cedar_policy::PolicySet::from_str(&content) {
-                    Ok(ps) => Arc::new(ps),
-                    Err(e) => {
-                        tracing::error!(
-                            "PolicyStore lazy-load: failed to parse '{}': {}",
-                            path.display(),
-                            e
-                        );
-                        return None;
-                    }
-                },
-                Err(e) => {
-                    tracing::error!(
-                        "PolicyStore lazy-load: failed to read '{}': {}",
-                        path.display(),
-                        e
-                    );
-                    return None;
-                }
+            }
+            Ok(Err(e)) => {
+                tracing::error!("PolicyStore lazy-load failed for '{}': {}", agent_id, e);
+                return None;
+            }
+            Err(e) => {
+                tracing::error!(
+                    "PolicyStore lazy-load task panicked for '{}': {}",
+                    agent_id,
+                    e
+                );
+                return None;
             }
         };
 
         // Write lock: double-check then insert
         let mut inner = self.inner.write().await;
-        // Another task may have loaded this agent_id between our read-lock drop
+        // Another task may have inserted this agent_id between our read-lock drop
         // and write-lock acquire — return theirs to avoid a redundant overwrite.
         if let Some(existing) = inner.cedar.get(agent_id) {
             return Some(existing.clone());
