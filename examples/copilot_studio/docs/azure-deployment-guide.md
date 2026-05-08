@@ -260,3 +260,20 @@ az webapp log tail --name <APP_NAME> --resource-group <RG_NAME>
 ```
 > [!TIP]
 > If the logs repeat the same entries, Azure is showing the recent buffer. Trigger a new tool call to push the buffer forward.
+
+
+
+
+
+
+### Build and push to Azure
+cd lilith-zero && cargo build --release --features webhook && cd ..
+docker build -t lilithzerocr.azurecr.io/lilith-zero:latest .    
+az acr login --name lilithzerocr                                                                                                                                       
+docker push lilithzerocr.azurecr.io/lilith-zero:latest       
+az webapp config appsettings set --name lilith-zero-webhook --resource-group lilith-zero-rg --settings LILITH_ZERO_ADMIN_TOKEN="$ADMIN_TOKEN"                          
+
+### Trigger reload (should return {"reloaded":N,"elapsed_ms":M,...})                                                                                                  
+curl -X POST https://lilith-zero.badcompany.xyz/admin/reload-policies -H "X-Admin-Token: $ADMIN_TOKEN"
+### Check status                                                                                                                                                      
+curl https://lilith-zero.badcompany.xyz/admin/status -H "X-Admin-Token: $ADMIN_TOKEN"
