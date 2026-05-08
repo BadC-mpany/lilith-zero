@@ -1,15 +1,23 @@
 use bytes::BytesMut;
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use lilith_zero::engine_core::models::{PolicyDefinition, PolicyRule};
 use lilith_zero::mcp::codec::McpCodec;
-use lilith_zero::server::policy_store::PolicyStore;
 use lilith_zero::utils::policy_validator::PolicyValidator;
 use std::collections::HashMap;
-use std::io::Write as _;
-use std::str::FromStr;
-use std::sync::Arc;
-use tokio::runtime::Runtime;
 use tokio_util::codec::Decoder;
+
+#[cfg(feature = "webhook")]
+use criterion::BenchmarkId;
+#[cfg(feature = "webhook")]
+use lilith_zero::server::policy_store::PolicyStore;
+#[cfg(feature = "webhook")]
+use std::io::Write as _;
+#[cfg(feature = "webhook")]
+use std::str::FromStr;
+#[cfg(feature = "webhook")]
+use std::sync::Arc;
+#[cfg(feature = "webhook")]
+use tokio::runtime::Runtime;
 
 // ---------------------------------------------------------------------------
 // Codec
@@ -77,6 +85,7 @@ fn bench_policy_validator(c: &mut Criterion) {
 // The <1 s e2e budget is dominated by network; these should all be <1 ms.
 // ---------------------------------------------------------------------------
 
+#[cfg(feature = "webhook")]
 const SAMPLE_CEDAR: &str = r#"
 permit(
     principal,
@@ -87,6 +96,7 @@ permit(
 };
 "#;
 
+#[cfg(feature = "webhook")]
 /// `PolicyStore::get` — the per-request hot path.
 ///
 /// This is an uncontested async RwLock read + HashMap lookup.
@@ -109,6 +119,7 @@ fn bench_policy_store_get(c: &mut Criterion) {
     });
 }
 
+#[cfg(feature = "webhook")]
 /// `PolicyStore::reload` — full disk-read + parse + atomic swap.
 ///
 /// Parsing happens outside the write lock; the lock is held for microseconds.
@@ -137,6 +148,7 @@ fn bench_policy_store_reload(c: &mut Criterion) {
     });
 }
 
+#[cfg(feature = "webhook")]
 /// `PolicyStore::reload` with varying policy counts — measures parse scaling.
 fn bench_policy_store_reload_scaling(c: &mut Criterion) {
     let rt = Runtime::new().unwrap();
@@ -165,6 +177,7 @@ fn bench_policy_store_reload_scaling(c: &mut Criterion) {
     group.finish();
 }
 
+#[cfg(feature = "webhook")]
 /// Concurrent `PolicyStore::get` — simulates N readers hitting the store simultaneously.
 ///
 /// This validates that the RwLock doesn't become a bottleneck under concurrency.
@@ -202,6 +215,10 @@ fn bench_policy_store_concurrent_get(c: &mut Criterion) {
     group.finish();
 }
 
+#[cfg(not(feature = "webhook"))]
+criterion_group!(benches, bench_codec_decode, bench_policy_validator);
+
+#[cfg(feature = "webhook")]
 criterion_group!(
     benches,
     bench_codec_decode,
@@ -211,4 +228,5 @@ criterion_group!(
     bench_policy_store_reload_scaling,
     bench_policy_store_concurrent_get,
 );
+
 criterion_main!(benches);
