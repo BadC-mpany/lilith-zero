@@ -745,91 +745,86 @@ async fn run_webhook_server(
         }
     };
 
-    // Parse the policy once at startup so each request doesn't pay a disk read.
-    let mut policy = None;
-    let mut cedar_policies = std::collections::HashMap::new();
+    use lilith_zero::server::policy_store::PolicyStore;
 
-    if let Some(ref path) = config.policies_yaml_path {
+    let lazy_load = config.policy_lazy_load;
+    let refresh_secs = config.policy_refresh_secs;
+    let admin_token = config.policy_admin_token.clone();
+
+    // Build the PolicyStore from the configured policy path.
+    let policy_store = if let Some(ref path) = config.policies_yaml_path {
         if path.is_dir() {
-            let mut count = 0;
-            if let Ok(entries) = std::fs::read_dir(path) {
-                for entry in entries.flatten() {
-                    let path = entry.path();
-                    if path.extension().is_some_and(|ext| ext == "cedar") {
-                        if let Some(file_stem) = path.file_stem().and_then(|s| s.to_str()) {
-                            let agent_id = if file_stem.starts_with("policy_") {
-                                file_stem
-                                    .strip_prefix("policy_")
-                                    .expect("invariant: starts_with('policy_') check passed")
-                            } else {
-                                file_stem
-                            };
-                            let content = std::fs::read_to_string(&path).unwrap_or_else(|e| {
-                                panic!("Cannot read Cedar policy '{}': {e}", path.display())
-                            });
-                            let policy_set = cedar_policy::PolicySet::from_str(&content)
-                                .unwrap_or_else(|e| {
-                                    panic!("Cannot parse Cedar policy '{}': {e}", path.display())
-                                });
-                            cedar_policies.insert(agent_id.to_string(), Arc::new(policy_set));
-                            count += 1;
-                        }
-                    }
-                }
-            }
-            tracing::info!(
-                "Loaded {} Cedar policy sets from directory {}",
-                count,
-                path.display()
-            );
-        } else if path.extension().is_some_and(|ext| ext == "cedar") {
-            let content = std::fs::read_to_string(path)
-                .map_err(|e| format!("Cannot read Cedar policy '{}': {e}", path.display()))?;
-            let policy_set = cedar_policy::PolicySet::from_str(&content)
-                .map_err(|e| format!("Cannot parse Cedar policy '{}': {e}", path.display()))?;
-
-            let file_stem = path
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .expect("invariant: .cedar file must have valid UTF-8 stem");
-            let agent_id = if file_stem.starts_with("policy_") {
-                file_stem
-                    .strip_prefix("policy_")
-                    .expect("invariant: starts_with('policy_') check passed")
-            } else {
-                file_stem
-            };
-
-            tracing::info!(
-                "Cedar policy set loaded at startup for agent_id {} ({} policies)",
-                agent_id,
-                policy_set.policies().collect::<Vec<_>>().len()
-            );
-            cedar_policies.insert(agent_id.to_string(), Arc::new(policy_set));
+            PolicyStore::load_from_dir(path.clone(), lazy_load)
+                .await
+                .map_err(|e| format!("Failed to load policies from '{}': {e}", path.display()))?
         } else {
+            // Single file: Cedar or YAML. Wrap in a directory-like store.
             let content = std::fs::read_to_string(path)
                 .map_err(|e| format!("Cannot read policy '{}': {e}", path.display()))?;
-            let pol: lilith_zero::engine_core::models::PolicyDefinition =
-                serde_yaml_ng::from_str(&content)
-                    .map_err(|e| format!("Cannot parse policy '{}': {e}", path.display()))?;
-            tracing::info!(
-                "Policy '{}' loaded at startup ({} static rules, {} taint rules)",
-                pol.name,
-                pol.static_rules.len(),
-                pol.taint_rules.len()
-            );
-            policy = Some(Arc::new(pol));
+
+            if path.extension().is_some_and(|ext| ext == "cedar") {
+                let ps = cedar_policy::PolicySet::from_str(&content)
+                    .map_err(|e| format!("Cannot parse Cedar policy '{}': {e}", path.display()))?;
+                let stem = path
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .expect("invariant: .cedar file must have valid UTF-8 stem");
+                let agent_id = stem.strip_prefix("policy_").unwrap_or(stem);
+                let mut map = std::collections::HashMap::new();
+                map.insert(agent_id.to_string(), Arc::new(ps));
+                PolicyStore::from_map(map, None, path.parent().map(|p| p.to_path_buf()), lazy_load)
+            } else {
+                let pol: lilith_zero::engine_core::models::PolicyDefinition =
+                    serde_yaml_ng::from_str(&content)
+                        .map_err(|e| format!("Cannot parse policy '{}': {e}", path.display()))?;
+                tracing::info!(
+                    "Policy '{}' loaded ({} static rules, {} taint rules)",
+                    pol.name,
+                    pol.static_rules.len(),
+                    pol.taint_rules.len()
+                );
+                PolicyStore::from_map(
+                    std::collections::HashMap::new(),
+                    Some(Arc::new(pol)),
+                    path.parent().map(|p| p.to_path_buf()),
+                    lazy_load,
+                )
+            }
         }
     } else {
         tracing::warn!("No policy configured — all tool calls will be fail-closed denied");
+        PolicyStore::empty()
+    };
+
+    let policy_store = Arc::new(policy_store);
+
+    // Optional background refresh: re-read policy directory on a timer.
+    if let Some(interval_secs) = refresh_secs {
+        let store = policy_store.clone();
+        tokio::spawn(async move {
+            let mut ticker =
+                tokio::time::interval(std::time::Duration::from_secs(interval_secs));
+            ticker.tick().await; // skip the immediate tick
+            loop {
+                ticker.tick().await;
+                match store.reload().await {
+                    Ok(s) => tracing::info!(
+                        "Background policy refresh: {} policy sets in {}ms",
+                        s.cedar_count,
+                        s.last_reload_ms
+                    ),
+                    Err(e) => tracing::warn!("Background policy refresh failed: {e}"),
+                }
+            }
+        });
     }
 
     let state = WebhookState {
         config: Arc::new(config),
         audit_log_path: audit_logs,
         auth,
-        policy,
-        cedar_policies,
+        policy_store,
+        admin_token,
     };
 
     serve(&bind, state).await?;

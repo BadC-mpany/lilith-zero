@@ -51,6 +51,7 @@ use super::copilot_studio::{
     error_codes, reason_codes, AnalyzeToolExecutionRequest, AnalyzeToolExecutionResponse,
     ValidationResponse, WebhookErrorResponse,
 };
+use super::policy_store::PolicyStore;
 use crate::hook::{HookHandler, HookInput};
 
 // ---------------------------------------------------------------------------
@@ -83,6 +84,10 @@ const EVALUATION_TIMEOUT_MS: u64 = 900;
 use crate::engine_core::persistence::PersistenceLayer;
 
 /// Immutable state shared across all webhook handler invocations.
+///
+/// `policy_store` is the only mutable part — it holds an `RwLock` internally
+/// and can be hot-reloaded via `POST /admin/reload-policies` without restarting
+/// the server or touching any other state.
 #[derive(Clone)]
 pub struct WebhookState {
     /// Runtime configuration (policy path, security level, etc.).
@@ -91,15 +96,11 @@ pub struct WebhookState {
     pub audit_log_path: Option<PathBuf>,
     /// JWT authenticator (no-auth / shared-secret / Entra ID).
     pub auth: Arc<dyn Authenticator>,
-    /// Policy parsed once at server startup. `None` means no policy configured
-    /// (all tool calls will be fail-closed denied by the engine).
-    ///
-    /// Pre-parsing avoids a blocking disk read + YAML parse on every request,
-    /// which would otherwise consume a significant fraction of the 900 ms
-    /// evaluation budget and risk triggering the timeout → Copilot Studio allow.
-    pub policy: Option<Arc<crate::engine_core::models::PolicyDefinition>>,
-    /// Native Cedar policy sets mapped by agent ID.
-    pub cedar_policies: std::collections::HashMap<String, Arc<cedar_policy::PolicySet>>,
+    /// Hot-reloadable policy store — Cedar policy sets keyed by agent ID,
+    /// plus an optional legacy YAML policy. Atomically swapped on reload.
+    pub policy_store: Arc<PolicyStore>,
+    /// Bearer token required for admin endpoints. `None` disables admin endpoints.
+    pub admin_token: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -120,6 +121,10 @@ pub fn build_router(state: WebhookState) -> Router {
             "/analyze-tool-execution",
             post(handle_analyze_tool_execution),
         )
+        // Admin endpoints — no Copilot Studio auth, separate X-Admin-Token header.
+        // Excluded from the evaluation timeout layer (reload can take up to a few seconds).
+        .route("/admin/reload-policies", post(handle_admin_reload))
+        .route("/admin/status", get(handle_admin_status))
         .with_state(state)
         .layer(
             ServiceBuilder::new()
@@ -189,10 +194,7 @@ async fn do_validate(state: &WebhookState, _headers: &HeaderMap) -> Response {
     // Real security enforcement happens in /analyze-tool-execution.
 
     // isSuccessful=true only when a policy was successfully parsed at startup.
-    // This is more accurate than checking whether the file path exists: if the
-    // policy failed to parse, the file might still be present but the server
-    // would be running in fail-closed deny-all mode without enforcing real rules.
-    let validation = if state.policy.is_some() || !state.cedar_policies.is_empty() {
+    let validation = if !state.policy_store.is_empty().await {
         ValidationResponse::ok()
     } else {
         ValidationResponse::not_ready("NO_POLICY_LOADED")
@@ -276,10 +278,11 @@ async fn do_analyze(
     }
 
     // 4. Evaluate through the security engine.
-    let cedar_policy = state.cedar_policies.get(agent_id).cloned();
+    let cedar_policy = state.policy_store.get(agent_id).await;
+    let legacy_policy = state.policy_store.get_legacy().await;
 
-    // If we have policies loaded but this agent_id isn't found, deny
-    if !state.cedar_policies.is_empty() && cedar_policy.is_none() {
+    // If policies are configured but this agent_id has no entry, deny (fail-closed).
+    if !state.policy_store.is_empty().await && cedar_policy.is_none() && legacy_policy.is_none() {
         tracing::warn!(agent_id = %agent_id, "Denying request: no policy found for agent");
         return (
             StatusCode::OK,
@@ -294,7 +297,7 @@ async fn do_analyze(
     let mut handler = match HookHandler::with_policy_and_persistence(
         state.config.clone(),
         state.audit_log_path.clone(),
-        state.policy.clone(),
+        legacy_policy,
         cedar_policy,
         PersistenceLayer::new(state.config.session_storage_dir.clone()),
     ) {
@@ -366,6 +369,121 @@ async fn do_analyze(
     };
 
     (StatusCode::OK, Json(response)).into_response()
+}
+
+// ---------------------------------------------------------------------------
+// Admin endpoints
+// ---------------------------------------------------------------------------
+
+/// Verify the `X-Admin-Token` header against the configured admin token.
+///
+/// Returns `Ok(())` when the token matches. Returns an HTTP 403 response when
+/// the token is wrong, missing, or when no admin token is configured.
+#[allow(clippy::result_large_err)]
+fn check_admin_token(state: &WebhookState, headers: &HeaderMap) -> Result<(), Response> {
+    let configured = match &state.admin_token {
+        Some(t) => t,
+        None => {
+            return Err((
+                StatusCode::FORBIDDEN,
+                Json(serde_json::json!({
+                    "error": "admin endpoints disabled",
+                    "detail": "set LILITH_ZERO_ADMIN_TOKEN to enable hot-reload"
+                })),
+            )
+                .into_response());
+        }
+    };
+
+    let provided = headers
+        .get("x-admin-token")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+
+    if provided != configured.as_str() {
+        return Err((
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({"error": "invalid admin token"})),
+        )
+            .into_response());
+    }
+
+    Ok(())
+}
+
+/// `POST /admin/reload-policies` — atomically reload all policy files from disk.
+///
+/// Requires `X-Admin-Token` header matching `LILITH_ZERO_ADMIN_TOKEN`.
+/// Returns the number of policies reloaded and elapsed milliseconds.
+///
+/// # Deployment usage
+/// ```bash
+/// curl -X POST https://your-app.azurewebsites.net/admin/reload-policies \
+///      -H "X-Admin-Token: $LILITH_ZERO_ADMIN_TOKEN"
+/// ```
+async fn handle_admin_reload(
+    State(state): State<WebhookState>,
+    headers: HeaderMap,
+) -> Response {
+    if let Err(resp) = check_admin_token(&state, &headers) {
+        return resp;
+    }
+
+    match state.policy_store.reload().await {
+        Ok(stats) => {
+            tracing::info!(
+                "Admin reload: {} Cedar policy sets reloaded in {}ms",
+                stats.cedar_count,
+                stats.last_reload_ms
+            );
+            (
+                StatusCode::OK,
+                Json(serde_json::json!({
+                    "reloaded": stats.cedar_count,
+                    "elapsed_ms": stats.last_reload_ms,
+                    "has_legacy": stats.has_legacy,
+                })),
+            )
+                .into_response()
+        }
+        Err(e) => {
+            tracing::error!("Admin reload failed: {e}");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "error": "reload failed",
+                    "detail": e.to_string(),
+                })),
+            )
+                .into_response()
+        }
+    }
+}
+
+/// `GET /admin/status` — return current policy store statistics.
+///
+/// Requires `X-Admin-Token` header matching `LILITH_ZERO_ADMIN_TOKEN`.
+async fn handle_admin_status(
+    State(state): State<WebhookState>,
+    headers: HeaderMap,
+) -> Response {
+    if let Err(resp) = check_admin_token(&state, &headers) {
+        return resp;
+    }
+
+    let stats = state.policy_store.stats().await;
+    let loaded_secs_ago = stats.loaded_at.elapsed().as_secs();
+
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({
+            "cedar_policies": stats.cedar_count,
+            "has_legacy_policy": stats.has_legacy,
+            "loaded_secs_ago": loaded_secs_ago,
+            "last_reload_ms": stats.last_reload_ms,
+        })),
+    )
+        .into_response()
 }
 
 // ---------------------------------------------------------------------------
@@ -504,15 +622,25 @@ pub async fn serve(bind_addr: &str, state: WebhookState) -> anyhow::Result<()> {
         state.config.session_ttl_secs,
     );
 
-    if state.policy.is_none() && state.cedar_policies.is_empty() {
+    let stats = state.policy_store.stats().await;
+    if stats.cedar_count == 0 && !stats.has_legacy {
         tracing::warn!(
             "NO POLICIES LOADED - Server will run in fail-closed mode (or AuditOnly if configured)"
         );
     } else {
         tracing::info!(
-            "Policies loaded: {} Cedar policy sets, {} legacy policy",
-            state.cedar_policies.len(),
-            if state.policy.is_some() { "1" } else { "0" }
+            "Policies loaded: {} Cedar policy sets{}",
+            stats.cedar_count,
+            if stats.has_legacy { ", 1 legacy YAML" } else { "" },
+        );
+    }
+
+    if state.admin_token.is_some() {
+        tracing::info!("Admin endpoints enabled: POST /admin/reload-policies, GET /admin/status");
+    } else {
+        tracing::warn!(
+            "Admin endpoints disabled (LILITH_ZERO_ADMIN_TOKEN not set). \
+             Hot-reload via /admin/reload-policies will return 403."
         );
     }
 
