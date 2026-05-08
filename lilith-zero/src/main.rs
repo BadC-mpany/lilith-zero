@@ -802,8 +802,7 @@ async fn run_webhook_server(
     if let Some(interval_secs) = refresh_secs {
         let store = policy_store.clone();
         tokio::spawn(async move {
-            let mut ticker =
-                tokio::time::interval(std::time::Duration::from_secs(interval_secs));
+            let mut ticker = tokio::time::interval(std::time::Duration::from_secs(interval_secs));
             ticker.tick().await; // skip the immediate tick
             loop {
                 ticker.tick().await;

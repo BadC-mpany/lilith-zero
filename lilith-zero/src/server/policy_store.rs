@@ -337,21 +337,18 @@ fn load_dir_sync(dir: &Path) -> anyhow::Result<DirLoadResult> {
                 };
                 let agent_id = stem.strip_prefix("policy_").unwrap_or(stem);
 
-                let content = std::fs::read_to_string(&path).map_err(|e| {
-                    anyhow::anyhow!("cannot read '{}': {e}", path.display())
-                })?;
+                let content = std::fs::read_to_string(&path)
+                    .map_err(|e| anyhow::anyhow!("cannot read '{}': {e}", path.display()))?;
 
-                let policy_set =
-                    cedar_policy::PolicySet::from_str(&content).map_err(|e| {
-                        anyhow::anyhow!("cannot parse Cedar policy '{}': {e}", path.display())
-                    })?;
+                let policy_set = cedar_policy::PolicySet::from_str(&content).map_err(|e| {
+                    anyhow::anyhow!("cannot parse Cedar policy '{}': {e}", path.display())
+                })?;
 
                 cedar.insert(agent_id.to_string(), Arc::new(policy_set));
             }
             "yaml" | "yml" => {
-                let content = std::fs::read_to_string(&path).map_err(|e| {
-                    anyhow::anyhow!("cannot read '{}': {e}", path.display())
-                })?;
+                let content = std::fs::read_to_string(&path)
+                    .map_err(|e| anyhow::anyhow!("cannot read '{}': {e}", path.display()))?;
                 match serde_yaml_ng::from_str::<PolicyDefinition>(&content) {
                     Ok(pol) => {
                         legacy = Some(Arc::new(pol));
@@ -435,8 +432,14 @@ permit(
         let stats = store.reload().await.unwrap();
 
         assert_eq!(stats.cedar_count, 2);
-        assert!(store.get("agent-1").await.is_some(), "existing policy retained");
-        assert!(store.get("agent-2").await.is_some(), "new policy visible after reload");
+        assert!(
+            store.get("agent-1").await.is_some(),
+            "existing policy retained"
+        );
+        assert!(
+            store.get("agent-2").await.is_some(),
+            "new policy visible after reload"
+        );
     }
 
     #[tokio::test]
@@ -455,7 +458,10 @@ permit(
         store.reload().await.unwrap();
 
         assert!(store.get("agent-1").await.is_some());
-        assert!(store.get("agent-2").await.is_none(), "deleted policy removed after reload");
+        assert!(
+            store.get("agent-2").await.is_none(),
+            "deleted policy removed after reload"
+        );
     }
 
     #[tokio::test]
@@ -487,12 +493,8 @@ permit(
         write_cedar_policy(tmp.path(), "agent-1", MINIMAL_CEDAR);
 
         // lazy_load = false: files exist on disk but are never loaded automatically
-        let store = PolicyStore::from_map(
-            HashMap::new(),
-            None,
-            Some(tmp.path().to_path_buf()),
-            false,
-        );
+        let store =
+            PolicyStore::from_map(HashMap::new(), None, Some(tmp.path().to_path_buf()), false);
 
         assert!(store.get("agent-1").await.is_none());
     }

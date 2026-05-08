@@ -101,15 +101,11 @@ fn bench_policy_store_get(c: &mut Criterion) {
     });
 
     c.bench_function("policy_store_get_hit", |b| {
-        b.iter(|| {
-            rt.block_on(async { store.get(black_box("test-agent")).await })
-        })
+        b.iter(|| rt.block_on(async { store.get(black_box("test-agent")).await }))
     });
 
     c.bench_function("policy_store_get_miss", |b| {
-        b.iter(|| {
-            rt.block_on(async { store.get(black_box("unknown-agent")).await })
-        })
+        b.iter(|| rt.block_on(async { store.get(black_box("unknown-agent")).await }))
     });
 }
 
@@ -132,7 +128,9 @@ fn bench_policy_store_reload(c: &mut Criterion) {
         }
     }
 
-    let store = rt.block_on(PolicyStore::load_from_dir(dir.clone(), false)).unwrap();
+    let store = rt
+        .block_on(PolicyStore::load_from_dir(dir.clone(), false))
+        .unwrap();
 
     c.bench_function("policy_store_reload_10_policies", |b| {
         b.iter(|| rt.block_on(async { store.reload().await.unwrap() }))

@@ -202,7 +202,11 @@ async fn test_admin_reload_disabled_when_no_token_configured() {
     let client = Client::new();
 
     let r = admin_reload(&client, &base, "any-token").await;
-    assert_eq!(r.status(), 403, "admin endpoint must be disabled when no token configured");
+    assert_eq!(
+        r.status(),
+        403,
+        "admin endpoint must be disabled when no token configured"
+    );
     let body: Value = r.json().await.unwrap();
     assert!(body["error"].as_str().unwrap_or("").contains("disabled"));
 }
@@ -272,7 +276,11 @@ async fn test_hot_reload_new_agent_policy_becomes_active() {
     let r = admin_reload(&client, &base, "tok").await;
     assert_eq!(r.status(), 200);
     let body: Value = r.json().await.unwrap();
-    assert_eq!(body["reloaded"].as_u64(), Some(2), "should report 2 policies after reload");
+    assert_eq!(
+        body["reloaded"].as_u64(),
+        Some(2),
+        "should report 2 policies after reload"
+    );
 
     // After reload: agent-2 can now use tool_b
     assert!(
@@ -321,7 +329,11 @@ async fn test_hot_reload_removed_policy_denies_agent() {
     let r = admin_reload(&client, &base, "tok").await;
     assert_eq!(r.status(), 200);
     let body: Value = r.json().await.unwrap();
-    assert_eq!(body["reloaded"].as_u64(), Some(1), "should report 1 policy after removal");
+    assert_eq!(
+        body["reloaded"].as_u64(),
+        Some(1),
+        "should report 1 policy after removal"
+    );
 
     // agent-2 now denied
     assert!(
@@ -510,7 +522,11 @@ async fn test_concurrent_requests_during_reload_stay_consistent() {
     let b = base.clone();
     handles.push(tokio::spawn(async move {
         let r = admin_reload(&c, &b, "tok").await;
-        assert_eq!(r.status(), 200, "reload during concurrent requests must succeed");
+        assert_eq!(
+            r.status(),
+            200,
+            "reload during concurrent requests must succeed"
+        );
     }));
 
     for h in handles {
@@ -549,9 +565,18 @@ async fn test_admin_reload_response_has_expected_fields() {
     assert_eq!(r.status(), 200);
     let body: Value = r.json().await.unwrap();
 
-    assert!(body["reloaded"].as_u64().is_some(), "must include 'reloaded' count");
-    assert!(body["elapsed_ms"].as_u64().is_some(), "must include 'elapsed_ms'");
-    assert!(body.get("has_legacy").is_some(), "must include 'has_legacy'");
+    assert!(
+        body["reloaded"].as_u64().is_some(),
+        "must include 'reloaded' count"
+    );
+    assert!(
+        body["elapsed_ms"].as_u64().is_some(),
+        "must include 'elapsed_ms'"
+    );
+    assert!(
+        body.get("has_legacy").is_some(),
+        "must include 'has_legacy'"
+    );
 
     // Reload should be fast: policy parsing + swap should complete well under 500ms
     let elapsed = body["elapsed_ms"].as_u64().unwrap();
@@ -604,7 +629,10 @@ async fn test_background_refresh_picks_up_new_policy() {
 // POST /admin/upload-policy
 // ---------------------------------------------------------------------------
 
-fn make_upload_state(policy_dir: std::path::PathBuf, session_dir: std::path::PathBuf) -> WebhookState {
+fn make_upload_state(
+    policy_dir: std::path::PathBuf,
+    session_dir: std::path::PathBuf,
+) -> WebhookState {
     // Start with an empty store pointing at policy_dir so uploads land there
     // and reload can find them.
     let policy_store = Arc::new(PolicyStore::from_map(
@@ -642,7 +670,10 @@ async fn test_upload_policy_requires_token() {
         .await
         .unwrap();
     assert_eq!(r.status(), 403);
-    assert!(!tmp.path().join("agent-1.cedar").exists(), "file must not be written on auth failure");
+    assert!(
+        !tmp.path().join("agent-1.cedar").exists(),
+        "file must not be written on auth failure"
+    );
 
     // Wrong token
     let r = upload_policy(&client, &base, "wrong", "agent-1", CEDAR_ALLOW_TOOL_A).await;
@@ -679,14 +710,27 @@ async fn test_upload_policy_rejects_invalid_cedar() {
     let base = start_server(state).await;
     let client = Client::new();
 
-    let r = upload_policy(&client, &base, "tok", "agent-1", "this is NOT valid cedar!!!").await;
+    let r = upload_policy(
+        &client,
+        &base,
+        "tok",
+        "agent-1",
+        "this is NOT valid cedar!!!",
+    )
+    .await;
     assert_eq!(r.status(), 400);
 
     let body: Value = r.json().await.unwrap();
-    assert!(body["error"].as_str().unwrap_or("").contains("Cedar"), "error must mention Cedar");
+    assert!(
+        body["error"].as_str().unwrap_or("").contains("Cedar"),
+        "error must mention Cedar"
+    );
 
     // File must not have been written
-    assert!(!tmp.path().join("agent-1.cedar").exists(), "invalid policy must not be written to disk");
+    assert!(
+        !tmp.path().join("agent-1.cedar").exists(),
+        "invalid policy must not be written to disk"
+    );
 }
 
 /// Valid upload → file on disk + policy active in memory.
@@ -712,7 +756,10 @@ async fn test_upload_policy_writes_file_and_reloads() {
     let written = tmp.path().join("agent-1.cedar");
     assert!(written.exists(), "policy file must be written to disk");
     let content = std::fs::read_to_string(&written).unwrap();
-    assert!(content.contains("tool_a"), "file content must match uploaded policy");
+    assert!(
+        content.contains("tool_a"),
+        "file content must match uploaded policy"
+    );
 
     // Policy must be active in memory immediately
     assert!(
@@ -732,14 +779,26 @@ async fn test_upload_policy_overwrites_existing() {
     // First upload: allow tool_a
     let r = upload_policy(&client, &base, "tok", "agent-1", CEDAR_ALLOW_TOOL_A).await;
     assert_eq!(r.status(), 200);
-    assert!(post_analyze(&client, &base, "agent-1", "tool_a").await, "tool_a must be allowed");
-    assert!(!post_analyze(&client, &base, "agent-1", "tool_b").await, "tool_b must be denied");
+    assert!(
+        post_analyze(&client, &base, "agent-1", "tool_a").await,
+        "tool_a must be allowed"
+    );
+    assert!(
+        !post_analyze(&client, &base, "agent-1", "tool_b").await,
+        "tool_b must be denied"
+    );
 
     // Second upload: replace with policy that allows tool_b instead
     let r = upload_policy(&client, &base, "tok", "agent-1", CEDAR_ALLOW_TOOL_B).await;
     assert_eq!(r.status(), 200);
 
     // After overwrite: tool_b allowed, tool_a denied
-    assert!(!post_analyze(&client, &base, "agent-1", "tool_a").await, "tool_a must be denied after overwrite");
-    assert!(post_analyze(&client, &base, "agent-1", "tool_b").await, "tool_b must be allowed after overwrite");
+    assert!(
+        !post_analyze(&client, &base, "agent-1", "tool_a").await,
+        "tool_a must be denied after overwrite"
+    );
+    assert!(
+        post_analyze(&client, &base, "agent-1", "tool_b").await,
+        "tool_b must be allowed after overwrite"
+    );
 }

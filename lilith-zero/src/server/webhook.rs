@@ -423,10 +423,7 @@ fn check_admin_token(state: &WebhookState, headers: &HeaderMap) -> Result<(), Re
 /// curl -X POST https://your-app.azurewebsites.net/admin/reload-policies \
 ///      -H "X-Admin-Token: $LILITH_ZERO_ADMIN_TOKEN"
 /// ```
-async fn handle_admin_reload(
-    State(state): State<WebhookState>,
-    headers: HeaderMap,
-) -> Response {
+async fn handle_admin_reload(State(state): State<WebhookState>, headers: HeaderMap) -> Response {
     if let Err(resp) = check_admin_token(&state, &headers) {
         return resp;
     }
@@ -526,7 +523,10 @@ async fn handle_admin_upload(
         .unwrap_or_else(|| std::path::PathBuf::from("/home/policies"));
 
     if let Err(e) = std::fs::create_dir_all(&policy_dir) {
-        tracing::error!("Failed to create policy directory '{}': {e}", policy_dir.display());
+        tracing::error!(
+            "Failed to create policy directory '{}': {e}",
+            policy_dir.display()
+        );
         return (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(serde_json::json!({"error": "failed to create policy directory", "detail": e.to_string()})),
@@ -585,10 +585,7 @@ async fn handle_admin_upload(
 /// `GET /admin/status` — return current policy store statistics.
 ///
 /// Requires `X-Admin-Token` header matching `LILITH_ZERO_ADMIN_TOKEN`.
-async fn handle_admin_status(
-    State(state): State<WebhookState>,
-    headers: HeaderMap,
-) -> Response {
+async fn handle_admin_status(State(state): State<WebhookState>, headers: HeaderMap) -> Response {
     if let Err(resp) = check_admin_token(&state, &headers) {
         return resp;
     }
@@ -753,7 +750,11 @@ pub async fn serve(bind_addr: &str, state: WebhookState) -> anyhow::Result<()> {
         tracing::info!(
             "Policies loaded: {} Cedar policy sets{}",
             stats.cedar_count,
-            if stats.has_legacy { ", 1 legacy YAML" } else { "" },
+            if stats.has_legacy {
+                ", 1 legacy YAML"
+            } else {
+                ""
+            },
         );
     }
 

