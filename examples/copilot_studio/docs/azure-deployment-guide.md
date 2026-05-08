@@ -116,7 +116,7 @@ az webapp config appsettings set \
   --settings LILITH_ZERO_ADMIN_TOKEN="$(openssl rand -hex 32)"
 ```
 
-Store the token value — you need it to call the reload endpoint.
+Store the token value — you need it to call the reload endpoint. Get the token from the Azure App Setting LILITH_ZERO_ADMIN_TOKEN.
 
 Also configure the policy directory to use Azure Files (survives restarts, no rebuild needed):
 
