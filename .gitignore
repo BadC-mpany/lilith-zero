@@ -103,3 +103,4 @@ kickStartTemplate-1.0.0.json
 examples/copilot_studio/scaffolding/*
 examples/copilot_studio/split_connectors/*
 examples/copilot_studio/all_tools.json
+.env.lilith

@@ -32,6 +32,7 @@
 //! in the ITRisk/ITSec section and enforce defence-in-depth at the MCP proxy layer.
 
 use std::path::PathBuf;
+use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -124,6 +125,7 @@ pub fn build_router(state: WebhookState) -> Router {
         // Admin endpoints — no Copilot Studio auth, separate X-Admin-Token header.
         // Excluded from the evaluation timeout layer (reload can take up to a few seconds).
         .route("/admin/reload-policies", post(handle_admin_reload))
+        .route("/admin/upload-policy", post(handle_admin_upload))
         .route("/admin/status", get(handle_admin_status))
         .with_state(state)
         .layer(
@@ -452,6 +454,126 @@ async fn handle_admin_reload(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(serde_json::json!({
                     "error": "reload failed",
+                    "detail": e.to_string(),
+                })),
+            )
+                .into_response()
+        }
+    }
+}
+
+/// `POST /admin/upload-policy?agent_id=<uuid>` — upload a Cedar policy file and hot-reload.
+///
+/// Validates Cedar syntax before writing to disk. On parse failure returns HTTP 400
+/// and does not touch the file system or in-memory state (fail-closed).
+///
+/// # Usage
+/// ```bash
+/// curl -X POST "https://your-app/admin/upload-policy?agent_id=<UUID>" \
+///      -H "X-Admin-Token: $TOKEN" \
+///      -H "Content-Type: text/plain" \
+///      --data-binary @policy_<UUID>.cedar
+/// ```
+async fn handle_admin_upload(
+    State(state): State<WebhookState>,
+    headers: HeaderMap,
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
+    body: axum::body::Bytes,
+) -> Response {
+    if let Err(resp) = check_admin_token(&state, &headers) {
+        return resp;
+    }
+
+    let agent_id = match params.get("agent_id") {
+        Some(id) if !id.is_empty() => id.clone(),
+        _ => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"error": "missing required query parameter: agent_id"})),
+            )
+                .into_response();
+        }
+    };
+
+    // Validate Cedar syntax before touching disk (fail-closed)
+    let content = match std::str::from_utf8(&body) {
+        Ok(s) => s,
+        Err(_) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"error": "request body must be valid UTF-8"})),
+            )
+                .into_response();
+        }
+    };
+
+    if let Err(e) = cedar_policy::PolicySet::from_str(content) {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({
+                "error": "invalid Cedar policy syntax",
+                "detail": e.to_string(),
+            })),
+        )
+            .into_response();
+    }
+
+    // Determine write path — use the store's policy_dir, fall back to /home/policies
+    let policy_dir = state
+        .policy_store
+        .policy_dir()
+        .cloned()
+        .unwrap_or_else(|| std::path::PathBuf::from("/home/policies"));
+
+    if let Err(e) = std::fs::create_dir_all(&policy_dir) {
+        tracing::error!("Failed to create policy directory '{}': {e}", policy_dir.display());
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": "failed to create policy directory", "detail": e.to_string()})),
+        )
+            .into_response();
+    }
+
+    let file_path = policy_dir.join(format!("{agent_id}.cedar"));
+    if let Err(e) = std::fs::write(&file_path, body) {
+        tracing::error!("Failed to write policy file '{}': {e}", file_path.display());
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": "failed to write policy file", "detail": e.to_string()})),
+        )
+            .into_response();
+    }
+
+    tracing::info!(
+        agent_id = %agent_id,
+        path = %file_path.display(),
+        "Admin upload: policy file written"
+    );
+
+    // Reload in-memory state
+    match state.policy_store.reload().await {
+        Ok(stats) => {
+            tracing::info!(
+                "Admin upload+reload: {} Cedar policy sets in {}ms",
+                stats.cedar_count,
+                stats.last_reload_ms
+            );
+            (
+                StatusCode::OK,
+                Json(serde_json::json!({
+                    "uploaded": agent_id,
+                    "reloaded": stats.cedar_count,
+                    "elapsed_ms": stats.last_reload_ms,
+                })),
+            )
+                .into_response()
+        }
+        Err(e) => {
+            tracing::error!("Reload after upload failed: {e}");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "error": "file written but reload failed",
                     "detail": e.to_string(),
                 })),
             )

@@ -3,6 +3,7 @@
 //! # Coverage
 //! - PolicyStore: load, reload, lazy-load, concurrent access during reload
 //! - `/admin/reload-policies`: auth gate, success path, error path
+//! - `/admin/upload-policy`: auth gate, Cedar validation, disk write, reload
 //! - `/admin/status`: auth gate, response fields
 //! - Background refresh: timer fires and updates in-memory state
 //! - End-to-end: policy change visible without server restart
@@ -117,6 +118,23 @@ async fn admin_status(client: &Client, base: &str, token: &str) -> reqwest::Resp
     client
         .get(format!("{base}/admin/status"))
         .header("x-admin-token", token)
+        .send()
+        .await
+        .unwrap()
+}
+
+async fn upload_policy(
+    client: &Client,
+    base: &str,
+    token: &str,
+    agent_id: &str,
+    body: &str,
+) -> reqwest::Response {
+    client
+        .post(format!("{base}/admin/upload-policy?agent_id={agent_id}"))
+        .header("x-admin-token", token)
+        .header("content-type", "text/plain")
+        .body(body.to_string())
         .send()
         .await
         .unwrap()
@@ -580,4 +598,148 @@ async fn test_background_refresh_picks_up_new_policy() {
         policy_store.get("agent-2").await.is_some(),
         "background refresh must have picked up the new policy file"
     );
+}
+
+// ---------------------------------------------------------------------------
+// POST /admin/upload-policy
+// ---------------------------------------------------------------------------
+
+fn make_upload_state(policy_dir: std::path::PathBuf, session_dir: std::path::PathBuf) -> WebhookState {
+    // Start with an empty store pointing at policy_dir so uploads land there
+    // and reload can find them.
+    let policy_store = Arc::new(PolicyStore::from_map(
+        std::collections::HashMap::new(),
+        None,
+        Some(policy_dir.clone()),
+        false,
+    ));
+    WebhookState {
+        config: Arc::new(Config {
+            session_storage_dir: session_dir,
+            ..Default::default()
+        }),
+        audit_log_path: None,
+        auth: Arc::new(NoAuthAuthenticator),
+        policy_store,
+        admin_token: Some("tok".to_string()),
+    }
+}
+
+/// Missing / wrong token → 403, file must not be written.
+#[tokio::test]
+async fn test_upload_policy_requires_token() {
+    let tmp = TempDir::new().unwrap();
+    let state = make_upload_state(tmp.path().to_path_buf(), tmp.path().to_path_buf());
+    let base = start_server(state).await;
+    let client = Client::new();
+
+    // No token
+    let r = client
+        .post(format!("{base}/admin/upload-policy?agent_id=agent-1"))
+        .header("content-type", "text/plain")
+        .body(CEDAR_ALLOW_TOOL_A)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 403);
+    assert!(!tmp.path().join("agent-1.cedar").exists(), "file must not be written on auth failure");
+
+    // Wrong token
+    let r = upload_policy(&client, &base, "wrong", "agent-1", CEDAR_ALLOW_TOOL_A).await;
+    assert_eq!(r.status(), 403);
+    assert!(!tmp.path().join("agent-1.cedar").exists());
+}
+
+/// Missing agent_id query param → 400.
+#[tokio::test]
+async fn test_upload_policy_requires_agent_id() {
+    let tmp = TempDir::new().unwrap();
+    let state = make_upload_state(tmp.path().to_path_buf(), tmp.path().to_path_buf());
+    let base = start_server(state).await;
+    let client = Client::new();
+
+    let r = client
+        .post(format!("{base}/admin/upload-policy"))
+        .header("x-admin-token", "tok")
+        .header("content-type", "text/plain")
+        .body(CEDAR_ALLOW_TOOL_A)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 400);
+    let body: Value = r.json().await.unwrap();
+    assert!(body["error"].as_str().unwrap_or("").contains("agent_id"));
+}
+
+/// Invalid Cedar syntax → 400, file must not be written.
+#[tokio::test]
+async fn test_upload_policy_rejects_invalid_cedar() {
+    let tmp = TempDir::new().unwrap();
+    let state = make_upload_state(tmp.path().to_path_buf(), tmp.path().to_path_buf());
+    let base = start_server(state).await;
+    let client = Client::new();
+
+    let r = upload_policy(&client, &base, "tok", "agent-1", "this is NOT valid cedar!!!").await;
+    assert_eq!(r.status(), 400);
+
+    let body: Value = r.json().await.unwrap();
+    assert!(body["error"].as_str().unwrap_or("").contains("Cedar"), "error must mention Cedar");
+
+    // File must not have been written
+    assert!(!tmp.path().join("agent-1.cedar").exists(), "invalid policy must not be written to disk");
+}
+
+/// Valid upload → file on disk + policy active in memory.
+#[tokio::test]
+async fn test_upload_policy_writes_file_and_reloads() {
+    let tmp = TempDir::new().unwrap();
+    let state = make_upload_state(tmp.path().to_path_buf(), tmp.path().to_path_buf());
+    let base = start_server(state).await;
+    let client = Client::new();
+
+    // Before upload: agent-1 denied
+    assert!(!post_analyze(&client, &base, "agent-1", "tool_a").await);
+
+    let r = upload_policy(&client, &base, "tok", "agent-1", CEDAR_ALLOW_TOOL_A).await;
+    assert_eq!(r.status(), 200);
+
+    let body: Value = r.json().await.unwrap();
+    assert_eq!(body["uploaded"].as_str(), Some("agent-1"));
+    assert!(body["reloaded"].as_u64().is_some());
+    assert!(body["elapsed_ms"].as_u64().is_some());
+
+    // File must be on disk
+    let written = tmp.path().join("agent-1.cedar");
+    assert!(written.exists(), "policy file must be written to disk");
+    let content = std::fs::read_to_string(&written).unwrap();
+    assert!(content.contains("tool_a"), "file content must match uploaded policy");
+
+    // Policy must be active in memory immediately
+    assert!(
+        post_analyze(&client, &base, "agent-1", "tool_a").await,
+        "uploaded policy must be active after upload"
+    );
+}
+
+/// Uploading a second time for the same agent overwrites the file and reloads.
+#[tokio::test]
+async fn test_upload_policy_overwrites_existing() {
+    let tmp = TempDir::new().unwrap();
+    let state = make_upload_state(tmp.path().to_path_buf(), tmp.path().to_path_buf());
+    let base = start_server(state).await;
+    let client = Client::new();
+
+    // First upload: allow tool_a
+    let r = upload_policy(&client, &base, "tok", "agent-1", CEDAR_ALLOW_TOOL_A).await;
+    assert_eq!(r.status(), 200);
+    assert!(post_analyze(&client, &base, "agent-1", "tool_a").await, "tool_a must be allowed");
+    assert!(!post_analyze(&client, &base, "agent-1", "tool_b").await, "tool_b must be denied");
+
+    // Second upload: replace with policy that allows tool_b instead
+    let r = upload_policy(&client, &base, "tok", "agent-1", CEDAR_ALLOW_TOOL_B).await;
+    assert_eq!(r.status(), 200);
+
+    // After overwrite: tool_b allowed, tool_a denied
+    assert!(!post_analyze(&client, &base, "agent-1", "tool_a").await, "tool_a must be denied after overwrite");
+    assert!(post_analyze(&client, &base, "agent-1", "tool_b").await, "tool_b must be allowed after overwrite");
 }

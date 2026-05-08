@@ -161,6 +161,11 @@ impl PolicyStore {
         self.inner.read().await.legacy.clone()
     }
 
+    /// Return the directory policies are loaded from, if any.
+    pub fn policy_dir(&self) -> Option<&PathBuf> {
+        self.policy_dir.as_ref()
+    }
+
     /// Return `true` if neither Cedar nor legacy policies are loaded.
     pub async fn is_empty(&self) -> bool {
         let inner = self.inner.read().await;
