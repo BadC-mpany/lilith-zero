@@ -425,7 +425,6 @@ fn check_admin_token(state: &WebhookState, headers: &HeaderMap) -> Result<(), Re
 ///      -H "X-Admin-Token: $LILITH_ZERO_ADMIN_TOKEN"
 /// ```
 async fn handle_admin_reload(State(state): State<WebhookState>, headers: HeaderMap) -> Response {
-async fn handle_admin_reload(State(state): State<WebhookState>, headers: HeaderMap) -> Response {
     if let Err(resp) = check_admin_token(&state, &headers) {
         return resp;
     }
