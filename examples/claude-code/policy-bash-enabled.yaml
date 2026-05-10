@@ -1,0 +1,61 @@
+id: claude-code-bash-enabled
+customer_id: example
+name: "Claude Code - Bash Enabled (explicit bypass)"
+version: 1
+
+# Bash is intentionally allowed here. Trifecta still guards against
+# web-sourced prompt injection leading to file-read + network exfiltration
+# via WebFetch (which remains classified as UNTRUSTED_SOURCE).
+protect_lethal_trifecta: true
+
+tool_classes:
+  Read:      [ACCESS_PRIVATE]
+  WebFetch:  [UNTRUSTED_SOURCE]
+  WebSearch: [UNTRUSTED_SOURCE]
+  # Bash is NOT classified as EXFILTRATION here so the trifecta
+  # doesn't immediately block it after any web fetch in the session.
+
+static_rules:
+  Read:             ALLOW
+  Edit:             ALLOW
+  Write:            ALLOW
+  Bash:             ALLOW   # <-- explicitly enabled
+  Agent:            ALLOW
+  Skill:            ALLOW
+  ToolSearch:       ALLOW
+  TaskCreate:       ALLOW
+  TaskGet:          ALLOW
+  TaskList:         ALLOW
+  TaskOutput:       ALLOW
+  TaskStop:         ALLOW
+  TaskUpdate:       ALLOW
+  EnterPlanMode:    ALLOW
+  ExitPlanMode:     ALLOW
+  EnterWorktree:    ALLOW
+  ExitWorktree:     ALLOW
+  CronCreate:       ALLOW
+  CronDelete:       ALLOW
+  CronList:         ALLOW
+  ScheduleWakeup:   ALLOW
+  Monitor:          ALLOW
+  AskUserQuestion:  ALLOW
+  PushNotification: ALLOW
+  RemoteTrigger:    ALLOW
+  NotebookEdit:     ALLOW
+  WebFetch:         ALLOW
+  WebSearch:        ALLOW
+
+taint_rules:
+  - tool: Read
+    action: ADD_TAINT
+    tag: ACCESS_PRIVATE
+
+  - tool: WebFetch
+    action: ADD_TAINT
+    tag: UNTRUSTED_SOURCE
+
+  - tool: WebSearch
+    action: ADD_TAINT
+    tag: UNTRUSTED_SOURCE
+
+resource_rules: []

@@ -91,19 +91,23 @@ All adapters share the same policy engine, taint tracker, and audit layer: only 
 
 ### Claude Code
 
-Hooks fire on every tool call. Lilith reads the JSON event from stdin and signals via exit code: `0` = allow, `2` = block.
+**Step-by-step setup guide:** [`examples/claude-code/README.md`](examples/claude-code/README.md)  
+
+Hooks fire on every tool call. Only `PreToolUse` is blocking — `PostToolUse` fires after execution and cannot prevent it. Lilith reads the JSON event from stdin and signals via exit code: `0` = allow, `2` = block.
+
 
 **`.claude/settings.json`** (project) or `~/.claude/settings.json`:
 ```json
 {
   "hooks": {
-    "PreToolUse":  [{"matcher": "", "hooks": [{"type": "command", "command": "lilith-zero hook --policy /path/to/policy.yaml"}]}],
-    "PostToolUse": [{"matcher": "", "hooks": [{"type": "command", "command": "lilith-zero hook --policy /path/to/policy.yaml"}]}]
+    "PreToolUse": [{"matcher": "", "hooks": [{"type": "command", "command": "lilith-zero hook --policy ~/policy.yaml"}]}]
   }
 }
 ```
+You can also use `PostToolUse` to only log each tool usage, it won't block the calls though.
 
-See `scripts/hooks.json` for a ready-to-use template.
+
+**Ready-to-use policies:** [`examples/claude-code/policy-safe-default.yaml`](examples/claude-code/policy-safe-default.yaml) · [`examples/claude-code/policy-bash-enabled.yaml`](examples/claude-code/policy-bash-enabled.yaml)
 
 ### GitHub Copilot CLI
 
@@ -234,15 +238,14 @@ const result = await lz.callTool("read_file", { path: "/data/report.txt" });
 
 ### 1. Install
 
-**Python SDK** (manages the binary automatically):
-```bash
-uv add lilith-zero
-# or: pip install lilith-zero
-```
-
 **Shell (Unix/macOS)**:
 ```bash
-curl -sSfL https://badcompany.xyz/lilith-zero/install.sh | sh
+curl -sSfL https://www.badcompany.xyz/lilith-zero/install.sh | sh
+```
+
+Installs to `~/.local/bin/lilith-zero`. If your shell doesn't find it, add to `~/.zshrc` or `~/.bashrc`:
+```bash
+export PATH="$HOME/.local/bin:$PATH"
 ```
 
 **PowerShell (Windows)**:
@@ -250,7 +253,25 @@ curl -sSfL https://badcompany.xyz/lilith-zero/install.sh | sh
 irm https://badcompany.xyz/lilith-zero/install.ps1 | iex
 ```
 
-### 2. Write a policy
+**Python SDK** (manages the binary automatically):
+```bash
+pip install lilith-zero
+# or: uv add lilith-zero
+```
+
+**From source** (requires Rust toolchain):
+```bash
+git clone https://github.com/BadC-mpany/lilith-zero.git
+cd lilith-zero && cargo install --path lilith-zero
+```
+
+Verify: `lilith-zero --version`
+
+### 2. Create a policy file
+
+Save a policy YAML **before** wiring hooks — Lilith fails closed (blocks everything) if the policy file is missing or malformed.
+
+**Tool names must match your agent's actual tool names.** For example, Claude Code uses `Read`, `Edit`, `Write`, `Bash` — not `read_file`, `bash`.
 
 ```yaml
 id: my-policy
@@ -258,24 +279,26 @@ customer_id: my-org
 name: "My Agent Policy"
 version: 1
 
-protect_lethal_trifecta: true   # auto-blocks ACCESS_PRIVATE + UNTRUSTED_SOURCE → EXFILTRATION
+protect_lethal_trifecta: true
 
-# Declare tool classes explicitly: Lilith performs no heuristic inference.
 tool_classes:
-  curl:         [EXFILTRATION]
-  send_email:   [EXFILTRATION]
+  Read:      [ACCESS_PRIVATE]
+  WebFetch:  [UNTRUSTED_SOURCE]
+  WebSearch: [UNTRUSTED_SOURCE]
+  Bash:      [EXFILTRATION]
 
 static_rules:
-  read_file:   ALLOW
-  calculator:  ALLOW
-  bash:        DENY
+  Read:   ALLOW
+  Edit:   ALLOW
+  Write:  ALLOW
+  Bash:   DENY
 
 taint_rules:
-  - tool: read_file
+  - tool: Read
     action: ADD_TAINT
     tag: ACCESS_PRIVATE
 
-  - tool: curl
+  - tool: WebFetch
     action: ADD_TAINT
     tag: UNTRUSTED_SOURCE
 
@@ -284,13 +307,31 @@ resource_rules: []
 
 `protect_lethal_trifecta: true` injects a rule that blocks any tool declared as `EXFILTRATION` class when both `ACCESS_PRIVATE` **and** `UNTRUSTED_SOURCE` taints are simultaneously active. Tool class assignments are always explicit in the policy: no name-based inference.
 
+See [`examples/claude-code/`](examples/claude-code/) for complete Claude Code policies covering all tools.
+
 ### 3. Wire it to your agent
 
-```bash
-# Claude Code: one-liner setup
-echo '{"hooks":{"PreToolUse":[{"matcher":"","hooks":[{"type":"command","command":"lilith-zero hook --policy $(pwd)/policy.yaml"}]}]}}' \
-  > .claude/settings.json
+**Claude Code** — add to `~/.claude/settings.json` (global) or `.claude/settings.json` (per-project):
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "lilith-zero hook --policy ~/policy.yaml"
+          }
+        ]
+      }
+    ]
+  }
+}
 ```
+
+For other agents, see the [Agent Integrations](#agent-integrations) section above.
 
 ### 4. Environment variables
 
