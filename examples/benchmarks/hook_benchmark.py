@@ -311,7 +311,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--policy",
-        default="examples/benchmarks/benchmark_policy.yaml",
+        default="examples/benchmarks/benchmark_policy.cedar",
         help="Path to the policy configuration file",
     )
     parser.add_argument(

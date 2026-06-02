@@ -18,6 +18,25 @@ def load_json(path):
     except Exception:
         return None
 
+def extract_webhook_metrics(report_json, default_target="N/A", default_storage="Local Disk Storage"):
+    if not report_json:
+        return None
+    summary = report_json.get("summary", {})
+    metrics = report_json.get("metrics", {})
+    http_dur = metrics.get("http_req_duration", {})
+    return {
+        "total": summary.get("total_requests", 0),
+        "rate": summary.get("throughput_req_sec", 0.0),
+        "err": summary.get("error_rate_pct", 0.0),
+        "avg": http_dur.get("avg", 0.0),
+        "med": http_dur.get("med", 0.0),
+        "p95": http_dur.get("p95", 0.0),
+        "p99": http_dur.get("p99", 0.0),
+        "vus": summary.get("virtual_users", 10),
+        "storage": summary.get("storage_type", default_storage),
+        "target": summary.get("target_url", default_target),
+    }
+
 def main():
     results_dir = "examples/benchmarks/results"
     
@@ -26,72 +45,18 @@ def main():
     claude_hook_report = load_json(f"{results_dir}/hook_benchmark_report_claude.json")
     copilot_hook_report = load_json(f"{results_dir}/hook_benchmark_report_copilot.json")
     robustness_report = load_json(f"{results_dir}/robustness_report.json")
-    webhook_report = load_json(f"{results_dir}/webhook_load_test_report.json")
-    azure_webhook_report = load_json(f"{results_dir}/azure_webhook_load_test_report.json")
-
-    # Metrics Extraction with fallbacks
-    # 1. Local Webhook Load metrics
-    local_wh_total = 0
-    local_wh_rate = 0.0
-    local_wh_err = 0.0
-    local_wh_avg = 0.0
-    local_wh_med = 0.0
-    local_wh_p95 = 0.0
-    local_wh_p99 = 0.0
-    local_wh_target = "N/A"
-    local_wh_storage = "Local Disk Storage"
-    local_wh_vus = 0
-    local_wh_payloads = 0
-    local_wh_policies = 1 # Benchmark policy has 1 YAML policy
     
-    if webhook_report:
-        summary = webhook_report.get("summary", {})
-        metrics = webhook_report.get("metrics", {})
-        http_dur = metrics.get("http_req_duration", {})
-        
-        local_wh_total = summary.get("total_requests", 0)
-        local_wh_rate = summary.get("throughput_req_sec", 0.0)
-        local_wh_err = summary.get("error_rate_pct", 0.0)
-        local_wh_avg = http_dur.get("avg", 0.0)
-        local_wh_med = http_dur.get("med", 0.0)
-        local_wh_p95 = http_dur.get("p95", 0.0)
-        local_wh_p99 = http_dur.get("p99", 0.0)
-        local_wh_target = summary.get("target_url", "http://localhost:8080")
-        local_wh_storage = summary.get("storage_type", "Local Disk Storage")
-        local_wh_vus = summary.get("virtual_users", 10)
-        # Webhook payload sequence sends 1 payload (read_file / execute_command) per iteration
-        local_wh_payloads = local_wh_total
+    # Load separate static and random webhook reports
+    local_static_json = load_json(f"{results_dir}/webhook_load_test_report_static.json")
+    local_random_json = load_json(f"{results_dir}/webhook_load_test_report_random.json")
+    azure_static_json = load_json(f"{results_dir}/azure_webhook_load_test_report_static.json")
+    azure_random_json = load_json(f"{results_dir}/azure_webhook_load_test_report_random.json")
 
-    # 1b. Azure Webhook Load metrics
-    azure_wh_total = 0
-    azure_wh_rate = 0.0
-    azure_wh_err = 0.0
-    azure_wh_avg = 0.0
-    azure_wh_med = 0.0
-    azure_wh_p95 = 0.0
-    azure_wh_p99 = 0.0
-    azure_wh_target = "N/A"
-    azure_wh_storage = "Azure Files Share"
-    azure_wh_vus = 0
-    azure_wh_payloads = 0
-    azure_wh_policies = 1
-    
-    if azure_webhook_report:
-        summary = azure_webhook_report.get("summary", {})
-        metrics = azure_webhook_report.get("metrics", {})
-        http_dur = metrics.get("http_req_duration", {})
-        
-        azure_wh_total = summary.get("total_requests", 0)
-        azure_wh_rate = summary.get("throughput_req_sec", 0.0)
-        azure_wh_err = summary.get("error_rate_pct", 0.0)
-        azure_wh_avg = http_dur.get("avg", 0.0)
-        azure_wh_med = http_dur.get("med", 0.0)
-        azure_wh_p95 = http_dur.get("p95", 0.0)
-        azure_wh_p99 = http_dur.get("p99", 0.0)
-        azure_wh_target = summary.get("target_url", "https://lilith-zero.badcompany.xyz")
-        azure_wh_storage = summary.get("storage_type", "Azure Files Share")
-        azure_wh_vus = summary.get("virtual_users", 10)
-        azure_wh_payloads = azure_wh_total
+    # Extract Webhook metrics using helper
+    local_static = extract_webhook_metrics(local_static_json, "http://localhost:8080", "Local Disk Storage")
+    local_random = extract_webhook_metrics(local_random_json, "http://localhost:8080", "Local Disk Storage")
+    azure_static = extract_webhook_metrics(azure_static_json, "https://lilith-zero.badcompany.xyz", "Azure Files Share")
+    azure_random = extract_webhook_metrics(azure_random_json, "https://lilith-zero.badcompany.xyz", "Azure Files Share")
 
     # 2. Claude Hook metrics
     claude_total = 0
@@ -148,7 +113,7 @@ def main():
     # 4. Robustness Scenarios metrics
     rob_count = 0
     if robustness_report:
-        rob_count = robustness_report.get("summary", {}).get("total_scenarios", 0)
+        rob_count = robustness_report.get("summary", {}).get("total_runs", 0)
 
     # Compile the detailed deployment comparison Markdown table
     md = f"""# Lilith-Zero: Multi-Deployment Benchmark & Verification Report
@@ -163,10 +128,12 @@ This report is compiled programmatically by aggregating execution data from indi
 
 | Deployment Type | Storage / Files Tier | Active Policies | Payloads Tested | Concurrent Load (VUs) | Throughput (req/s) | Error Rate | Avg Latency (ms) | Med Latency (ms) | P95 Latency (ms) | P99 Latency (ms) |
 |---|---|---|---|---|---|---|---|---|---|---|
-| **Local App Hook (Claude)** | Local SSD | 1 YAML | {claude_payloads if claude_hook_report else '*Pending*'} | N/A (Seq) | Sequential | 0.00% | {f"{claude_avg:.2f}" if claude_hook_report else '*Pending*'} | {f"{claude_med:.2f}" if claude_hook_report else '*Pending*'} | {f"{claude_p95:.2f}" if claude_hook_report else '*Pending*'} | {f"{claude_p99:.2f}" if claude_hook_report else '*Pending*'} |
-| **Local App Hook (Copilot)**| Local SSD | 1 YAML | {copilot_payloads if copilot_hook_report else '*Pending*'} | N/A (Seq) | Sequential | 0.00% | {f"{copilot_avg:.2f}" if copilot_hook_report else '*Pending*'} | {f"{copilot_med:.2f}" if copilot_hook_report else '*Pending*'} | {f"{copilot_p95:.2f}" if copilot_hook_report else '*Pending*'} | {f"{copilot_p99:.2f}" if copilot_hook_report else '*Pending*'} |
-| **Webhook Server (Local)** | Local SSD | 1 YAML | {local_wh_payloads} | {local_wh_vus} | {local_wh_rate:.2f} | {local_wh_err:.2f}% | {local_wh_avg:.2f} | {local_wh_med:.2f} | {local_wh_p95:.2f} | {local_wh_p99:.2f} |
-| **Webhook Server (Azure)** | Azure Files Share | 1 YAML | {azure_wh_payloads if azure_webhook_report else '*Pending*'} | {azure_wh_vus if azure_webhook_report else '*Pending*'} | {f"{azure_wh_rate:.2f}" if azure_webhook_report else '*Pending*'} | {f"{azure_wh_err:.2f}%" if azure_webhook_report else '*Pending*'} | {f"{azure_wh_avg:.2f}" if azure_webhook_report else '*Pending*'} | {f"{azure_wh_med:.2f}" if azure_webhook_report else '*Pending*'} | {f"{azure_wh_p95:.2f}" if azure_webhook_report else '*Pending*'} | {f"{azure_wh_p99:.2f}" if azure_webhook_report else '*Pending*'} |
+| **Local App Hook (Claude)** | Local SSD | 1 Cedar | {claude_payloads if claude_hook_report else '*Pending*'} | N/A (Seq) | Sequential | 0.00% | {f"{claude_avg:.2f}" if claude_hook_report else '*Pending*'} | {f"{claude_med:.2f}" if claude_hook_report else '*Pending*'} | {f"{claude_p95:.2f}" if claude_hook_report else '*Pending*'} | {f"{claude_p99:.2f}" if claude_hook_report else '*Pending*'} |
+| **Local App Hook (Copilot)**| Local SSD | 1 Cedar | {copilot_payloads if copilot_hook_report else '*Pending*'} | N/A (Seq) | Sequential | 0.00% | {f"{copilot_avg:.2f}" if copilot_hook_report else '*Pending*'} | {f"{copilot_med:.2f}" if copilot_hook_report else '*Pending*'} | {f"{copilot_p95:.2f}" if copilot_hook_report else '*Pending*'} | {f"{copilot_p99:.2f}" if copilot_hook_report else '*Pending*'} |
+| **Webhook (Local, Static Session)** | Local SSD | 1 Cedar | {local_static['total'] if local_static else '*Pending*'} | {local_static['vus'] if local_static else '*Pending*'} | {f"{local_static['rate']:.2f}" if local_static else '*Pending*'} | {f"{local_static['err']:.2f}%" if local_static else '*Pending*'} | {f"{local_static['avg']:.2f}" if local_static else '*Pending*'} | {f"{local_static['med']:.2f}" if local_static else '*Pending*'} | {f"{local_static['p95']:.2f}" if local_static else '*Pending*'} | {f"{local_static['p99']:.2f}" if local_static else '*Pending*'} |
+| **Webhook (Local, Random Sessions)**| Local SSD | 1 Cedar | {local_random['total'] if local_random else '*Pending*'} | {local_random['vus'] if local_random else '*Pending*'} | {f"{local_random['rate']:.2f}" if local_random else '*Pending*'} | {f"{local_random['err']:.2f}%" if local_random else '*Pending*'} | {f"{local_random['avg']:.2f}" if local_random else '*Pending*'} | {f"{local_random['med']:.2f}" if local_random else '*Pending*'} | {f"{local_random['p95']:.2f}" if local_random else '*Pending*'} | {f"{local_random['p99']:.2f}" if local_random else '*Pending*'} |
+| **Webhook (Azure, Static Session)** | Azure Files Share | 1 Cedar | {azure_static['total'] if azure_static else '*Pending*'} | {azure_static['vus'] if azure_static else '*Pending*'} | {f"{azure_static['rate']:.2f}" if azure_static else '*Pending*'} | {f"{azure_static['err']:.2f}%" if azure_static else '*Pending*'} | {f"{azure_static['avg']:.2f}" if azure_static else '*Pending*'} | {f"{azure_static['med']:.2f}" if azure_static else '*Pending*'} | {f"{azure_static['p95']:.2f}" if azure_static else '*Pending*'} | {f"{azure_static['p99']:.2f}" if azure_static else '*Pending*'} |
+| **Webhook (Azure, Random Sessions)**| Azure Files Share | 1 Cedar | {azure_random['total'] if azure_random else '*Pending*'} | {azure_random['vus'] if azure_random else '*Pending*'} | {f"{azure_random['rate']:.2f}" if azure_random else '*Pending*'} | {f"{azure_random['err']:.2f}%" if azure_random else '*Pending*'} | {f"{azure_random['avg']:.2f}" if azure_random else '*Pending*'} | {f"{azure_random['med']:.2f}" if azure_random else '*Pending*'} | {f"{azure_random['p95']:.2f}" if azure_random else '*Pending*'} | {f"{azure_random['p99']:.2f}" if azure_random else '*Pending*'} |
 
 *Note: CLI Latencies measure complete cold-start process execution. Webhook latencies measure client round-trip HTTP request durations.*
 
@@ -181,13 +148,13 @@ This report is compiled programmatically by aggregating execution data from indi
 - **Policies Loaded**:
   - Legacy YAML Engine: 1 Policy File (Benchmark Policy)
   - Cedar Policy Engine: 1 Policy Set (48 Cedar rules)
-
+ 
 ### 2.2 System Robustness & Fail-Closed Validation
 - **Fail-Closed on Invalid Input**: **PASS** (rejections on malformed JSON, deep nesting, null bytes, and traversal paths).
 - **File Descriptor Leak Delta**: **0 FDs** (monitored via `/proc` during active load).
 - **Memory Footprint**:
-  - CLI hook execution peak memory: **{diff_report.get('resource_usage', {}).get('cli_peak_rss_kb', 0) if diff_report else 0} KB**
-  - Webhook daemon peak memory (VmHWM): **{diff_report.get('resource_usage', {}).get('webhook_peak_rss_kb', 0) if diff_report else 0} KB**
+  - CLI hook execution peak memory: **{diff_report.get('summary', {}).get('cli_peak_rss_kb', 0) if diff_report else 0} KB**
+  - Webhook daemon peak memory (VmHWM): **{diff_report.get('summary', {}).get('webhook_peak_rss_kb', 0) if diff_report else 0} KB**
 
 ---
 
