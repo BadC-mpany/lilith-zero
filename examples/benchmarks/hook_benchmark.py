@@ -228,8 +228,8 @@ def run_benchmark(
     results_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "results")
     os.makedirs(results_dir, exist_ok=True)
 
-    report_json_path = os.path.join(results_dir, "hook_benchmark_report.json")
-    report_md_path = os.path.join(results_dir, "hook_benchmark_report.md")
+    report_json_path = os.path.join(results_dir, f"hook_benchmark_report_{format_arg}.json")
+    report_md_path = os.path.join(results_dir, f"hook_benchmark_report_{format_arg}.md")
 
     def get_phase_stats(values: List[float]) -> Dict[str, float]:
         if not values:
@@ -266,7 +266,7 @@ def run_benchmark(
 
     # Save Markdown report
     md_lines = [
-        "# Lilith Zero: CLI Hook Latency Benchmark Report",
+        f"# Lilith Zero: CLI Hook ({format_arg}) Latency Benchmark Report",
         "",
         "## Execution Summary",
         f"- **Total Invocations**: {iterations}",
@@ -316,9 +316,9 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--format",
-        default="claude",
-        choices=["claude", "copilot"],
-        help="Format mode to run hook in",
+        default="all",
+        choices=["claude", "copilot", "all"],
+        help="Format mode to run hook in (or 'all' to run both sequential)",
     )
     parser.add_argument(
         "--iterations",
@@ -338,27 +338,22 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    payload_allowed = args.payload_allowed
-    if payload_allowed is None:
-        payload_allowed = (
-            "examples/shared_payloads/hook_copilot_allowed.json"
-            if args.format == "copilot"
-            else "examples/shared_payloads/hook_claude_allowed.json"
-        )
+    formats = ["claude", "copilot"] if args.format == "all" else [args.format]
 
-    payload_denied = args.payload_denied
-    if payload_denied is None:
-        payload_denied = (
-            "examples/shared_payloads/hook_copilot_denied.json"
-            if args.format == "copilot"
-            else "examples/shared_payloads/hook_claude_denied.json"
-        )
+    for fmt in formats:
+        p_allowed = args.payload_allowed
+        if p_allowed is None:
+            p_allowed = f"examples/shared_payloads/hook_{fmt}_allowed.json"
 
-    run_benchmark(
-        binary_path=args.binary,
-        policy_path=args.policy,
-        format_arg=args.format,
-        iterations=args.iterations,
-        payload_allowed_path=payload_allowed,
-        payload_denied_path=payload_denied,
-    )
+        p_denied = args.payload_denied
+        if p_denied is None:
+            p_denied = f"examples/shared_payloads/hook_{fmt}_denied.json"
+
+        run_benchmark(
+            binary_path=args.binary,
+            policy_path=args.policy,
+            format_arg=fmt,
+            iterations=args.iterations,
+            payload_allowed_path=p_allowed,
+            payload_denied_path=p_denied,
+        )
