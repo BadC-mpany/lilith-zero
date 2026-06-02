@@ -140,8 +140,10 @@ async fn start_test_server(policy_store: Arc<PolicyStore>, storage_dir: PathBuf)
         .expect("failed to bind test server");
     let addr = listener.local_addr().expect("get bound addr");
 
-    let mut config = Config::default();
-    config.session_storage_dir = storage_dir;
+    let config = Config {
+        session_storage_dir: storage_dir,
+        ..Default::default()
+    };
 
     let state = WebhookState {
         config: Arc::new(config),
