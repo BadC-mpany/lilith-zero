@@ -1,36 +1,37 @@
 #!/usr/bin/env bash
-# Lilith Zero — Azure App Service deploy script
+# Lilith Zero — Azure App Service deploy script (Colleague Environment)
 # Run from repo root: bash scripts/azure-deploy.sh
 set -euo pipefail
 
 # ── Config ─────────────────────────────────────────────────────────────────
-RESOURCE_GROUP="lilith-zero-rg"
-LOCATION="westeurope"
-APP_SERVICE_PLAN="lilith-zero-plan"
-APP_NAME="lilith-zero-webhook"           # → lilith-zero-webhook.azurewebsites.net
-REGISTRY_NAME="lilithzerocr"             # Azure Container Registry (must be globally unique)
+RESOURCE_GROUP="BadCompany"
+LOCATION="eastus2" # Changed from eastus to eastus2 to avoid capacity limitations
+APP_SERVICE_PLAN="lilith-zero-plan-new"
+APP_NAME="lilith-zero-webhook-mz"           # → lilith-zero-webhook-mz.azurewebsites.net
+REGISTRY_NAME="lilithzeromzcr"              # Azure Container Registry (globally unique)
 IMAGE_NAME="lilith-zero"
 IMAGE_TAG="latest"
-SUBSCRIPTION="278ef486-791b-47a4-b61b-decefe29f308"
-TENANT_ID="98e2f7d2-c1d3-4410-b87f-2396f157975f"
-APP_ID="b74dfc6e-544a-4ae1-89f7-6597ebf79edc"
+SUBSCRIPTION="4d062d5a-28e9-473b-8eb6-8c0a88ce41a4"
+TENANT_ID="26f834b9-3844-4b6a-8305-fbec7a80cb95"
+APP_ID="02280932-064c-459e-86d6-0dcfe07bd99f"
 
 echo "=== Lilith Zero Azure Deploy ==="
 echo ""
 
 # ── 0. Set subscription ─────────────────────────────────────────────────────
 az account set --subscription "$SUBSCRIPTION"
-echo "✓ Subscription: $SUBSCRIPTION"
+echo "✓ Subscription set to $SUBSCRIPTION"
 
 # ── 1. Resource Group ───────────────────────────────────────────────────────
 echo ""
-echo "Creating resource group $RESOURCE_GROUP in $LOCATION..."
+echo "Verifying or creating resource group $RESOURCE_GROUP in $LOCATION..."
 az group create --name "$RESOURCE_GROUP" --location "$LOCATION" --output none
 echo "✓ Resource group ready"
 
 # ── 2. Container Registry ───────────────────────────────────────────────────
 echo ""
-echo "Creating Azure Container Registry $REGISTRY_NAME..."
+echo "Creating Azure Container Registry $REGISTRY_NAME (admin enabled)..."
+# Admin enabled is required because Contributor subscription permissions prevent role assignments for Managed Identity
 az acr create \
     --resource-group "$RESOURCE_GROUP" \
     --name "$REGISTRY_NAME" \
@@ -42,44 +43,73 @@ echo "✓ Container registry ready"
 # ── 3. Build & push Docker image ─────────────────────────────────────────────
 echo ""
 echo "Building and pushing Docker image..."
+
+# Copy pre-built binary to local bin to prevent scanning massive target/ folder
+cp lilith-zero/target/release/lilith-zero ./lilith-zero-bin
+
 az acr build \
     --registry "$REGISTRY_NAME" \
     --image "${IMAGE_NAME}:${IMAGE_TAG}" \
     --file Dockerfile \
     . 
+
+# Clean up local binary
+rm -f ./lilith-zero-bin
 echo "✓ Image pushed: ${REGISTRY_NAME}.azurecr.io/${IMAGE_NAME}:${IMAGE_TAG}"
 
 # ── 4. App Service Plan (B1 = cheapest with custom domain + SSL) ─────────────
 echo ""
-echo "Creating App Service Plan (B1)..."
-az appservice plan create \
-    --name "$APP_SERVICE_PLAN" \
-    --resource-group "$RESOURCE_GROUP" \
-    --is-linux \
-    --sku B1 \
-    --output none
-echo "✓ App Service Plan ready (B1 Linux)"
+echo "Creating App Service Plan ($APP_SERVICE_PLAN)..."
+# Check if plan already exists
+if ! az appservice plan show --name "$APP_SERVICE_PLAN" --resource-group "$RESOURCE_GROUP" --output none 2>/dev/null; then
+    az appservice plan create \
+        --name "$APP_SERVICE_PLAN" \
+        --resource-group "$RESOURCE_GROUP" \
+        --location "$LOCATION" \
+        --is-linux \
+        --sku B1 \
+        --output none
+    echo "✓ App Service Plan created (B1 Linux)"
+else
+    echo "✓ App Service Plan already exists"
+fi
 
-# ── 5. Web App ───────────────────────────────────────────────────────────────
+# ── 5. Web App with Registry Admin Credentials ────────────────────────────────
 echo ""
 echo "Creating Web App $APP_NAME..."
 ACR_LOGIN_SERVER="${REGISTRY_NAME}.azurecr.io"
 ACR_PASSWORD=$(az acr credential show --name "$REGISTRY_NAME" --query "passwords[0].value" -o tsv)
 
-az webapp create \
-    --resource-group "$RESOURCE_GROUP" \
-    --plan "$APP_SERVICE_PLAN" \
+# Create Web App with container configuration
+if ! az webapp show --name "$APP_NAME" --resource-group "$RESOURCE_GROUP" --output none 2>/dev/null; then
+    az webapp create \
+        --resource-group "$RESOURCE_GROUP" \
+        --plan "$APP_SERVICE_PLAN" \
+        --name "$APP_NAME" \
+        --deployment-container-image-name "${ACR_LOGIN_SERVER}/${IMAGE_NAME}:${IMAGE_TAG}" \
+        --docker-registry-server-url "https://${ACR_LOGIN_SERVER}" \
+        --docker-registry-server-user "$REGISTRY_NAME" \
+        --docker-registry-server-password "$ACR_PASSWORD" \
+        --startup-file "/app/lilith-zero serve --bind 0.0.0.0:8080 --auth-mode entra" \
+        --output none
+    echo "✓ Web app created"
+else
+    echo "✓ Web app already exists"
+fi
+
+# Configure Web App to pull using the registry credentials
+az webapp config container set \
     --name "$APP_NAME" \
-    --deployment-container-image-name "${ACR_LOGIN_SERVER}/${IMAGE_NAME}:${IMAGE_TAG}" \
+    --resource-group "$RESOURCE_GROUP" \
+    --docker-custom-image-name "${ACR_LOGIN_SERVER}/${IMAGE_NAME}:${IMAGE_TAG}" \
     --docker-registry-server-url "https://${ACR_LOGIN_SERVER}" \
     --docker-registry-server-user "$REGISTRY_NAME" \
     --docker-registry-server-password "$ACR_PASSWORD" \
     --output none
-echo "✓ Web app created: https://${APP_NAME}.azurewebsites.net"
 
-# ── 6. App Settings (env vars for the container) ─────────────────────────────
+# ── 6. Configure App Settings ────────────────────────────────────────────────
 echo ""
-echo "Configuring app settings..."
+echo "Configuring App Settings..."
 az webapp config appsettings set \
     --name "$APP_NAME" \
     --resource-group "$RESOURCE_GROUP" \
@@ -87,25 +117,36 @@ az webapp config appsettings set \
         RUST_LOG=info \
         WEBSITES_ENABLE_APP_SERVICE_STORAGE=true \
         WEBSITES_PORT=8080 \
+        LILITH_ZERO_ENTRA_TENANT_ID="$TENANT_ID" \
+        LILITH_ZERO_ENTRA_AUDIENCE="api://$APP_ID" \
+        POLICIES_YAML_PATH="/app/policies" \
     --output none
 echo "✓ App settings configured"
 
-# ── 7. Persistent storage for session taint files ────────────────────────────
-# Azure App Service /home is already persistent across restarts for Linux containers.
-# The binary writes to /home/.lilith/sessions/ which maps to persistent storage.
-echo "✓ Session persistence: /home/.lilith/sessions (Azure persistent /home)"
-
-# ── 8. Custom domain: lilith-zero.badcompany.xyz ─────────────────────────────
+# ── 7. Custom domain verification ───────────────────────────────────────────
 echo ""
 echo "Adding custom domain lilith-zero.badcompany.xyz..."
+
+# Get Web App custom domain verification ID
+VERIFICATION_ID=$(az webapp show \
+    --name "$APP_NAME" \
+    --resource-group "$RESOURCE_GROUP" \
+    --query "customDomainVerificationId" \
+    -o tsv)
+
 echo ""
-echo "  ⚠  ACTION REQUIRED IN NAMECHEAP:"
-echo "  Change the CNAME for 'lilith-zero' from:"
-echo "    lingo-popsicle-bulgur.ngrok-free.dev"
-echo "  To:"
-echo "    ${APP_NAME}.azurewebsites.net"
+echo "  ⚠  ACTION REQUIRED IN YOUR DNS MANAGER (e.g. Namecheap):"
+echo "  Configure the following DNS records:"
 echo ""
-echo "  After you update it, press ENTER to continue..."
+echo "  1. TXT Record (for ownership verification):"
+echo "     Host:  asuid.lilith-zero"
+echo "     Value: $VERIFICATION_ID"
+echo ""
+echo "  2. CNAME Record (for routing traffic):"
+echo "     Host:  lilith-zero"
+echo "     Value: ${APP_NAME}.azurewebsites.net"
+echo ""
+echo "  After configuring these records in Namecheap, press ENTER to verify and add domain..."
 read -r
 
 az webapp config hostname add \
@@ -115,49 +156,80 @@ az webapp config hostname add \
     --output none
 echo "✓ Custom hostname added"
 
-# ── 9. Managed certificate (free SSL for custom domain) ──────────────────────
+# ── 8. Managed certificate (free SSL for custom domain) ──────────────────────
 echo ""
-echo "Creating free managed SSL certificate for lilith-zero.badcompany.xyz..."
-az webapp config ssl create \
+echo "Creating and binding free managed SSL certificate..."
+THUMBPRINT=$(az webapp config ssl create \
     --resource-group "$RESOURCE_GROUP" \
     --name "$APP_NAME" \
     --hostname "lilith-zero.badcompany.xyz" \
-    --output none 2>/dev/null || echo "(cert may take a few minutes to provision — DNS propagation)"
-echo "✓ SSL certificate requested"
+    --query "thumbprint" \
+    -o tsv || echo "")
 
-# ── 10. Update Entra App Identifier URI ──────────────────────────────────────
+if [ -n "$THUMBPRINT" ]; then
+    echo "Binding SSL certificate to lilith-zero.badcompany.xyz..."
+    az webapp config ssl bind \
+        --resource-group "$RESOURCE_GROUP" \
+        --name "$APP_NAME" \
+        --certificate-thumbprint "$THUMBPRINT" \
+        --ssl-type SNI \
+        --output none
+    echo "✓ SSL certificate bound successfully"
+else
+    echo "⚠ SSL Certificate thumbprint not returned. Verify DNS propagation and bind manually in Portal if needed."
+fi
+
+# ── 9. Update Federated Identity Credential subject ─────────────────────────
 echo ""
-echo "Updating Entra App Identifier URI..."
-# The identifier URI stays as https://lilith-zero.badcompany.xyz (already set and verified)
-echo "✓ Identifier URI already set: https://lilith-zero.badcompany.xyz"
+echo "Configuring Federated Identity Credential..."
+ENDPOINT_URL="https://lilith-zero.badcompany.xyz"
+NEW_SUBJECT=$(python3 -c "
+import base64, uuid
+tenant_id = '${TENANT_ID}'
+copilot_app_id = '9d8f559b-5984-46a4-902a-ad4271e83efa'
+endpoint_url = '${ENDPOINT_URL}'
 
-# ── 11. Update Federated Identity Credential subject ─────────────────────────
-echo ""
-echo "Updating Federated Identity Credential..."
-# The subject must be the base64url of the validate endpoint URL as Power Platform sees it.
-# Power Platform encodes: https://lilith-zero.badcompany.xyz/validate
-VALIDATE_URL="https://lilith-zero.badcompany.xyz/validate"
-B64_URL=$(echo -n "$VALIDATE_URL" | base64 | tr '+/' '-_' | tr -d '=')
-NEW_SUBJECT="/eid1/c/pub/t/0vfimNPBEES4fyOW8VeXXw/a/m1WPnYRZpEaQKq1Cceg--g/${B64_URL}"
+def b64url_uuid(u_str):
+    return base64.urlsafe_b64encode(uuid.UUID(u_str).bytes_le).decode().rstrip('=')
 
-echo "  New subject: $NEW_SUBJECT"
+def b64url_str(s):
+    return base64.urlsafe_b64encode(s.encode()).decode().rstrip('=')
 
-# Get existing FIC id
-FIC_ID=$(az ad app federated-credential list --id "$APP_ID" --query "[0].id" -o tsv)
+print(f'/eid1/c/pub/t/{b64url_uuid(tenant_id)}/a/{b64url_uuid(copilot_app_id)}/{b64url_str(endpoint_url)}')
+")
 
-az ad app federated-credential update \
-    --id "$APP_ID" \
-    --federated-credential-id "$FIC_ID" \
-    --parameters "{
-        \"name\": \"LilithZeroFIC\",
-        \"issuer\": \"https://login.microsoftonline.com/${TENANT_ID}/v2.0\",
-        \"subject\": \"${NEW_SUBJECT}\",
-        \"description\": \"Azure App Service deployment\",
-        \"audiences\": [\"api://AzureADTokenExchange\"]
-    }"
-echo "✓ Federated credential updated"
+echo "Subject string: $NEW_SUBJECT"
 
-# ── 12. Final status ──────────────────────────────────────────────────────────
+# Check if federated credential already exists
+FIC_ID=$(az ad app federated-credential list --id "$APP_ID" --query "[?name=='LilithZeroFIC'].id" -o tsv)
+
+if [ -z "$FIC_ID" ]; then
+    echo "Creating federated credential..."
+    az ad app federated-credential create \
+        --id "$APP_ID" \
+        --parameters "{
+            \"name\": \"LilithZeroFIC\",
+            \"issuer\": \"https://login.microsoftonline.com/${TENANT_ID}/v2.0\",
+            \"subject\": \"${NEW_SUBJECT}\",
+            \"description\": \"Azure App Service deployment\",
+            \"audiences\": [\"api://AzureADTokenExchange\"]
+        }"
+else
+    echo "Updating federated credential $FIC_ID..."
+    az ad app federated-credential update \
+        --id "$APP_ID" \
+        --federated-credential-id "$FIC_ID" \
+        --parameters "{
+            \"name\": \"LilithZeroFIC\",
+            \"issuer\": \"https://login.microsoftonline.com/${TENANT_ID}/v2.0\",
+            \"subject\": \"${NEW_SUBJECT}\",
+            \"description\": \"Azure App Service deployment\",
+            \"audiences\": [\"api://AzureADTokenExchange\"]
+        }"
+fi
+echo "✓ Federated credential configured"
+
+# ── 10. Final status ──────────────────────────────────────────────────────────
 echo ""
 echo "=== DEPLOY COMPLETE ==="
 echo ""
