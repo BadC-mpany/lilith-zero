@@ -535,11 +535,18 @@ def run_tests():
     
     # Run tests
     results = []
+    fuzz_results = []
+    
+    passed_count = 0
+    failed_count = 0
+    skipped_count = 0
+    test_details = []
+    total_start_time = time.perf_counter()
     
     # Peak children maxrss before runs
     maxrss_before = resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss
     
-    print("\nExecuting Differential Scenarios...")
+    print("\n\033[1mExecuting Differential Scenarios...\033[0m")
     print("-" * 80)
     
     for sc in scenarios:
@@ -552,22 +559,20 @@ def run_tests():
             "tool_input": sc["tool_input"]
         }
         
+        sc_start = time.perf_counter()
+        
         # 1. Retrieve or run CLI
         cli_hash = get_scenario_hash(sc["policy_content"], payload_cli, sc["initial_taints"], "cli")
         if cli_hash in cache:
             cli_dec, cli_pols = cache[cli_hash]["decision"], cache[cli_hash]["policies"]
-            print(f"[CACHE] CLI for '{name}': {cli_dec.upper()}")
         else:
             cli_dec, cli_pols, _, _ = run_cli_hook(binary, pol if not os.path.isdir(pol) else os.path.join(pol, f"policy_{sc['agent_id']}.cedar"), payload_cli, sc["initial_taints"], session_dir)
             cache[cli_hash] = {"decision": cli_dec, "policies": cli_pols}
-            print(f"[RUN]   CLI for '{name}': {cli_dec.upper()}")
             
         # 2. Retrieve or run Webhook
-        # Note: if policy is a directory, start server with dir. Otherwise with single file.
         web_hash = get_scenario_hash(sc["policy_content"], payload_cli, sc["initial_taints"], "webhook")
         if web_hash in cache:
             web_dec, web_pols = cache[web_hash]["decision"], cache[web_hash]["policies"]
-            print(f"[CACHE] Webhook for '{name}': {web_dec.upper()}")
         else:
             server_manager.start(pol)
             web_dec, web_pols, _, _ = run_webhook_request(
@@ -580,7 +585,6 @@ def run_tests():
                 session_dir
             )
             cache[web_hash] = {"decision": web_dec, "policies": web_pols}
-            print(f"[RUN]   Webhook for '{name}': {web_dec.upper()}")
             
         # Register matched policies
         matched_rules_in_test.update(cli_pols)
@@ -588,12 +592,16 @@ def run_tests():
         
         # Verify differential equivalent
         success = (cli_dec == web_dec)
+        sc_elapsed = time.perf_counter() - sc_start
+        
         if success:
-            # Let's verify policies match. If expected_policies specified, verify that one of them matches.
-            # (Sometimes YAML compiling creates slightly different indexes in custom runs, so comparison is best)
-            print(f"[✓ PASS] Scenario '{name}' matches. Policies: CLI={cli_pols}, Web={web_pols}")
+            passed_count += 1
+            print(f"  \033[32mPASS\033[0m [{sc_elapsed:8.3f}s] Differential: {name} (CLI={cli_dec}, Web={web_dec})")
         else:
-            print(f"[✗ FAIL] Scenario '{name}' MISMATCH! CLI={cli_dec} (pols={cli_pols}), Web={web_dec} (pols={web_pols})")
+            failed_count += 1
+            detail = f"MISMATCH! CLI={cli_dec} (pols={cli_pols}), Web={web_dec} (pols={web_pols})"
+            print(f"  \033[31mFAIL\033[0m [{sc_elapsed:8.3f}s] Differential: {name} ({detail})")
+            test_details.append(f"  - Differential: {name} ({detail})")
             
         results.append({
             "name": name,
@@ -602,13 +610,13 @@ def run_tests():
             "web_decision": web_dec,
             "cli_pols": cli_pols,
             "web_pols": web_pols,
-            "success": success
+            "success": success,
+            "duration": sc_elapsed
         })
         
     # --- Fuzzing Test Suite ---
-    fuzz_results = []
     if args.fuzz:
-        print("\nExecuting Adversarial Fuzzing Scenarios...")
+        print("\n\033[1mExecuting Adversarial Fuzzing Scenarios...\033[0m")
         print("-" * 80)
         
         fuzz_payloads = [
@@ -666,15 +674,14 @@ def run_tests():
             fname = fp["name"]
             payload = fp["payload"]
             
+            sc_start = time.perf_counter()
+            
             # CLI Fuzz run: MUST fail-closed or reject safely (non-zero or blocked), and NOT crash
             cli_dec, _, _, exit_code = run_cli_hook(binary, universal_yaml_path, payload, [], session_dir)
             cli_crashed = (exit_code in [-6, -11] or exit_code > 128) # check for SIGABRT/SIGSEGV
             
             # Webhook Fuzz run: server MUST handle safely without crashing
             server_manager.start(universal_yaml_path)
-            
-            # Count FDs and status before fuzz request
-            fd_before = get_open_fd_count(server_manager.proc.pid)
             
             web_dec, _, _, status_code = run_webhook_request(
                 server_manager.port,
@@ -691,18 +698,24 @@ def run_tests():
             web_crashed = (server_manager.proc.returncode is not None)
             
             success = (not cli_crashed) and (not web_crashed)
+            sc_elapsed = time.perf_counter() - sc_start
             
             if success:
-                print(f"[✓ PASS] Fuzz '{fname}': Safety check passed. CLI={cli_dec} (code={exit_code}), Web={web_dec} (status={status_code})")
+                passed_count += 1
+                print(f"  \033[32mPASS\033[0m [{sc_elapsed:8.3f}s] Fuzzing: {fname} (CLI={cli_dec}, Web={web_dec})")
             else:
-                print(f"[✗ FAIL] Fuzz '{fname}' CRASHED/FAILED! CLI Crashed={cli_crashed}, Web Crashed={web_crashed}")
+                failed_count += 1
+                detail = f"CLI Crashed={cli_crashed}, Web Crashed={web_crashed}"
+                print(f"  \033[31mFAIL\033[0m [{sc_elapsed:8.3f}s] Fuzzing: {fname} ({detail})")
+                test_details.append(f"  - Fuzzing: {fname} ({detail})")
                 
             fuzz_results.append({
                 "name": fname,
                 "category": "Fuzzing Safety",
                 "cli_decision": cli_dec,
                 "web_decision": web_dec,
-                "success": success
+                "success": success,
+                "duration": sc_elapsed
             })
             
     # Webhook server final Diagnostics
@@ -750,44 +763,112 @@ def run_tests():
     matched_expected = all_expected_rules.intersection(matched_rules_in_test)
     coverage_pct = (len(matched_expected) / len(all_expected_rules)) * 100.0 if all_expected_rules else 0.0
     
-    # Create Analysis Report
-    print("\n" + "=" * 80)
-    print("DIFFERENTIAL & FUZZ TESTING REPORT")
-    print("=" * 80)
+    total_duration = time.perf_counter() - total_start_time
     
-    total_diff = len(results)
-    passed_diff = sum(1 for r in results if r["success"])
-    print(f"Differential Accuracy: {passed_diff}/{total_diff} passed ({(passed_diff/total_diff)*100.0:.2f}%)")
-    
-    if args.fuzz:
-        total_fuzz = len(fuzz_results)
-        passed_fuzz = sum(1 for r in fuzz_results if r["success"])
-        print(f"Fuzzing Robustness:   {passed_fuzz}/{total_fuzz} passed ({(passed_fuzz/total_fuzz)*100.0:.2f}%)")
-        
-    print(f"Cedar Policy Rule Coverage: {len(matched_expected)}/{len(all_expected_rules)} rules matched ({coverage_pct:.2f}%)")
+    # Nextest-style Summary Bottom
     print("-" * 80)
-    print(f"Webhook Peak RSS (HWM):     {vm_hwm} KB")
-    print(f"Webhook Peak Virtual (VM):  {vm_peak} KB")
-    print(f"Webhook FD Leak Delta:      {fd_after - fd_before} (before={fd_before}, after={fd_after})")
-    print(f"CLI Hook Peak RSS:          {cli_peak_rss_kb} KB")
-    print("=" * 80 + "\n")
+    print(f"\033[1mSummary:\033[0m \033[32m{passed_count} passed\033[0m, \033[31m{failed_count} failed\033[0m, \033[33m{skipped_count} skipped\033[0m in {total_duration:.3f}s")
+    print("-" * 80)
     
-    # Print Markdown Summary Table
-    print("## Performance and Correctness Summary\n")
-    print("| Metric | Value | Status |")
-    print("|---|---|---|")
-    print(f"| Differential correctness | {passed_diff}/{total_diff} passed | {'✓ PASS' if passed_diff == total_diff else '✗ FAIL'} |")
-    if args.fuzz:
-        print(f"| Fuzzing safety | {passed_fuzz}/{total_fuzz} passed | {'✓ PASS' if passed_fuzz == total_fuzz else '✗ FAIL'} |")
-    print(f"| Cedar policy rule coverage | {coverage_pct:.2f}% | {'✓ PASS' if coverage_pct > 0 else '✗ FAIL'} |")
-    print(f"| Webhook peak memory (VmHWM) | {vm_hwm} KB | Active |")
-    print(f"| CLI peak memory (RSS) | {cli_peak_rss_kb} KB | Active |")
-    print(f"| Webhook open FDs delta | {fd_after - fd_before} | {'✓ PASS' if (fd_after - fd_before) == 0 else '✗ FAIL'} |")
-    print("\nDetailed Matched Policy Rules:")
+    if failed_count > 0:
+        print("\n\033[31;1mFailures:\033[0m")
+        for detail in test_details:
+            print(detail)
+        print("-" * 80)
+        
+    # rule coverage matching output
+    print("\n\033[1mDetailed Cedar Policy Rule Usage:\033[0m")
     for r in sorted(all_expected_rules):
-        status = "MATCHED" if r in matched_rules_in_test else "NOT MATCHED"
-        print(f" - {r}: {status}")
-
+        if r in matched_rules_in_test:
+            print(f" - {r}: \033[32mUSED\033[0m")
+        else:
+            print(f" - {r}: \033[33mNOT USED\033[0m  # (To use this rule, create a test scenario targeting it)")
+            
+    # Export reports
+    results_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "results")
+    os.makedirs(results_dir, exist_ok=True)
+    
+    report_json_path = os.path.join(results_dir, "differential_and_fuzz_report.json")
+    report_md_path = os.path.join(results_dir, "differential_and_fuzz_report.md")
+    
+    # Save JSON report
+    report_data = {
+        "summary": {
+            "total": passed_count + failed_count + skipped_count,
+            "passed": passed_count,
+            "failed": failed_count,
+            "skipped": skipped_count,
+            "duration_sec": total_duration,
+            "rule_coverage_pct": coverage_pct,
+            "webhook_peak_rss_kb": vm_hwm,
+            "webhook_peak_vm_kb": vm_peak,
+            "webhook_fd_leak": fd_after - fd_before,
+            "cli_peak_rss_kb": cli_peak_rss_kb
+        },
+        "scenarios": results + fuzz_results,
+        "rules": {r: ("USED" if r in matched_rules_in_test else "NOT USED") for r in sorted(all_expected_rules)}
+    }
+    
+    with open(report_json_path, "w") as f:
+        json.dump(report_data, f, indent=2)
+        
+    # Save Markdown report
+    md_lines = [
+        "# Lilith Zero: Differential and Fuzzing Report",
+        "",
+        "## Performance and Correctness Summary",
+        "",
+        "| Metric | Value | Status |",
+        "|---|---|---|",
+        f"| Differential correctness | {passed_count - len(fuzz_results) if args.fuzz else passed_count}/{len(results)} passed | {'✓ PASS' if (passed_count - len(fuzz_results) if args.fuzz else passed_count) == len(results) else '✗ FAIL'} |",
+    ]
+    if args.fuzz:
+        md_lines.append(f"| Fuzzing safety | {len(fuzz_results) - (failed_count if failed_count > (len(results)-passed_count) else 0)}/{len(fuzz_results)} passed | {'✓ PASS' if (failed_count == 0 or failed_count <= (len(results)-passed_count)) else '✗ FAIL'} |")
+    md_lines.extend([
+        f"| Cedar policy rule coverage | {coverage_pct:.2f}% | {'✓ PASS' if coverage_pct > 0 else '✗ FAIL'} |",
+        f"| Webhook peak memory (VmHWM) | {vm_hwm} KB | Active |",
+        f"| CLI peak memory (RSS) | {cli_peak_rss_kb} KB | Active |",
+        f"| Webhook open FDs delta | {fd_after - fd_before} | {'✓ PASS' if (fd_after - fd_before) == 0 else '✗ FAIL'} |",
+        "",
+        "## Test Scenarios",
+        "",
+        "### Differential Accuracy (CLI vs Webhook)",
+        "| Scenario | CLI Decision | Webhook Decision | Status |",
+        "|---|---|---|---|",
+    ])
+    for r in results:
+        status_str = "PASS" if r["success"] else "FAIL"
+        md_lines.append(f"| {r['name']} | {r['cli_decision'].upper()} | {r['web_decision'].upper()} | {status_str} |")
+        
+    if args.fuzz:
+        md_lines.extend([
+            "",
+            "### Fuzzing Safety & Robustness",
+            "| Fuzzing Scenario | CLI Decision | Webhook Decision | Status |",
+            "|---|---|---|---|",
+        ])
+        for r in fuzz_results:
+            status_str = "PASS" if r["success"] else "FAIL"
+            md_lines.append(f"| {r['name']} | {r['cli_decision'].upper()} | {r['web_decision'].upper()} | {status_str} |")
+            
+    md_lines.extend([
+        "",
+        "## Cedar Policy Rule Usage",
+        "",
+    ])
+    for r in sorted(all_expected_rules):
+        if r in matched_rules_in_test:
+            md_lines.append(f"- **{r}**: USED")
+        else:
+            md_lines.append(f"- **{r}**: NOT USED (To use this rule, create a test scenario targeting it)")
+            
+    with open(report_md_path, "w") as f:
+        f.write("\n".join(md_lines) + "\n")
+        
+    print(f"\nReports saved successfully to:")
+    print(f" - Markdown: \033[36m{report_md_path}\033[0m")
+    print(f" - JSON:     \033[36m{report_json_path}\033[0m")
+    
 if __name__ == "__main__":
     try:
         run_tests()

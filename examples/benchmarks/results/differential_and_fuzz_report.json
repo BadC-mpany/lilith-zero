@@ -1,0 +1,206 @@
+{
+  "summary": {
+    "total": 13,
+    "passed": 13,
+    "failed": 0,
+    "skipped": 0,
+    "duration_sec": 72.56381321902154,
+    "rule_coverage_pct": 8.333333333333332,
+    "webhook_peak_rss_kb": 10776,
+    "webhook_peak_vm_kb": 283992,
+    "webhook_fd_leak": 0,
+    "cli_peak_rss_kb": 28604
+  },
+  "scenarios": [
+    {
+      "name": "Static Allowed Tool",
+      "category": "Differential",
+      "cli_decision": "deny",
+      "web_decision": "deny",
+      "cli_pols": [],
+      "web_pols": [],
+      "success": true,
+      "duration": 0.027031946985516697
+    },
+    {
+      "name": "Static Denied Tool",
+      "category": "Differential",
+      "cli_decision": "deny",
+      "web_decision": "deny",
+      "cli_pols": [],
+      "web_pols": [],
+      "success": true,
+      "duration": 0.010513179993722588
+    },
+    {
+      "name": "Taint Rule Match (ADD_TAINT)",
+      "category": "Differential",
+      "cli_decision": "deny",
+      "web_decision": "deny",
+      "cli_pols": [],
+      "web_pols": [],
+      "success": true,
+      "duration": 0.009186594979837537
+    },
+    {
+      "name": "Exfiltration Block (Lethal Trifecta)",
+      "category": "Differential",
+      "cli_decision": "deny",
+      "web_decision": "deny",
+      "cli_pols": [],
+      "web_pols": [],
+      "success": true,
+      "duration": 0.008996555989142507
+    },
+    {
+      "name": "Agent-1 Allowed Tool",
+      "category": "Differential",
+      "cli_decision": "allow",
+      "web_decision": "allow",
+      "cli_pols": [
+        "policy0",
+        "allow-read-agent1"
+      ],
+      "web_pols": [
+        "policy0",
+        "allow-read-agent1"
+      ],
+      "success": true,
+      "duration": 0.11196454399032518
+    },
+    {
+      "name": "Agent-1 Denied Tool",
+      "category": "Differential",
+      "cli_decision": "deny",
+      "web_decision": "deny",
+      "cli_pols": [
+        "deny-delete-agent1"
+      ],
+      "web_pols": [
+        "deny-delete-agent1"
+      ],
+      "success": true,
+      "duration": 0.0075906579731963575
+    },
+    {
+      "name": "Agent-2 Allowed Tool",
+      "category": "Differential",
+      "cli_decision": "allow",
+      "web_decision": "allow",
+      "cli_pols": [
+        "policy0",
+        "allow-delete-agent2"
+      ],
+      "web_pols": [
+        "policy0",
+        "allow-delete-agent2"
+      ],
+      "success": true,
+      "duration": 0.008547280041966587
+    },
+    {
+      "name": "Agent-2 Denied Tool",
+      "category": "Differential",
+      "cli_decision": "deny",
+      "web_decision": "deny",
+      "cli_pols": [
+        "deny-read-agent2"
+      ],
+      "web_pols": [
+        "deny-read-agent2"
+      ],
+      "success": true,
+      "duration": 0.007835252967197448
+    },
+    {
+      "name": "Fuzz: Deeply Nested Object",
+      "category": "Fuzzing Safety",
+      "cli_decision": "deny",
+      "web_decision": "deny",
+      "success": true,
+      "duration": 0.12629846495110542
+    },
+    {
+      "name": "Fuzz: Giant Tool Name Buffer",
+      "category": "Fuzzing Safety",
+      "cli_decision": "deny",
+      "web_decision": "error",
+      "success": true,
+      "duration": 8.035378800996114
+    },
+    {
+      "name": "Fuzz: Null Byte Path Injection",
+      "category": "Fuzzing Safety",
+      "cli_decision": "deny",
+      "web_decision": "error",
+      "success": true,
+      "duration": 8.033934134989977
+    },
+    {
+      "name": "Fuzz: Directory Traversal",
+      "category": "Fuzzing Safety",
+      "cli_decision": "deny",
+      "web_decision": "error",
+      "success": true,
+      "duration": 8.039044178964105
+    },
+    {
+      "name": "Fuzz: Missing Event Name",
+      "category": "Fuzzing Safety",
+      "cli_decision": "deny",
+      "web_decision": "error",
+      "success": true,
+      "duration": 8.021747225953732
+    }
+  ],
+  "rules": {
+    "add_taint:PII:_5": "NOT USED",
+    "add_taint:PII:_6": "NOT USED",
+    "add_taint:SECRET:_1": "NOT USED",
+    "add_taint:SECRET:_2": "NOT USED",
+    "add_taint:SECRET:_3": "NOT USED",
+    "add_taint:SECRET:_4": "NOT USED",
+    "add_taint:UNTRUSTED_DOC:_10": "NOT USED",
+    "add_taint:UNTRUSTED_DOC:_7": "NOT USED",
+    "add_taint:UNTRUSTED_DOC:_8": "NOT USED",
+    "add_taint:UNTRUSTED_DOC:_9": "NOT USED",
+    "allow-delete-agent2": "USED",
+    "allow-read-agent1": "USED",
+    "default_resource_permit": "NOT USED",
+    "deny-delete-agent1": "USED",
+    "deny-read-agent2": "USED",
+    "rule_0": "NOT USED",
+    "rule_11": "NOT USED",
+    "rule_12": "NOT USED",
+    "rule_13": "NOT USED",
+    "rule_14": "NOT USED",
+    "rule_15": "NOT USED",
+    "rule_16": "NOT USED",
+    "rule_17": "NOT USED",
+    "rule_18": "NOT USED",
+    "rule_19": "NOT USED",
+    "static_Bash": "NOT USED",
+    "static_Glob": "NOT USED",
+    "static_Grep": "NOT USED",
+    "static_Read": "NOT USED",
+    "static_WebSearch": "NOT USED",
+    "static_Write": "NOT USED",
+    "static_bash": "NOT USED",
+    "static_create_file": "NOT USED",
+    "static_delete_file": "NOT USED",
+    "static_edit_file": "NOT USED",
+    "static_fetch_webpage": "NOT USED",
+    "static_glob": "NOT USED",
+    "static_grep_search": "NOT USED",
+    "static_ls": "NOT USED",
+    "static_manage_todo_list": "NOT USED",
+    "static_readFile": "NOT USED",
+    "static_read_file": "NOT USED",
+    "static_rg": "NOT USED",
+    "static_runCommand": "NOT USED",
+    "static_run_in_terminal": "NOT USED",
+    "static_search": "NOT USED",
+    "static_view": "NOT USED",
+    "static_web_fetch": "NOT USED"
+  }
+}

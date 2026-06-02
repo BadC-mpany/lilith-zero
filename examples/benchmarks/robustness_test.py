@@ -179,30 +179,112 @@ def run_all(binary_path: str, policy_path: str, cedar_policy_path: str):
     env = os.environ.copy()
     env["LILITH_ZERO_SESSION_STORAGE_DIR"] = temp_dir
     
-    success = True
-    try:
-        # Test 1: Fail closed
-        if not test_fail_closed_on_invalid_inputs(binary_path, policy_path, env):
-            success = False
+    passed_count = 0
+    failed_count = 0
+    test_details = []
+    scenarios_data = []
+    
+    total_start = time.perf_counter()
+    
+    tests = [
+        ("Fail-Closed on Invalid Inputs", test_fail_closed_on_invalid_inputs, [binary_path, policy_path, env]),
+        ("Lock Contention / Session Safety", test_lock_contention, [binary_path, policy_path, env]),
+        ("Cedar Taint Persistence Workflow", test_taint_persistence_workflow, [binary_path, cedar_policy_path, env]),
+    ]
+    
+    print("\n\033[1mExecuting Robustness Scenarios...\033[0m")
+    print("-" * 80)
+    
+    for name, fn, args in tests:
+        start_time = time.perf_counter()
+        try:
+            ok = fn(*args)
+        except Exception as e:
+            print(f"Exception during {name}: {e}")
+            ok = False
+        elapsed = time.perf_counter() - start_time
+        
+        if ok:
+            passed_count += 1
+            print(f"  \033[32mPASS\033[0m [{elapsed:8.3f}s] Robustness: {name}")
+        else:
+            failed_count += 1
+            print(f"  \033[31mFAIL\033[0m [{elapsed:8.3f}s] Robustness: {name}")
+            test_details.append(f"  - Robustness: {name} (failed safety checks)")
+            
+        scenarios_data.append({
+            "name": name,
+            "success": ok,
+            "duration": elapsed
+        })
+        
+    total_duration = time.perf_counter() - total_start
+    
+    # Nextest-style Summary Bottom
+    print("-" * 80)
+    print(f"\033[1mSummary:\033[0m \033[32m{passed_count} passed\033[0m, \033[31m{failed_count} failed\033[0m, \033[33m0 skipped\033[0m in {total_duration:.3f}s")
+    print("-" * 80)
+    
+    if failed_count > 0:
+        print("\n\033[31;1mFailures:\033[0m")
+        for detail in test_details:
+            print(detail)
+        print("-" * 80)
 
-        # Test 2: Lock Contention
-        if not test_lock_contention(binary_path, policy_path, env):
-            success = False
+    # Export reports
+    results_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "results")
+    os.makedirs(results_dir, exist_ok=True)
 
-        # Test 3: Cedar Taint Persistence
-        if not test_taint_persistence_workflow(binary_path, cedar_policy_path, env):
-            success = False
+    report_json_path = os.path.join(results_dir, "robustness_report.json")
+    report_md_path = os.path.join(results_dir, "robustness_report.md")
 
-    finally:
-        shutil.rmtree(temp_dir)
+    # Save JSON report
+    report_data = {
+        "summary": {
+            "total_runs": len(tests),
+            "successes": passed_count,
+            "failures": failed_count,
+            "duration_sec": total_duration,
+            "status": "PASS" if failed_count == 0 else "FAIL"
+        },
+        "scenarios": scenarios_data
+    }
 
-    print("\n" + "=" * 80)
-    if success:
-        print("ALL ROBUSTNESS AND PERSISTENCE TESTS PASSED SUCCESSFULLY!")
-    else:
-        print("ROBUSTNESS VERIFICATION DETECTED FAILURE CASES.")
-    print("=" * 80)
-    return 0 if success else 1
+    with open(report_json_path, "w") as f:
+        json.dump(report_data, f, indent=2)
+
+    # Save Markdown report
+    md_lines = [
+        "# Lilith Zero: Robustness and Failure Injection Report",
+        "",
+        "## Execution Summary",
+        f"- **Total Scenarios**: {len(tests)}",
+        f"- **Passed Scenarios**: {passed_count}",
+        f"- **Failed Scenarios**: {failed_count}",
+        f"- **Total Duration**: {total_duration:.3f}s",
+        f"- **Status**: {'✓ PASS' if failed_count == 0 else '✗ FAIL'}",
+        "",
+        "## Robustness Scenario Breakdown",
+        "",
+        "| Robustness Scenario | Duration | Status |",
+        "|---|---|---|",
+    ]
+
+    for s in scenarios_data:
+        status_str = "PASS" if s["success"] else "FAIL"
+        md_lines.append(f"| {s['name']} | {s['duration']:.3f}s | {status_str} |")
+
+    with open(report_md_path, "w") as f:
+        f.write("\n".join(md_lines) + "\n")
+
+    print(f"\nReports saved successfully to:")
+    print(f" - Markdown: \033[36m{report_md_path}\033[0m")
+    print(f" - JSON:     \033[36m{report_json_path}\033[0m")
+
+    # Cleanup the temp session files dir
+    shutil.rmtree(temp_dir)
+
+    return 0 if failed_count == 0 else 1
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Lilith Zero Robustness & Failure Injection Suite")

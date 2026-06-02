@@ -83,6 +83,8 @@ def run_benchmark(
 
     successes = 0
     failures = 0
+    test_details = []
+    start_benchmark_time = time.perf_counter()
 
     try:
         for i in range(iterations):
@@ -144,10 +146,9 @@ def run_benchmark(
                 successes += 1
             else:
                 failures += 1
-                print(f"Mismatch at iteration {i}: Expected {'allow' if is_allowed else 'deny'}")
-                print(f"Stdout: {stdout_str.strip()}")
-                print(f"Stderr: {stderr_str.strip()}")
-                print(f"Exit Code: {proc.returncode}")
+                detail = f"Iteration {i} Mismatch (Expected {'allow' if is_allowed else 'deny'}, Got exit_code={proc.returncode})"
+                print(f"  \033[31mFAIL\033[0m [{elapsed_ms/1000.0:8.3f}s] CLI Hook: {detail}")
+                test_details.append(f"  - Iteration {i}: {detail}")
 
             # Parse timing breakdown from stderr
             match = TIMING_REGEX.search(stderr_str)
@@ -171,17 +172,28 @@ def run_benchmark(
                 metrics["total_process"].append(elapsed_ms)
 
             if (i + 1) % max(1, iterations // 10) == 0:
-                print(f"Progress: {i + 1}/{iterations} runs complete...")
+                print(f"  \033[36mINFO\033[0m Progress: {i + 1}/{iterations} runs complete...")
 
     finally:
         # Clean up isolated session files
         shutil.rmtree(temp_session_dir)
 
+    total_duration = time.perf_counter() - start_benchmark_time
+
+    # Nextest-style Summary Bottom
+    print("-" * 80)
+    print(f"\033[1mSummary:\033[0m \033[32m{successes} passed\033[0m, \033[31m{failures} failed\033[0m, \033[33m0 skipped\033[0m in {total_duration:.3f}s")
+    print("-" * 80)
+
+    if failures > 0:
+        print("\n\033[31;1mFailures:\033[0m")
+        for detail in test_details:
+            print(detail)
+        print("-" * 80)
+
     # Print summary table
     print("\n" + "=" * 80)
     print("BENCHMARK EXECUTION RESULTS")
-    print(f"Total Runs: {iterations} | Correct Decisions: {successes} | Mismatches: {failures}")
-    print(f"Policy Enforcement Accuracy: {(successes/iterations)*100:.2f}%")
     print("=" * 80)
 
     # Helper function to print a row of statistics
@@ -211,6 +223,84 @@ def run_benchmark(
     print(format_row("Binary Startup/IO", metrics["overhead"]))
     print(format_row("Total Process Execution", metrics["total_process"]))
     print("=" * 80)
+
+    # Export reports
+    results_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "results")
+    os.makedirs(results_dir, exist_ok=True)
+
+    report_json_path = os.path.join(results_dir, "hook_benchmark_report.json")
+    report_md_path = os.path.join(results_dir, "hook_benchmark_report.md")
+
+    def get_phase_stats(values: List[float]) -> Dict[str, float]:
+        if not values:
+            return {"avg": 0.0, "med": 0.0, "p95": 0.0, "p99": 0.0, "max": 0.0}
+        return {
+            "avg": sum(values) / len(values),
+            "med": calculate_percentile(values, 0.5),
+            "p95": calculate_percentile(values, 0.95),
+            "p99": calculate_percentile(values, 0.99),
+            "max": max(values)
+        }
+
+    # Save JSON report
+    report_data = {
+        "summary": {
+            "total_runs": iterations,
+            "successes": successes,
+            "failures": failures,
+            "accuracy_pct": (successes / iterations) * 100.0 if iterations else 0.0,
+            "duration_sec": total_duration
+        },
+        "metrics": {
+            "lock_acquire": get_phase_stats(metrics["lock_acquire"]),
+            "state_load": get_phase_stats(metrics["state_load"]),
+            "core_eval": get_phase_stats(metrics["core_eval"]),
+            "state_save": get_phase_stats(metrics["state_save"]),
+            "overhead": get_phase_stats(metrics["overhead"]),
+            "total_process": get_phase_stats(metrics["total_process"])
+        }
+    }
+
+    with open(report_json_path, "w") as f:
+        json.dump(report_data, f, indent=2)
+
+    # Save Markdown report
+    md_lines = [
+        "# Lilith Zero: CLI Hook Latency Benchmark Report",
+        "",
+        "## Execution Summary",
+        f"- **Total Invocations**: {iterations}",
+        f"- **Correct Decisions**: {successes}",
+        f"- **Mismatches**: {failures}",
+        f"- **Policy Enforcement Accuracy**: {(successes/iterations)*100:.2f}%",
+        f"- **Total Benchmark Duration**: {total_duration:.3f}s",
+        f"- **Status**: {'✓ PASS' if failures == 0 else '✗ FAIL'}",
+        "",
+        "## Latency Metrics Breakdown (ms)",
+        "",
+        f"| {'Metric Phase':<23} | {'Avg (ms)':<7} | {'Med (ms)':<7} | {'P95 (ms)':<7} | {'P99 (ms)':<7} | {'Max (ms)':<7} |",
+        "|---|---|---|---|---|---|",
+    ]
+
+    def md_row(name: str, key: str) -> str:
+        stats = report_data["metrics"][key]
+        return f"| {name} | {stats['avg']:.2f} | {stats['med']:.2f} | {stats['p95']:.2f} | {stats['p99']:.2f} | {stats['max']:.2f} |"
+
+    md_lines.extend([
+        md_row("Session Lock Acquire", "lock_acquire"),
+        md_row("Session State Load", "state_load"),
+        md_row("Security Policy Eval", "core_eval"),
+        md_row("Session State Save", "state_save"),
+        md_row("Binary Startup/IO Overhead", "overhead"),
+        md_row("Total Process Execution", "total_process"),
+    ])
+
+    with open(report_md_path, "w") as f:
+        f.write("\n".join(md_lines) + "\n")
+
+    print(f"\nReports saved successfully to:")
+    print(f" - Markdown: \033[36m{report_md_path}\033[0m")
+    print(f" - JSON:     \033[36m{report_json_path}\033[0m")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Lilith Zero CLI Hook Benchmarking Suite")

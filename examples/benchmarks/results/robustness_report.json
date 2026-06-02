@@ -1,0 +1,26 @@
+{
+  "summary": {
+    "total_runs": 3,
+    "successes": 3,
+    "failures": 0,
+    "duration_sec": 0.06286514201201499,
+    "status": "PASS"
+  },
+  "scenarios": [
+    {
+      "name": "Fail-Closed on Invalid Inputs",
+      "success": true,
+      "duration": 0.009288290981203318
+    },
+    {
+      "name": "Lock Contention / Session Safety",
+      "success": true,
+      "duration": 0.020810730988159776
+    },
+    {
+      "name": "Cedar Taint Persistence Workflow",
+      "success": true,
+      "duration": 0.03266063699265942
+    }
+  ]
+}
