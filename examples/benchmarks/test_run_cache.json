@@ -1,0 +1,86 @@
+{
+  "293fe3ab40e488e1ea42bd74e1c942e161e934831544feceaa46a807fdbe5672": {
+    "decision": "deny",
+    "policies": []
+  },
+  "3608e9c7902db0d1cc19c9dba1ff15c03a51b9fe8e667653badb3d6612918682": {
+    "decision": "deny",
+    "policies": []
+  },
+  "e049547bfde8bd312552b55b5b484db5d03d183b2068b2f69cfdcf0fe619f20a": {
+    "decision": "deny",
+    "policies": []
+  },
+  "6f687f8a3a14063392c6eb89a36128acfa522cdf2d6d427241891805d547c177": {
+    "decision": "deny",
+    "policies": []
+  },
+  "2826c0844619e3918755a4bcf89f2b4ee6fdc41e3b25b371082610abce35209b": {
+    "decision": "deny",
+    "policies": []
+  },
+  "0b5c19566521e73ea409b9172efff629f308ab5d1a1bc9014bd2dce870e852a1": {
+    "decision": "deny",
+    "policies": []
+  },
+  "e9fae64b53065d6a32f872469abad1c529281bff586904f4e196a7f539b0f9f3": {
+    "decision": "deny",
+    "policies": []
+  },
+  "e4cf5f42ceb5f246245ff91eef0ae218de61d5fe1e0c626982240d4a8a2f96d0": {
+    "decision": "deny",
+    "policies": []
+  },
+  "6eab964b793c262a9be97f91c77125cd0f38caec28b0789d8482c1ec789202d8": {
+    "decision": "allow",
+    "policies": [
+      "policy0",
+      "allow-read-agent1"
+    ]
+  },
+  "54cffb77337bce5e8394921420a5951dab7afe6dd3a2dbf54a31a9f14e22e2ca": {
+    "decision": "allow",
+    "policies": [
+      "policy0",
+      "allow-read-agent1"
+    ]
+  },
+  "ee52cb6808e64920f624cce07272d0b55b8fcda1732b8ab22f764151e2b14321": {
+    "decision": "deny",
+    "policies": [
+      "deny-delete-agent1"
+    ]
+  },
+  "9eed0e6aebc809dc968441a9e6c260197d3c114bee343065e0f27c1c59ccc4f5": {
+    "decision": "deny",
+    "policies": [
+      "deny-delete-agent1"
+    ]
+  },
+  "0aa2c2a1cfd8ef09ac55d08fb17ff486ca76045da79178442bf8dd9e16d7e66b": {
+    "decision": "allow",
+    "policies": [
+      "policy0",
+      "allow-delete-agent2"
+    ]
+  },
+  "9bc856e7c62a34242ba20be2e8e2966365af5b7045dcffc71c6316362e90dc37": {
+    "decision": "allow",
+    "policies": [
+      "policy0",
+      "allow-delete-agent2"
+    ]
+  },
+  "b1dd4b14b46ddbe0de97d7bedf3c2affe1b42ce528dfc7c7d1188d7f7a265feb": {
+    "decision": "deny",
+    "policies": [
+      "deny-read-agent2"
+    ]
+  },
+  "b25bf2861e70c0407f8a2da65b417e93e3653cf3b44a5b975121f0e506415b01": {
+    "decision": "deny",
+    "policies": [
+      "deny-read-agent2"
+    ]
+  }
+}

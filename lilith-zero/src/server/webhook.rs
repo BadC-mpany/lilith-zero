@@ -378,8 +378,12 @@ async fn do_analyze(
     let total_server_time_ms = start_server_total.elapsed().as_secs_f64() * 1000.0;
     let mut http_resp = (StatusCode::OK, Json(response)).into_response();
     if state.config.expose_timing {
+        let headers = http_resp.headers_mut();
+        let matched = handler.last_matched_policies().join(",");
+        if let Ok(val) = HeaderValue::from_str(&matched) {
+            headers.insert("X-Lilith-Matched-Policies", val);
+        }
         if let Some(timing) = timing_opt {
-            let headers = http_resp.headers_mut();
             if let Ok(val) = HeaderValue::from_str(&format!("{:.3}", timing.lock_acquire_ms)) {
                 headers.insert("X-Lilith-Lock-Acquire-Ms", val);
             }

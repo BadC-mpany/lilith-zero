@@ -173,8 +173,17 @@ impl HookHandler {
                 timing.core_eval_ms,
                 timing.state_save_ms
             );
+            eprintln!(
+                "lilith_policies: {}",
+                self.core.last_matched_policies.join(",")
+            );
         }
         Ok(code)
+    }
+
+    /// Return the list of matched policies from the last evaluation.
+    pub fn last_matched_policies(&self) -> &[String] {
+        &self.core.last_matched_policies
     }
 
     /// Handle a hook input, returning the exit code, the deny reason (if blocked), and the latency breakdown.
