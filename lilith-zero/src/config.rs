@@ -137,6 +137,9 @@ pub struct Config {
     /// without an explicit admin reload. Set via `LILITH_ZERO_POLICY_REFRESH_SECS`.
     /// `None` disables automatic refresh (explicit reload only).
     pub policy_refresh_secs: Option<u64>,
+
+    /// When `true`, timing statistics are exposed via logs/headers. Set via `LILITH_EXPOSE_TIMING`.
+    pub expose_timing: bool,
 }
 
 impl Config {
@@ -209,6 +212,9 @@ impl Config {
             policy_refresh_secs: env::var("LILITH_ZERO_POLICY_REFRESH_SECS")
                 .ok()
                 .and_then(|v| v.parse::<u64>().ok()),
+            expose_timing: env::var("LILITH_EXPOSE_TIMING")
+                .map(|v| v.to_lowercase() == "true" || v == "1")
+                .unwrap_or(false),
         })
     }
 
@@ -253,6 +259,7 @@ impl Default for Config {
             policy_admin_token: None,
             policy_lazy_load: false,
             policy_refresh_secs: None,
+            expose_timing: false,
         }
     }
 }

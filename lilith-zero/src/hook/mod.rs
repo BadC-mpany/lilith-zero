@@ -22,6 +22,19 @@ use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 use std::sync::Arc;
 
+/// Latency statistics for the components of a hook handler invocation.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct HookTiming {
+    /// Time spent acquiring the session lock.
+    pub lock_acquire_ms: f64,
+    /// Time spent loading the session state from disk.
+    pub state_load_ms: f64,
+    /// Time spent executing the evaluation logic.
+    pub core_eval_ms: f64,
+    /// Time spent saving the session state back to disk.
+    pub state_save_ms: f64,
+}
+
 /// Claude Code Hook Input Schema
 #[derive(Debug, Deserialize, Serialize)]
 pub struct HookInput {
@@ -79,7 +92,7 @@ impl HookHandler {
                 core.set_policy(policy);
             }
         }
-        let persistence = PersistenceLayer::default_local();
+        let persistence = PersistenceLayer::new(config.session_storage_dir.clone());
 
         Ok(Self { core, persistence })
     }
@@ -96,7 +109,7 @@ impl HookHandler {
     ) -> Result<Self> {
         let signer = crate::engine_core::crypto::CryptoSigner::try_new()
             .map_err(|e| anyhow::anyhow!("Crypto init failed: {}", e))?;
-        let mut core = SecurityCore::new(config, signer, audit_logs)
+        let mut core = SecurityCore::new(config.clone(), signer, audit_logs)
             .map_err(|e| anyhow::anyhow!("Security Core init failed: {}", e))?;
         core.validate_session_tokens = false;
 
@@ -106,7 +119,7 @@ impl HookHandler {
         if let Some(cp) = cedar_policy {
             core.set_cedar_policy((*cp).clone());
         }
-        let persistence = PersistenceLayer::default_local();
+        let persistence = PersistenceLayer::new(config.session_storage_dir.clone());
 
         Ok(Self { core, persistence })
     }
@@ -151,15 +164,30 @@ impl HookHandler {
 
     /// Handle a hook input, returning the appropriate process exit code.
     pub async fn handle(&mut self, input: HookInput) -> Result<i32> {
-        self.handle_with_reason(input).await.map(|(code, _)| code)
+        let (code, _, timing) = self.handle_with_reason(input).await?;
+        if self.core.config.expose_timing {
+            eprintln!(
+                "lilith_timing: lock_acquire_ms={:.3} state_load_ms={:.3} core_eval_ms={:.3} state_save_ms={:.3}",
+                timing.lock_acquire_ms,
+                timing.state_load_ms,
+                timing.core_eval_ms,
+                timing.state_save_ms
+            );
+        }
+        Ok(code)
     }
 
-    /// Handle a hook input, returning the exit code and the deny reason (if blocked).
+    /// Handle a hook input, returning the exit code, the deny reason (if blocked), and the latency breakdown.
     ///
     /// The reason is extracted from the Cedar `@reason` or `@error` annotation of the
     /// matching forbid policy. Used by the Copilot Studio webhook to populate the `reason`
     /// field of the `AnalyzeToolExecutionResponse`.
-    pub async fn handle_with_reason(&mut self, input: HookInput) -> Result<(i32, Option<String>)> {
+    pub async fn handle_with_reason(
+        &mut self,
+        input: HookInput,
+    ) -> Result<(i32, Option<String>, HookTiming)> {
+        let mut timing = HookTiming::default();
+
         // Sanitize the session ID before use: it may originate from an untrusted
         // JSON payload (Claude Code hook input, Copilot Studio conversationId).
         // Using the raw value would allow control characters or path separators
@@ -171,9 +199,12 @@ impl HookHandler {
         // A. Acquire cross-process lock on the session file.
         //    All subsequent reads and writes go through the lock's file handle
         //    so that Windows LockFileEx byte-range locking is respected.
+        let start_lock = std::time::Instant::now();
         let mut lock = self.persistence.lock(&session_id)?;
+        timing.lock_acquire_ms = start_lock.elapsed().as_secs_f64() * 1000.0;
 
         // B. Load session state through the locked handle.
+        let start_load = std::time::Instant::now();
         let state = lock.load()?;
         let is_new_session = state.is_none();
 
@@ -181,8 +212,10 @@ impl HookHandler {
             self.core.import_state(state);
         }
         self.core.session_id = session_id.clone();
+        timing.state_load_ms = start_load.elapsed().as_secs_f64() * 1000.0;
 
         // C. Silent Handshake (only on first call of session)
+        let start_eval = std::time::Instant::now();
         if is_new_session {
             self.perform_silent_handshake().await?;
         }
@@ -196,11 +229,14 @@ impl HookHandler {
                 (0, None) // Unknown events are allowed by default
             }
         };
+        timing.core_eval_ms = start_eval.elapsed().as_secs_f64() * 1000.0;
 
         // E. Save session state through the locked handle.
+        let start_save = std::time::Instant::now();
         lock.save(&self.core.export_state())?;
+        timing.state_save_ms = start_save.elapsed().as_secs_f64() * 1000.0;
 
-        Ok((exit_code, reason))
+        Ok((exit_code, reason, timing))
     }
 
     async fn perform_silent_handshake(&mut self) -> Result<()> {

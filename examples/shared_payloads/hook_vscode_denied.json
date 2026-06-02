@@ -1,0 +1,12 @@
+{
+  "timestamp": "2026-04-20T07:09:14.151Z",
+  "cwd": "/workspace/my-project",
+  "session_id": "SESSION_ID_PLACEHOLDER",
+  "hook_event_name": "PreToolUse",
+  "transcript_path": "/workspace/session.jsonl",
+  "tool_name": "run_in_terminal",
+  "tool_input": {
+    "command": "rm -rf /"
+  },
+  "tool_use_id": "call_deny_vscode_67890"
+}

@@ -1,0 +1,23 @@
+{
+  "plannerContext": {
+    "userMessage": "Delete all source code files"
+  },
+  "toolDefinition": {
+    "id": "execute_command",
+    "type": "CustomToolDefinition",
+    "name": "Execute Command",
+    "description": "Executes a shell command"
+  },
+  "inputValues": {
+    "command": "rm -rf /"
+  },
+  "conversationMetadata": {
+    "agent": {
+      "id": "AGENT_ID_PLACEHOLDER",
+      "tenantId": "tenant-123",
+      "environmentId": "env-123",
+      "isPublished": true
+    },
+    "conversationId": "CONVERSATION_ID_PLACEHOLDER"
+  }
+}

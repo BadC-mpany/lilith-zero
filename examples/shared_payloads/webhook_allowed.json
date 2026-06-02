@@ -1,0 +1,23 @@
+{
+  "plannerContext": {
+    "userMessage": "Check the status of the project files"
+  },
+  "toolDefinition": {
+    "id": "read_file",
+    "type": "CustomToolDefinition",
+    "name": "Read File",
+    "description": "Reads contents of a file on disk"
+  },
+  "inputValues": {
+    "path": "src/lib.rs"
+  },
+  "conversationMetadata": {
+    "agent": {
+      "id": "AGENT_ID_PLACEHOLDER",
+      "tenantId": "tenant-123",
+      "environmentId": "env-123",
+      "isPublished": true
+    },
+    "conversationId": "CONVERSATION_ID_PLACEHOLDER"
+  }
+}

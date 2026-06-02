@@ -1,0 +1,9 @@
+{
+  "session_id": "SESSION_ID_PLACEHOLDER",
+  "hook_event_name": "PreToolUse",
+  "tool_name": "read_file",
+  "tool_input": {
+    "path": "src/lib.rs"
+  },
+  "request_id": "req-001"
+}

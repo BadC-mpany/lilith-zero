@@ -231,6 +231,7 @@ async fn do_analyze(
     body: axum::body::Bytes,
     correlation_id: Option<&str>,
 ) -> Response {
+    let start_server_total = std::time::Instant::now();
     if state.config.webhook_debug {
         if let Ok(body_str) = std::str::from_utf8(&body) {
             tracing::info!("RAW_WEBHOOK_PAYLOAD: {}", body_str);
@@ -324,8 +325,10 @@ async fn do_analyze(
     let result = handler.handle_with_reason(hook_input).await;
 
     // 5. Translate result to Copilot Studio response.
+    let mut timing_opt = None;
     let response = match result {
-        Ok((0, _)) => {
+        Ok((0, _, timing)) => {
+            timing_opt = Some(timing);
             if !state.config.lean_logs {
                 tracing::info!(
                     agent_id = %agent_id,
@@ -336,7 +339,8 @@ async fn do_analyze(
             }
             AnalyzeToolExecutionResponse::allow()
         }
-        Ok((_, deny_reason)) => {
+        Ok((_, deny_reason, timing)) => {
+            timing_opt = Some(timing);
             let reason =
                 deny_reason.unwrap_or_else(|| "blocked by Lilith Zero security policy".to_string());
             if !state.config.lean_logs {
@@ -371,7 +375,29 @@ async fn do_analyze(
         }
     };
 
-    (StatusCode::OK, Json(response)).into_response()
+    let total_server_time_ms = start_server_total.elapsed().as_secs_f64() * 1000.0;
+    let mut http_resp = (StatusCode::OK, Json(response)).into_response();
+    if state.config.expose_timing {
+        if let Some(timing) = timing_opt {
+            let headers = http_resp.headers_mut();
+            if let Ok(val) = HeaderValue::from_str(&format!("{:.3}", timing.lock_acquire_ms)) {
+                headers.insert("X-Lilith-Lock-Acquire-Ms", val);
+            }
+            if let Ok(val) = HeaderValue::from_str(&format!("{:.3}", timing.state_load_ms)) {
+                headers.insert("X-Lilith-State-Load-Ms", val);
+            }
+            if let Ok(val) = HeaderValue::from_str(&format!("{:.3}", timing.core_eval_ms)) {
+                headers.insert("X-Lilith-Eval-Ms", val);
+            }
+            if let Ok(val) = HeaderValue::from_str(&format!("{:.3}", timing.state_save_ms)) {
+                headers.insert("X-Lilith-State-Save-Ms", val);
+            }
+            if let Ok(val) = HeaderValue::from_str(&format!("{:.3}", total_server_time_ms)) {
+                headers.insert("X-Lilith-Server-Time-Ms", val);
+            }
+        }
+    }
+    http_resp
 }
 
 // ---------------------------------------------------------------------------

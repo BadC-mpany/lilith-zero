@@ -1,0 +1,12 @@
+{
+  "timestamp": "2026-04-20T07:09:14.151Z",
+  "cwd": "/workspace/my-project",
+  "session_id": "SESSION_ID_PLACEHOLDER",
+  "hook_event_name": "PreToolUse",
+  "transcript_path": "/workspace/session.jsonl",
+  "tool_name": "read_file",
+  "tool_input": {
+    "path": "src/lib.rs"
+  },
+  "tool_use_id": "call_allow_vscode_12345"
+}
