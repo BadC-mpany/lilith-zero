@@ -24,6 +24,12 @@ def extract_webhook_metrics(report_json, default_target="N/A", default_storage="
     summary = report_json.get("summary", {})
     metrics = report_json.get("metrics", {})
     http_dur = metrics.get("http_req_duration", {})
+    lock_acq = metrics.get("lock_acquire", {})
+    state_load = metrics.get("state_load", {})
+    core_eval = metrics.get("core_eval", {})
+    state_save = metrics.get("state_save", {})
+    srv_time = metrics.get("server_time", {})
+    
     return {
         "total": summary.get("total_requests", 0),
         "rate": summary.get("throughput_req_sec", 0.0),
@@ -35,7 +41,45 @@ def extract_webhook_metrics(report_json, default_target="N/A", default_storage="
         "vus": summary.get("virtual_users", 10),
         "storage": summary.get("storage_type", default_storage),
         "target": summary.get("target_url", default_target),
+        "lock_acquire": lock_acq,
+        "state_load": state_load,
+        "core_eval": core_eval,
+        "state_save": state_save,
+        "server_time": srv_time,
+        "http_req_duration": http_dur,
     }
+
+def format_stat(metric, key="avg"):
+    if not metric or key not in metric:
+        return "0.00"
+    return f"{metric[key]:.2f}"
+
+def format_computed_overhead(http_metric, srv_metric, key="avg"):
+    if not http_metric or not srv_metric or key not in http_metric or key not in srv_metric:
+        return "0.00"
+    diff = http_metric[key] - srv_metric[key]
+    return f"{max(0.0, diff):.2f}"
+
+def format_rows(target_name, extracted):
+    if not extracted:
+        return (
+            f"| {target_name} | Avg | *No Data* | *No Data* | *No Data* | *No Data* | *No Data* | *No Data* | *No Data* |\n"
+            f"| | Med | *No Data* | *No Data* | *No Data* | *No Data* | *No Data* | *No Data* | *No Data* |\n"
+            f"| | P99 | *No Data* | *No Data* | *No Data* | *No Data* | *No Data* | *No Data* | *No Data* |"
+        )
+    
+    h_dur = extracted["http_req_duration"]
+    s_time = extracted["server_time"]
+    l_acq = extracted["lock_acquire"]
+    s_load = extracted["state_load"]
+    c_eval = extracted["core_eval"]
+    s_save = extracted["state_save"]
+    
+    return (
+        f"| {target_name} | Avg | {format_stat(l_acq, 'avg')} | {format_stat(s_load, 'avg')} | {format_stat(c_eval, 'avg')} | {format_stat(s_save, 'avg')} | {format_stat(s_time, 'avg')} | {format_computed_overhead(h_dur, s_time, 'avg')} | {format_stat(h_dur, 'avg')} |\n"
+        f"| | Med | {format_stat(l_acq, 'med')} | {format_stat(s_load, 'med')} | {format_stat(c_eval, 'med')} | {format_stat(s_save, 'med')} | {format_stat(s_time, 'med')} | {format_computed_overhead(h_dur, s_time, 'med')} | {format_stat(h_dur, 'med')} |\n"
+        f"| | P99 | {format_stat(l_acq, 'p99')} | {format_stat(s_load, 'p99')} | {format_stat(c_eval, 'p99')} | {format_stat(s_save, 'p99')} | {format_stat(s_time, 'p99')} | {format_computed_overhead(h_dur, s_time, 'p99')} | {format_stat(h_dur, 'p99')} |"
+    )
 
 def main():
     results_dir = "examples/benchmarks/results"
@@ -65,6 +109,8 @@ def main():
     claude_p95 = 0.0
     claude_p99 = 0.0
     claude_payloads = 0
+    claude_vus_str = "N/A (Seq)"
+    claude_rate_str = "Sequential"
     if claude_hook_report:
         summary = claude_hook_report.get("summary", {})
         metrics = claude_hook_report.get("metrics", {})
@@ -76,6 +122,13 @@ def main():
         claude_p95 = proc_dur.get("p95", 0.0)
         claude_p99 = proc_dur.get("p99", 0.0)
         claude_payloads = claude_total
+        
+        concurrency = summary.get("concurrency", 1)
+        if concurrency > 1:
+            claude_vus_str = str(concurrency)
+            dur = summary.get("duration_sec", 0.0)
+            rate = claude_total / dur if dur > 0 else 0.0
+            claude_rate_str = f"{rate:.2f}"
 
     # 2b. Copilot Hook metrics
     copilot_total = 0
@@ -84,6 +137,8 @@ def main():
     copilot_p95 = 0.0
     copilot_p99 = 0.0
     copilot_payloads = 0
+    copilot_vus_str = "N/A (Seq)"
+    copilot_rate_str = "Sequential"
     if copilot_hook_report:
         summary = copilot_hook_report.get("summary", {})
         metrics = copilot_hook_report.get("metrics", {})
@@ -95,11 +150,17 @@ def main():
         copilot_p95 = proc_dur.get("p95", 0.0)
         copilot_p99 = proc_dur.get("p99", 0.0)
         copilot_payloads = copilot_total
+        
+        concurrency = summary.get("concurrency", 1)
+        if concurrency > 1:
+            copilot_vus_str = str(concurrency)
+            dur = summary.get("duration_sec", 0.0)
+            rate = copilot_total / dur if dur > 0 else 0.0
+            copilot_rate_str = f"{rate:.2f}"
 
     # 3. Differential Scenarios metrics
     diff_count = 0
     diff_payloads = 0
-    diff_policies = 2 # Cedar policy set (48 rules) + YAML policy (1 rule)
     fuzz_passed = 0
     fuzz_total = 0
     if diff_report:
@@ -118,15 +179,14 @@ def main():
     # Compile the detailed deployment comparison Markdown table
     md = f"""# Lilith-Zero: Deployment Benchmark & Verification Report
 
-
 ---
 
 ## 1. Multi-Deployment Performance & Latency Matrix
 
 | Deployment Type | Storage / Files Tier | Active Policies | Payloads Tested | Concurrent Load (VUs) | Throughput (req/s) | Error Rate | Avg Latency (ms) | Med Latency (ms) | P95 Latency (ms) | P99 Latency (ms) |
 |---|---|---|---|---|---|---|---|---|---|---|
-| **Local App Hook (Claude)** | Local SSD | 1 Cedar | {claude_payloads if claude_hook_report else '*Pending*'} | N/A (Seq) | Sequential | 0.00% | {f"{claude_avg:.2f}" if claude_hook_report else '*Pending*'} | {f"{claude_med:.2f}" if claude_hook_report else '*Pending*'} | {f"{claude_p95:.2f}" if claude_hook_report else '*Pending*'} | {f"{claude_p99:.2f}" if claude_hook_report else '*Pending*'} |
-| **Local App Hook (Copilot)**| Local SSD | 1 Cedar | {copilot_payloads if copilot_hook_report else '*Pending*'} | N/A (Seq) | Sequential | 0.00% | {f"{copilot_avg:.2f}" if copilot_hook_report else '*Pending*'} | {f"{copilot_med:.2f}" if copilot_hook_report else '*Pending*'} | {f"{copilot_p95:.2f}" if copilot_hook_report else '*Pending*'} | {f"{copilot_p99:.2f}" if copilot_hook_report else '*Pending*'} |
+| **Local App Hook (Claude)** | Local SSD | 1 Cedar | {claude_payloads if claude_hook_report else '*Pending*'} | {claude_vus_str} | {claude_rate_str} | 0.00% | {f"{claude_avg:.2f}" if claude_hook_report else '*Pending*'} | {f"{claude_med:.2f}" if claude_hook_report else '*Pending*'} | {f"{claude_p95:.2f}" if claude_hook_report else '*Pending*'} | {f"{claude_p99:.2f}" if claude_hook_report else '*Pending*'} |
+| **Local App Hook (Copilot)**| Local SSD | 1 Cedar | {copilot_payloads if copilot_hook_report else '*Pending*'} | {copilot_vus_str} | {copilot_rate_str} | 0.00% | {f"{copilot_avg:.2f}" if copilot_hook_report else '*Pending*'} | {f"{copilot_med:.2f}" if copilot_hook_report else '*Pending*'} | {f"{copilot_p95:.2f}" if copilot_hook_report else '*Pending*'} | {f"{copilot_p99:.2f}" if copilot_hook_report else '*Pending*'} |
 | **Webhook (Local, Static Session)** | Local SSD | 1 Cedar | {local_static['total'] if local_static else '*Pending*'} | {local_static['vus'] if local_static else '*Pending*'} | {f"{local_static['rate']:.2f}" if local_static else '*Pending*'} | {f"{local_static['err']:.2f}%" if local_static else '*Pending*'} | {f"{local_static['avg']:.2f}" if local_static else '*Pending*'} | {f"{local_static['med']:.2f}" if local_static else '*Pending*'} | {f"{local_static['p95']:.2f}" if local_static else '*Pending*'} | {f"{local_static['p99']:.2f}" if local_static else '*Pending*'} |
 | **Webhook (Local, Random Sessions)**| Local SSD | 1 Cedar | {local_random['total'] if local_random else '*Pending*'} | {local_random['vus'] if local_random else '*Pending*'} | {f"{local_random['rate']:.2f}" if local_random else '*Pending*'} | {f"{local_random['err']:.2f}%" if local_random else '*Pending*'} | {f"{local_random['avg']:.2f}" if local_random else '*Pending*'} | {f"{local_random['med']:.2f}" if local_random else '*Pending*'} | {f"{local_random['p95']:.2f}" if local_random else '*Pending*'} | {f"{local_random['p99']:.2f}" if local_random else '*Pending*'} |
 | **Webhook (Azure, Static Session)** | Azure Files Share | 1 Cedar | {azure_static['total'] if azure_static else '*Pending*'} | {azure_static['vus'] if azure_static else '*Pending*'} | {f"{azure_static['rate']:.2f}" if azure_static else '*Pending*'} | {f"{azure_static['err']:.2f}%" if azure_static else '*Pending*'} | {f"{azure_static['avg']:.2f}" if azure_static else '*Pending*'} | {f"{azure_static['med']:.2f}" if azure_static else '*Pending*'} | {f"{azure_static['p95']:.2f}" if azure_static else '*Pending*'} | {f"{azure_static['p99']:.2f}" if azure_static else '*Pending*'} |
@@ -165,6 +225,30 @@ Lilith-Zero serializes write actions per session (conversation) using file-syste
 When deployed to Azure, Lilith-Zero utilizes Azure Files Share for cross-container session storage.
 - Running load testing with randomized sessions against `https://lilith-zero.badcompany.xyz` stresses the Azure Files network attach layer.
 - Throughput and P99 latency during Azure File writes indicate the latency profile introduced by network storage synchronization.
+
+---
+
+## 4. Fine-Grained Webhook Lifecycle Latency Breakdown
+
+To pinpoint bottlenecks, we trace each phase of the evaluation lifecycle. The table below decomposes the client round-trip duration into individual server and network stages.
+
+### 4.1 Step-by-Step Execution Cost Breakdown (in ms)
+
+| Webhook Deployment Target | Metric | Lock Acquire | State Load (Read) | Cedar Policy Eval | State Save (Write) | Internal Server Time | Network & Ingress Overhead | Total Client RTT |
+|---|---|---|---|---|---|---|---|---|
+{format_rows('**Webhook (Local, Static Session)**', local_static)}
+{format_rows('**Webhook (Local, Random Sessions)**', local_random)}
+{format_rows('**Webhook (Azure, Static Session)**', azure_static)}
+{format_rows('**Webhook (Azure, Random Sessions)**', azure_random)}
+
+### 4.2 Lifecycle Phases Defined
+1. **Lock Acquire**: Wait time to acquire the session-specific write-ahead advisory lock (`flock`).
+2. **State Load**: File-system read and JSON deserialization of the conversation's active state/taints.
+3. **Cedar Policy Eval**: Execution duration of the Cedar policy engine matching the tool request against active policies.
+4. **State Save**: JSON serialization and file-system write of the updated conversation state back to disk.
+5. **Internal Server Time**: Total time spent inside the Lilith-Zero application container (routing, locking, loading, evaluation, saving, and response serialization).
+6. **Network & Ingress Overhead**: Time spent in transit, including TLS handshake negotiation, public internet routing, and Azure frontend load balancer queueing. Computed as: `Total Client RTT - Internal Server Time`.
+7. **Total Client RTT**: Overall duration measured by the client from socket initialization to response read.
 """
 
     output_path = f"{results_dir}/unified_benchmark_report.md"
@@ -177,3 +261,4 @@ When deployed to Azure, Lilith-Zero utilizes Azure Files Share for cross-contain
 
 if __name__ == "__main__":
     main()
+

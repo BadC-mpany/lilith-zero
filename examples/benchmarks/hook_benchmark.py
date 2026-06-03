@@ -13,6 +13,8 @@ import tempfile
 import time
 from typing import List, Dict, Any
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
 # Regex to parse the stderr timing line outputted when LILITH_EXPOSE_TIMING=true
 TIMING_REGEX = re.compile(
     r"lilith_timing:\s+lock_acquire_ms=([\d\.]+)\s+state_load_ms=([\d\.]+)\s+core_eval_ms=([\d\.]+)\s+state_save_ms=([\d\.]+)"
@@ -30,20 +32,102 @@ def calculate_percentile(data: List[float], percentile: float) -> float:
     else:
         return sorted_data[f]
 
+def run_single_invocation(
+    idx: int,
+    binary_path: str,
+    policy_path: str,
+    format_arg: str,
+    payload_allowed: Dict[str, Any],
+    payload_denied: Dict[str, Any],
+    env: Dict[str, str],
+) -> Dict[str, Any]:
+    # Interleave allowed and denied requests
+    is_allowed = idx % 2 == 0
+    payload = payload_allowed if is_allowed else payload_denied
+    
+    # Inject a fresh session ID or a static one to test cross-process safety
+    session_id = f"cli-session-{idx // 2}"
+    payload_copy = payload.copy()
+    payload_copy["session_id"] = session_id
+    payload_copy["sessionId"] = session_id
+
+    # Prepare command
+    cmd = [
+        binary_path,
+        "hook",
+        "--policy",
+        policy_path,
+        "--format",
+        format_arg,
+    ]
+    if format_arg == "copilot":
+        cmd.extend(["--event", "preToolUse"])
+
+    input_bytes = json.dumps(payload_copy).encode("utf-8")
+    start_time = time.perf_counter()
+    proc = subprocess.run(
+        cmd,
+        input=input_bytes,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env=env,
+    )
+    elapsed_ms = (time.perf_counter() - start_time) * 1000.0
+
+    stdout_str = proc.stdout.decode("utf-8", errors="ignore")
+    stderr_str = proc.stderr.decode("utf-8", errors="ignore")
+
+    correct = False
+    if format_arg == "claude":
+        expected_code = 0 if is_allowed else 2
+        correct = proc.returncode == expected_code
+    elif format_arg == "copilot":
+        try:
+            out_json = json.loads(stdout_str)
+            decision = out_json.get("permissionDecision")
+            expected_dec = "allow" if is_allowed else "deny"
+            correct = decision == expected_dec
+        except Exception:
+            correct = False
+
+    # Parse timing breakdown from stderr
+    lock_acq, state_ld, core_ev, state_sv, overhead = None, None, None, None, None
+    match = TIMING_REGEX.search(stderr_str)
+    if match:
+        lock_acq = float(match.group(1))
+        state_ld = float(match.group(2))
+        core_ev = float(match.group(3))
+        state_sv = float(match.group(4))
+        internal_sum = lock_acq + state_ld + core_ev + state_sv
+        overhead = elapsed_ms - internal_sum
+
+    return {
+        "correct": correct,
+        "elapsed_ms": elapsed_ms,
+        "lock_acquire": lock_acq,
+        "state_load": state_ld,
+        "core_eval": core_ev,
+        "state_save": state_sv,
+        "overhead": overhead,
+        "returncode": proc.returncode,
+    }
+
 def run_benchmark(
     binary_path: str,
     policy_path: str,
     format_arg: str,
     iterations: int,
+    concurrency: int,
     payload_allowed_path: str,
     payload_denied_path: str,
 ):
     print("=" * 80)
     print(f"LILITH ZERO CLI HOOK BENCHMARK")
-    print(f"Binary:     {binary_path}")
-    print(f"Policy:     {policy_path}")
-    print(f"Format:     {format_arg}")
-    print(f"Iterations: {iterations}")
+    print(f"Binary:      {binary_path}")
+    print(f"Policy:      {policy_path}")
+    print(f"Format:      {format_arg}")
+    print(f"Iterations:  {iterations}")
+    print(f"Concurrency: {concurrency}")
     print("=" * 80)
 
     # Resolve paths
@@ -87,92 +171,47 @@ def run_benchmark(
     start_benchmark_time = time.perf_counter()
 
     try:
-        for i in range(iterations):
-            # Interleave allowed and denied requests
-            is_allowed = i % 2 == 0
-            payload = allowed_json if is_allowed else denied_json
-            
-            # Inject a fresh session ID or a static one to test cross-process safety
-            # CLI hooks are usually executed per-session. We randomize session ID to avoid lock contention
-            session_id = f"cli-session-{i // 2}"
-            payload_copy = payload.copy()
-            payload_copy["session_id"] = session_id
-            payload_copy["sessionId"] = session_id
+        with ThreadPoolExecutor(max_workers=concurrency) as executor:
+            futures = {
+                executor.submit(
+                    run_single_invocation,
+                    i,
+                    binary_path,
+                    policy_path,
+                    format_arg,
+                    allowed_json,
+                    denied_json,
+                    env,
+                ): i
+                for i in range(iterations)
+            }
 
-            # Prepare command
-            cmd = [
-                binary_path,
-                "hook",
-                "--policy",
-                policy_path,
-                "--format",
-                format_arg,
-            ]
-            if format_arg == "copilot":
-                cmd.extend(["--event", "preToolUse"])
-
-            # Run process
-            input_bytes = json.dumps(payload_copy).encode("utf-8")
-            start_time = time.perf_counter()
-            proc = subprocess.run(
-                cmd,
-                input=input_bytes,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                env=env,
-            )
-            elapsed_ms = (time.perf_counter() - start_time) * 1000.0
-
-            # Verify decision correctness
-            stdout_str = proc.stdout.decode("utf-8", errors="ignore")
-            stderr_str = proc.stderr.decode("utf-8", errors="ignore")
-
-            correct = False
-            if format_arg == "claude":
-                # Exit code 0 for allow, 2 for deny
-                expected_code = 0 if is_allowed else 2
-                correct = proc.returncode == expected_code
-            elif format_arg == "copilot":
-                # JSON on stdout containing permissionDecision
-                try:
-                    out_json = json.loads(stdout_str)
-                    decision = out_json.get("permissionDecision")
-                    expected_dec = "allow" if is_allowed else "deny"
-                    correct = decision == expected_dec
-                except Exception:
-                    correct = False
-
-            if correct:
-                successes += 1
-            else:
-                failures += 1
-                detail = f"Iteration {i} Mismatch (Expected {'allow' if is_allowed else 'deny'}, Got exit_code={proc.returncode})"
-                print(f"  \033[31mFAIL\033[0m [{elapsed_ms/1000.0:8.3f}s] CLI Hook: {detail}")
-                test_details.append(f"  - Iteration {i}: {detail}")
-
-            # Parse timing breakdown from stderr
-            match = TIMING_REGEX.search(stderr_str)
-            if match:
-                lock_acq = float(match.group(1))
-                state_ld = float(match.group(2))
-                core_ev = float(match.group(3))
-                state_sv = float(match.group(4))
+            completed_count = 0
+            for future in as_completed(futures):
+                idx = futures[future]
+                res = future.result()
                 
-                metrics["lock_acquire"].append(lock_acq)
-                metrics["state_load"].append(state_ld)
-                metrics["core_eval"].append(core_ev)
-                metrics["state_save"].append(state_sv)
-                metrics["total_process"].append(elapsed_ms)
-                
-                # Overhead = Total Process Time - sum(internal engine execution times)
-                internal_sum = lock_acq + state_ld + core_ev + state_sv
-                metrics["overhead"].append(elapsed_ms - internal_sum)
-            else:
-                # If timing output wasn't matched, just capture total process time
-                metrics["total_process"].append(elapsed_ms)
-
-            if (i + 1) % max(1, iterations // 10) == 0:
-                print(f"  \033[36mINFO\033[0m Progress: {i + 1}/{iterations} runs complete...")
+                if res["correct"]:
+                    successes += 1
+                else:
+                    failures += 1
+                    detail = f"Iteration {idx} Mismatch (Expected {'allow' if idx % 2 == 0 else 'deny'}, Got exit_code={res['returncode']})"
+                    print(f"  \033[31mFAIL\033[0m [{res['elapsed_ms']/1000.0:8.3f}s] CLI Hook: {detail}")
+                    test_details.append(f"  - Iteration {idx}: {detail}")
+                    
+                if res["lock_acquire"] is not None:
+                    metrics["lock_acquire"].append(res["lock_acquire"])
+                    metrics["state_load"].append(res["state_load"])
+                    metrics["core_eval"].append(res["core_eval"])
+                    metrics["state_save"].append(res["state_save"])
+                    metrics["total_process"].append(res["elapsed_ms"])
+                    metrics["overhead"].append(res["overhead"])
+                else:
+                    metrics["total_process"].append(res["elapsed_ms"])
+                    
+                completed_count += 1
+                if completed_count % max(1, iterations // 10) == 0:
+                    print(f"  \033[36mINFO\033[0m Progress: {completed_count}/{iterations} runs complete...")
 
     finally:
         # Clean up isolated session files
@@ -249,7 +288,8 @@ def run_benchmark(
             "successes": successes,
             "failures": failures,
             "accuracy_pct": (successes / iterations) * 100.0 if iterations else 0.0,
-            "duration_sec": total_duration
+            "duration_sec": total_duration,
+            "concurrency": concurrency
         },
         "metrics": {
             "lock_acquire": get_phase_stats(metrics["lock_acquire"]),
@@ -270,6 +310,7 @@ def run_benchmark(
         "",
         "## Execution Summary",
         f"- **Total Invocations**: {iterations}",
+        f"- **Concurrency (VUs)**: {concurrency}",
         f"- **Correct Decisions**: {successes}",
         f"- **Mismatches**: {failures}",
         f"- **Policy Enforcement Accuracy**: {(successes/iterations)*100:.2f}%",
@@ -327,6 +368,14 @@ if __name__ == "__main__":
         help="Number of hook invocations to benchmark",
     )
     parser.add_argument(
+        "--concurrency",
+        "--vus",
+        type=int,
+        dest="concurrency",
+        default=1,
+        help="Number of concurrent execution threads",
+    )
+    parser.add_argument(
         "--payload-allowed",
         default=None,
         help="JSON file for allowed request payload",
@@ -354,6 +403,7 @@ if __name__ == "__main__":
             policy_path=args.policy,
             format_arg=fmt,
             iterations=args.iterations,
+            concurrency=args.concurrency,
             payload_allowed_path=p_allowed,
             payload_denied_path=p_denied,
         )
