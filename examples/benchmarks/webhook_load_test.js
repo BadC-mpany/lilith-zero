@@ -19,11 +19,17 @@ const deniedBase = JSON.parse(open('../shared_payloads/webhook_denied.json'));
 export const options = {
   vus: __ENV.LILITH_VUS ? parseInt(__ENV.LILITH_VUS) : 10,
   duration: __ENV.LILITH_DURATION || '10s',
+  hosts: {
+    'lilith-zero.badcompany.xyz': '20.119.144.24',
+  },
+  summaryTrendStats: ['avg', 'min', 'med', 'max', 'p(90)', 'p(95)', 'p(99)'],
 };
 
 export default function () {
   const url = __ENV.LILITH_URL || 'http://localhost:8080/analyze-tool-execution';
-  const agentId = __ENV.LILITH_AGENT_ID || 'test-agent';
+  const agentIdEnv = __ENV.LILITH_AGENT_ID || 'test-agent';
+  const agentIds = agentIdEnv.split(',').map(s => s.trim());
+  const agentId = agentIds[Math.floor(Math.random() * agentIds.length)];
   const bearerToken = __ENV.LILITH_BEARER_TOKEN || '';
   const useRandomConv = __ENV.LILITH_RANDOM_CONV === 'true' || __ENV.LILITH_RANDOM_CONV === '1';
 
@@ -182,12 +188,13 @@ Summary: ${errors.rate === 0 ? '\033[32mPASS\033[0m' : '\033[31mFAIL\033[0m'} ($
 ================================================================================
 `;
 
+  const suffix = isRandomConv ? '_random' : '_static';
   const jsonPath = targetUrl.includes('badcompany.xyz') 
-    ? 'results/azure_webhook_load_test_report.json' 
-    : 'results/webhook_load_test_report.json';
+    ? `results/azure_webhook_load_test_report${suffix}.json` 
+    : `results/webhook_load_test_report${suffix}.json`;
   const mdPath = targetUrl.includes('badcompany.xyz') 
-    ? 'results/azure_webhook_load_test_report.md' 
-    : 'results/webhook_load_test_report.md';
+    ? `results/azure_webhook_load_test_report${suffix}.md` 
+    : `results/webhook_load_test_report${suffix}.md`;
 
   return {
     'stdout': consoleSummary,

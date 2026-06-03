@@ -4,12 +4,12 @@
     "passed": 13,
     "failed": 0,
     "skipped": 0,
-    "duration_sec": 72.56381321902154,
+    "duration_sec": 72.17038904601941,
     "rule_coverage_pct": 8.333333333333332,
-    "webhook_peak_rss_kb": 10776,
-    "webhook_peak_vm_kb": 283992,
+    "webhook_peak_rss_kb": 10496,
+    "webhook_peak_vm_kb": 349204,
     "webhook_fd_leak": 0,
-    "cli_peak_rss_kb": 28604
+    "cli_peak_rss_kb": 28464
   },
   "scenarios": [
     {
@@ -20,7 +20,7 @@
       "cli_pols": [],
       "web_pols": [],
       "success": true,
-      "duration": 0.027031946985516697
+      "duration": 0.0002208410296589136
     },
     {
       "name": "Static Denied Tool",
@@ -30,7 +30,7 @@
       "cli_pols": [],
       "web_pols": [],
       "success": true,
-      "duration": 0.010513179993722588
+      "duration": 0.00011096702655777335
     },
     {
       "name": "Taint Rule Match (ADD_TAINT)",
@@ -40,7 +40,7 @@
       "cli_pols": [],
       "web_pols": [],
       "success": true,
-      "duration": 0.009186594979837537
+      "duration": 9.485997725278139e-05
     },
     {
       "name": "Exfiltration Block (Lethal Trifecta)",
@@ -50,7 +50,7 @@
       "cli_pols": [],
       "web_pols": [],
       "success": true,
-      "duration": 0.008996555989142507
+      "duration": 9.209802374243736e-05
     },
     {
       "name": "Agent-1 Allowed Tool",
@@ -66,7 +66,7 @@
         "allow-read-agent1"
       ],
       "success": true,
-      "duration": 0.11196454399032518
+      "duration": 6.128201493993402e-05
     },
     {
       "name": "Agent-1 Denied Tool",
@@ -80,7 +80,7 @@
         "deny-delete-agent1"
       ],
       "success": true,
-      "duration": 0.0075906579731963575
+      "duration": 4.658900434151292e-05
     },
     {
       "name": "Agent-2 Allowed Tool",
@@ -96,7 +96,7 @@
         "allow-delete-agent2"
       ],
       "success": true,
-      "duration": 0.008547280041966587
+      "duration": 4.1349034290760756e-05
     },
     {
       "name": "Agent-2 Denied Tool",
@@ -110,7 +110,7 @@
         "deny-read-agent2"
       ],
       "success": true,
-      "duration": 0.007835252967197448
+      "duration": 4.372902913019061e-05
     },
     {
       "name": "Fuzz: Deeply Nested Object",
@@ -118,7 +118,7 @@
       "cli_decision": "deny",
       "web_decision": "deny",
       "success": true,
-      "duration": 0.12629846495110542
+      "duration": 0.02466670301510021
     },
     {
       "name": "Fuzz: Giant Tool Name Buffer",
@@ -126,7 +126,7 @@
       "cli_decision": "deny",
       "web_decision": "error",
       "success": true,
-      "duration": 8.035378800996114
+      "duration": 8.01612424099585
     },
     {
       "name": "Fuzz: Null Byte Path Injection",
@@ -134,7 +134,7 @@
       "cli_decision": "deny",
       "web_decision": "error",
       "success": true,
-      "duration": 8.033934134989977
+      "duration": 8.030732028011698
     },
     {
       "name": "Fuzz: Directory Traversal",
@@ -142,7 +142,7 @@
       "cli_decision": "deny",
       "web_decision": "error",
       "success": true,
-      "duration": 8.039044178964105
+      "duration": 8.031136696052272
     },
     {
       "name": "Fuzz: Missing Event Name",
@@ -150,7 +150,7 @@
       "cli_decision": "deny",
       "web_decision": "error",
       "success": true,
-      "duration": 8.021747225953732
+      "duration": 8.019657193974126
     }
   ],
   "rules": {

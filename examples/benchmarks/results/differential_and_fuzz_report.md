@@ -7,8 +7,8 @@
 | Differential correctness | 8/8 passed | ✓ PASS |
 | Fuzzing safety | 5/5 passed | ✓ PASS |
 | Cedar policy rule coverage | 8.33% | ✓ PASS |
-| Webhook peak memory (VmHWM) | 10776 KB | Active |
-| CLI peak memory (RSS) | 28604 KB | Active |
+| Webhook peak memory (VmHWM) | 10496 KB | Active |
+| CLI peak memory (RSS) | 28464 KB | Active |
 | Webhook open FDs delta | 0 | ✓ PASS |
 
 ## Test Scenarios

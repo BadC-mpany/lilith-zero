@@ -1,8 +1,5 @@
-# Lilith-Zero: Multi-Deployment Benchmark & Verification Report
+# Lilith-Zero: Deployment Benchmark & Verification Report
 
-Lilith-Zero is a deterministic, formally-verified, sub-millisecond security middleware for AI agents using the Model Context Protocol (MCP). It runs as a process supervisor (CLI App Hook) or webhook evaluator, enforcing deny-by-default policies with type-safe taint tracking.
-
-This report is compiled programmatically by aggregating execution data from individual test runners.
 
 ---
 
@@ -10,10 +7,12 @@ This report is compiled programmatically by aggregating execution data from indi
 
 | Deployment Type | Storage / Files Tier | Active Policies | Payloads Tested | Concurrent Load (VUs) | Throughput (req/s) | Error Rate | Avg Latency (ms) | Med Latency (ms) | P95 Latency (ms) | P99 Latency (ms) |
 |---|---|---|---|---|---|---|---|---|---|---|
-| **Local App Hook (Claude)** | Local SSD | 1 YAML | *Pending* | N/A (Seq) | Sequential | 0.00% | *Pending* | *Pending* | *Pending* | *Pending* |
-| **Local App Hook (Copilot)**| Local SSD | 1 YAML | *Pending* | N/A (Seq) | Sequential | 0.00% | *Pending* | *Pending* | *Pending* | *Pending* |
-| **Webhook Server (Local)** | Local SSD | 1 YAML | 48409 | 10 | 6761.76 | 100.00% | 0.00 | 0.00 | 0.00 | 0.00 |
-| **Webhook Server (Azure)** | Azure Files Share | 1 YAML | *Pending* | *Pending* | *Pending* | *Pending* | *Pending* | *Pending* | *Pending* | *Pending* |
+| **Local App Hook (Claude)** | Local SSD | 1 Cedar | 1000 | N/A (Seq) | Sequential | 0.00% | 4.69 | 4.64 | 4.99 | 5.63 |
+| **Local App Hook (Copilot)**| Local SSD | 1 Cedar | 1000 | N/A (Seq) | Sequential | 0.00% | 4.98 | 4.89 | 5.45 | 6.57 |
+| **Webhook (Local, Static Session)** | Local SSD | 1 Cedar | 641762 | 100 | 6416.85 | 0.00% | 3.43 | 2.17 | 10.89 | 20.09 |
+| **Webhook (Local, Random Sessions)**| Local SSD | 1 Cedar | 594570 | 100 | 5944.03 | 0.00% | 3.99 | 2.36 | 13.18 | 24.36 |
+| **Webhook (Azure, Static Session)** | Azure Files Share | 1 Cedar | 2207 | 10 | 21.97 | 0.00% | 438.57 | 435.29 | 719.51 | 898.52 |
+| **Webhook (Azure, Random Sessions)**| Azure Files Share | 1 Cedar | 3314 | 10 | 33.06 | 0.00% | 287.94 | 256.86 | 553.06 | 797.52 |
 
 *Note: CLI Latencies measure complete cold-start process execution. Webhook latencies measure client round-trip HTTP request durations.*
 
@@ -24,17 +23,16 @@ This report is compiled programmatically by aggregating execution data from indi
 ### 2.1 Test Suite Scale
 - **Differential Verification Scenarios**: 8 equivalent test cases (validating exact CLI vs Webhook decision output).
 - **Fuzzing Robustness Scenarios**: 5/5 cases evaluating malformed/overflow inputs.
-- **Lock Contention & Taint Persistence Scenarios**: 0 scenarios.
+- **Lock Contention & Taint Persistence Scenarios**: 3 scenarios.
 - **Policies Loaded**:
-  - Legacy YAML Engine: 1 Policy File (Benchmark Policy)
   - Cedar Policy Engine: 1 Policy Set (48 Cedar rules)
-
+ 
 ### 2.2 System Robustness & Fail-Closed Validation
 - **Fail-Closed on Invalid Input**: **PASS** (rejections on malformed JSON, deep nesting, null bytes, and traversal paths).
 - **File Descriptor Leak Delta**: **0 FDs** (monitored via `/proc` during active load).
 - **Memory Footprint**:
-  - CLI hook execution peak memory: **0 KB**
-  - Webhook daemon peak memory (VmHWM): **0 KB**
+  - CLI hook execution peak memory: **28464 KB**
+  - Webhook daemon peak memory (VmHWM): **10496 KB**
 
 ---
 

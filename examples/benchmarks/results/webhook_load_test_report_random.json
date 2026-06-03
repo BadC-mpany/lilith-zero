@@ -1,24 +1,24 @@
 {
   "summary": {
-    "target_url": "http://localhost:8080/analyze-tool-execution",
-    "virtual_users": 10,
-    "random_conversations": false,
+    "target_url": "http://127.0.0.1:8080/analyze-tool-execution",
+    "virtual_users": 100,
+    "random_conversations": true,
     "storage_type": "Local Disk Storage",
-    "total_requests": 48409,
-    "throughput_req_sec": 6761.756752711198,
-    "error_rate_pct": 100,
-    "duration_sec": 7.1592341710000005,
-    "status": "FAIL"
+    "total_requests": 594570,
+    "throughput_req_sec": 5944.032649506343,
+    "error_rate_pct": 0,
+    "duration_sec": 100.02805083,
+    "status": "PASS"
   },
   "metrics": {
     "http_req_duration": {
-      "avg": 0,
-      "min": 0,
-      "med": 0,
-      "max": 0,
-      "p90": 0,
-      "p95": 0,
-      "p99": 0
+      "avg": 3.9907468885934767,
+      "min": 0.105436,
+      "med": 2.3637315,
+      "max": 182.182542,
+      "p90": 9.148018899999995,
+      "p95": 13.183973049999997,
+      "p99": 24.363887179999868
     },
     "lock_acquire": {
       "avg": 0,

@@ -116,11 +116,8 @@ def main():
         rob_count = robustness_report.get("summary", {}).get("total_runs", 0)
 
     # Compile the detailed deployment comparison Markdown table
-    md = f"""# Lilith-Zero: Multi-Deployment Benchmark & Verification Report
+    md = f"""# Lilith-Zero: Deployment Benchmark & Verification Report
 
-Lilith-Zero is a deterministic, formally-verified, sub-millisecond security middleware for AI agents using the Model Context Protocol (MCP). It runs as a process supervisor (CLI App Hook) or webhook evaluator, enforcing deny-by-default policies with type-safe taint tracking.
-
-This report is compiled programmatically by aggregating execution data from individual test runners.
 
 ---
 
@@ -146,7 +143,6 @@ This report is compiled programmatically by aggregating execution data from indi
 - **Fuzzing Robustness Scenarios**: {fuzz_passed}/{fuzz_total} cases evaluating malformed/overflow inputs.
 - **Lock Contention & Taint Persistence Scenarios**: {rob_count} scenarios.
 - **Policies Loaded**:
-  - Legacy YAML Engine: 1 Policy File (Benchmark Policy)
   - Cedar Policy Engine: 1 Policy Set (48 Cedar rules)
  
 ### 2.2 System Robustness & Fail-Closed Validation
