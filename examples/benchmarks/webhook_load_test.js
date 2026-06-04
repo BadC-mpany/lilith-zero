@@ -189,12 +189,17 @@ Summary: ${errors.rate === 0 ? '\033[32mPASS\033[0m' : '\033[31mFAIL\033[0m'} ($
 `;
 
   const suffix = isRandomConv ? '_random' : '_static';
-  const jsonPath = targetUrl.includes('badcompany.xyz') 
+  let jsonPath = targetUrl.includes('badcompany.xyz') 
     ? `results/azure_webhook_load_test_report${suffix}.json` 
     : `results/webhook_load_test_report${suffix}.json`;
-  const mdPath = targetUrl.includes('badcompany.xyz') 
+  let mdPath = targetUrl.includes('badcompany.xyz') 
     ? `results/azure_webhook_load_test_report${suffix}.md` 
     : `results/webhook_load_test_report${suffix}.md`;
+
+  if (__ENV.LILITH_SWEEP_NAME) {
+    jsonPath = `results/${__ENV.LILITH_SWEEP_NAME}.json`;
+    mdPath = `results/${__ENV.LILITH_SWEEP_NAME}.md`;
+  }
 
   return {
     'stdout': consoleSummary,

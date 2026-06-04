@@ -25,8 +25,8 @@ rm -f examples/benchmarks/results/*.json examples/benchmarks/results/*.md
 Measure CLI cold-start overhead and policy evaluation latency (runs Claude and Copilot format simulations).
 
 ```bash
-# Run 200 iterations for both hook payload formats
-python3 examples/benchmarks/hook_benchmark.py --iterations 1000 --format all
+# Run X iterations for both hook payload formats (with X concurrent threads/VUs simulating simultaneous executions)
+python3 examples/benchmarks/hook_benchmark.py --iterations 10000 --format all --concurrency 100
 ```
 
 ---
@@ -64,7 +64,7 @@ LILITH_URL="http://127.0.0.1:8080/analyze-tool-execution" \
 LILITH_VUS=100 \
 LILITH_DURATION="100s" \
 LILITH_RANDOM_CONV=false \
-LILITH_AGENT_ID="5be3e14e-2e46-f111-bec6-7c1e52344333,77236ced-1146-f111-bec6-7ced8d71fac9" \
+LILITH_AGENT_ID="5be3e14e-2e46-f111-bec6-7c1e52344333,77236ced-1146-f111-bec6-7ced8d71fac9,universal" \
 k6 run webhook_load_test.js
 cd ../..
 
@@ -74,7 +74,7 @@ LILITH_URL="http://127.0.0.1:8080/analyze-tool-execution" \
 LILITH_VUS=100 \
 LILITH_DURATION="100s" \
 LILITH_RANDOM_CONV=true \
-LILITH_AGENT_ID="5be3e14e-2e46-f111-bec6-7c1e52344333,77236ced-1146-f111-bec6-7ced8d71fac9" \
+LILITH_AGENT_ID="5be3e14e-2e46-f111-bec6-7c1e52344333,77236ced-1146-f111-bec6-7ced8d71fac9,universal" \
 k6 run webhook_load_test.js
 cd ../..
 
@@ -91,27 +91,43 @@ Simulate high-concurrency requests against the live Azure App Service instance.
 # A. Run Azure load test with a single static session
 cd examples/benchmarks
 LILITH_URL="https://lilith-zero.badcompany.xyz/analyze-tool-execution" \
-LILITH_VUS=10 \
+LILITH_VUS=100 \
 LILITH_DURATION="100s" \
 LILITH_RANDOM_CONV=false \
-LILITH_AGENT_ID="5be3e14e-2e46-f111-bec6-7c1e52344333,77236ced-1146-f111-bec6-7ced8d71fac9" \
+LILITH_AGENT_ID="5be3e14e-2e46-f111-bec6-7c1e52344333,77236ced-1146-f111-bec6-7ced8d71fac9,universal" \
 k6 run webhook_load_test.js
 cd ../..
 
 # B. Run Azure load test with randomized sessions
 cd examples/benchmarks
 LILITH_URL="https://lilith-zero.badcompany.xyz/analyze-tool-execution" \
-LILITH_VUS=10 \
+LILITH_VUS=100 \
 LILITH_DURATION="100s" \
 LILITH_RANDOM_CONV=true \
-LILITH_AGENT_ID="5be3e14e-2e46-f111-bec6-7c1e52344333,77236ced-1146-f111-bec6-7ced8d71fac9" \
+LILITH_AGENT_ID="5be3e14e-2e46-f111-bec6-7c1e52344333,77236ced-1146-f111-bec6-7ced8d71fac9,universal" \
 k6 run webhook_load_test.js
 cd ../..
 ```
 
 ---
 
-## 6. Compile Reports
+## 6. Concurrency & Throughput Parameter Sweeps
+Automate a sweep over multiple Virtual User (VU) scales and session storage modes to generate performance curves.
+
+```bash
+# A. Execute the parameter sweeps locally (automatically starts & stops the local server)
+python3 examples/benchmarks/run_sweeps.py --vus "1,10,100, 500, 1000, 2000, 5000, 10000" --duration "100s"
+
+# B. (Optional) Run the parameter sweeps against the Azure deployment
+python3 examples/benchmarks/run_sweeps.py --url "https://lilith-zero.badcompany.xyz/analyze-tool-execution" --vus "1,10,100, 500, 1000, 2000, 5000, 10000" --duration "20s"
+
+# C. Generate the latency-concurrency and throughput-latency PNG plots
+python3 examples/benchmarks/plot_sweeps.py
+```
+
+---
+
+## 7. Compile Reports
 
 Compile the individual results from the runs into a single, unified Markdown report matrix:
 

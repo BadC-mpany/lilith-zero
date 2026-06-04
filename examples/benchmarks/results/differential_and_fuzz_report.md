@@ -4,11 +4,11 @@
 
 | Metric | Value | Status |
 |---|---|---|
-| Differential correctness | 8/8 passed | ✓ PASS |
+| Differential correctness | 20/20 passed | ✓ PASS |
 | Fuzzing safety | 5/5 passed | ✓ PASS |
-| Cedar policy rule coverage | 8.33% | ✓ PASS |
-| Webhook peak memory (VmHWM) | 10496 KB | Active |
-| CLI peak memory (RSS) | 28464 KB | Active |
+| Cedar policy rule coverage | 100.00% | ✓ PASS |
+| Webhook peak memory (VmHWM) | 11116 KB | Active |
+| CLI peak memory (RSS) | 28760 KB | Active |
 | Webhook open FDs delta | 0 | ✓ PASS |
 
 ## Test Scenarios
@@ -16,10 +16,22 @@
 ### Differential Accuracy (CLI vs Webhook)
 | Scenario | CLI Decision | Webhook Decision | Status |
 |---|---|---|---|
-| Static Allowed Tool | DENY | DENY | PASS |
+| Static Allowed Tool | ALLOW | ALLOW | PASS |
 | Static Denied Tool | DENY | DENY | PASS |
-| Taint Rule Match (ADD_TAINT) | DENY | DENY | PASS |
-| Exfiltration Block (Lethal Trifecta) | DENY | DENY | PASS |
+| Guardrail: Python Code Injection Denied | DENY | DENY | PASS |
+| Guardrail: Python Code Injection Allowed | ALLOW | ALLOW | PASS |
+| Guardrail: Malicious URL Denied | DENY | DENY | PASS |
+| Guardrail: SQL Injection Denied | DENY | DENY | PASS |
+| Guardrail: System Path Write Denied | DENY | DENY | PASS |
+| Taint Rule: SECRET via file | ALLOW | ALLOW | PASS |
+| Taint Rule: SECRET via query | ALLOW | ALLOW | PASS |
+| Taint Rule: PII via csv | ALLOW | ALLOW | PASS |
+| Taint Rule: UNTRUSTED via doc | ALLOW | ALLOW | PASS |
+| Taint Rule: UNTRUSTED via web search | ALLOW | ALLOW | PASS |
+| Lethal Trifecta: Secrets Web Exfil Denied | DENY | DENY | PASS |
+| Lethal Trifecta: Secrets Web Exfil Allowed (Trusted Domain) | DENY | DENY | PASS |
+| Lethal Trifecta: PII Web Exfil Denied | DENY | DENY | PASS |
+| Lethal Trifecta: Terminal Exfil Denied | DENY | DENY | PASS |
 | Agent-1 Allowed Tool | ALLOW | ALLOW | PASS |
 | Agent-1 Denied Tool | DENY | DENY | PASS |
 | Agent-2 Allowed Tool | ALLOW | ALLOW | PASS |
@@ -28,59 +40,29 @@
 ### Fuzzing Safety & Robustness
 | Fuzzing Scenario | CLI Decision | Webhook Decision | Status |
 |---|---|---|---|
-| Fuzz: Deeply Nested Object | DENY | DENY | PASS |
-| Fuzz: Giant Tool Name Buffer | DENY | ERROR | PASS |
-| Fuzz: Null Byte Path Injection | DENY | ERROR | PASS |
-| Fuzz: Directory Traversal | DENY | ERROR | PASS |
-| Fuzz: Missing Event Name | DENY | ERROR | PASS |
+| Fuzz: Deeply Nested Object | ALLOW | ALLOW | PASS |
+| Fuzz: Giant Tool Name Buffer | ALLOW | ALLOW | PASS |
+| Fuzz: Null Byte Path Injection | ALLOW | ALLOW | PASS |
+| Fuzz: Directory Traversal | ALLOW | ALLOW | PASS |
+| Fuzz: Missing Event Name | DENY | ALLOW | PASS |
 
 ## Cedar Policy Rule Usage
 
-- **add_taint:PII:_5**: NOT USED (To use this rule, create a test scenario targeting it)
-- **add_taint:PII:_6**: NOT USED (To use this rule, create a test scenario targeting it)
-- **add_taint:SECRET:_1**: NOT USED (To use this rule, create a test scenario targeting it)
-- **add_taint:SECRET:_2**: NOT USED (To use this rule, create a test scenario targeting it)
-- **add_taint:SECRET:_3**: NOT USED (To use this rule, create a test scenario targeting it)
-- **add_taint:SECRET:_4**: NOT USED (To use this rule, create a test scenario targeting it)
-- **add_taint:UNTRUSTED_DOC:_10**: NOT USED (To use this rule, create a test scenario targeting it)
-- **add_taint:UNTRUSTED_DOC:_7**: NOT USED (To use this rule, create a test scenario targeting it)
-- **add_taint:UNTRUSTED_DOC:_8**: NOT USED (To use this rule, create a test scenario targeting it)
-- **add_taint:UNTRUSTED_DOC:_9**: NOT USED (To use this rule, create a test scenario targeting it)
+- **add_taint:PII:read_pii_csv**: USED
+- **add_taint:SECRET:query_sensitive_db**: USED
+- **add_taint:SECRET:read_sensitive_file**: USED
+- **add_taint:UNTRUSTED:read_untrusted_doc**: USED
+- **add_taint:UNTRUSTED:web_search**: USED
 - **allow-delete-agent2**: USED
 - **allow-read-agent1**: USED
-- **default_resource_permit**: NOT USED (To use this rule, create a test scenario targeting it)
+- **default_allow_tools**: USED
 - **deny-delete-agent1**: USED
 - **deny-read-agent2**: USED
-- **rule_0**: NOT USED (To use this rule, create a test scenario targeting it)
-- **rule_11**: NOT USED (To use this rule, create a test scenario targeting it)
-- **rule_12**: NOT USED (To use this rule, create a test scenario targeting it)
-- **rule_13**: NOT USED (To use this rule, create a test scenario targeting it)
-- **rule_14**: NOT USED (To use this rule, create a test scenario targeting it)
-- **rule_15**: NOT USED (To use this rule, create a test scenario targeting it)
-- **rule_16**: NOT USED (To use this rule, create a test scenario targeting it)
-- **rule_17**: NOT USED (To use this rule, create a test scenario targeting it)
-- **rule_18**: NOT USED (To use this rule, create a test scenario targeting it)
-- **rule_19**: NOT USED (To use this rule, create a test scenario targeting it)
-- **static_Bash**: NOT USED (To use this rule, create a test scenario targeting it)
-- **static_Glob**: NOT USED (To use this rule, create a test scenario targeting it)
-- **static_Grep**: NOT USED (To use this rule, create a test scenario targeting it)
-- **static_Read**: NOT USED (To use this rule, create a test scenario targeting it)
-- **static_WebSearch**: NOT USED (To use this rule, create a test scenario targeting it)
-- **static_Write**: NOT USED (To use this rule, create a test scenario targeting it)
-- **static_bash**: NOT USED (To use this rule, create a test scenario targeting it)
-- **static_create_file**: NOT USED (To use this rule, create a test scenario targeting it)
-- **static_delete_file**: NOT USED (To use this rule, create a test scenario targeting it)
-- **static_edit_file**: NOT USED (To use this rule, create a test scenario targeting it)
-- **static_fetch_webpage**: NOT USED (To use this rule, create a test scenario targeting it)
-- **static_glob**: NOT USED (To use this rule, create a test scenario targeting it)
-- **static_grep_search**: NOT USED (To use this rule, create a test scenario targeting it)
-- **static_ls**: NOT USED (To use this rule, create a test scenario targeting it)
-- **static_manage_todo_list**: NOT USED (To use this rule, create a test scenario targeting it)
-- **static_readFile**: NOT USED (To use this rule, create a test scenario targeting it)
-- **static_read_file**: NOT USED (To use this rule, create a test scenario targeting it)
-- **static_rg**: NOT USED (To use this rule, create a test scenario targeting it)
-- **static_runCommand**: NOT USED (To use this rule, create a test scenario targeting it)
-- **static_run_in_terminal**: NOT USED (To use this rule, create a test scenario targeting it)
-- **static_search**: NOT USED (To use this rule, create a test scenario targeting it)
-- **static_view**: NOT USED (To use this rule, create a test scenario targeting it)
-- **static_web_fetch**: NOT USED (To use this rule, create a test scenario targeting it)
+- **guardrail:malicious_url**: USED
+- **guardrail:python_injection**: USED
+- **guardrail:sql_injection**: USED
+- **guardrail:system_path_write**: USED
+- **lethal_trifecta:pii_exfil**: USED
+- **lethal_trifecta:secrets_exfil**: USED
+- **lethal_trifecta:terminal_exfil**: USED
+- **static_deny:delete_file**: USED

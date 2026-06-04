@@ -1,56 +1,282 @@
 {
   "summary": {
-    "total": 13,
-    "passed": 13,
+    "total": 25,
+    "passed": 25,
     "failed": 0,
     "skipped": 0,
-    "duration_sec": 72.17038904601941,
-    "rule_coverage_pct": 8.333333333333332,
-    "webhook_peak_rss_kb": 10496,
-    "webhook_peak_vm_kb": 349204,
+    "duration_sec": 0.07730281096883118,
+    "rule_coverage_pct": 100.0,
+    "webhook_peak_rss_kb": 11116,
+    "webhook_peak_vm_kb": 349468,
     "webhook_fd_leak": 0,
-    "cli_peak_rss_kb": 28464
+    "cli_peak_rss_kb": 28760
   },
   "scenarios": [
     {
       "name": "Static Allowed Tool",
       "category": "Differential",
-      "cli_decision": "deny",
-      "web_decision": "deny",
-      "cli_pols": [],
-      "web_pols": [],
+      "cli_decision": "allow",
+      "web_decision": "allow",
+      "cli_pols": [
+        "policy0",
+        "default_allow_tools"
+      ],
+      "web_pols": [
+        "policy0",
+        "default_allow_tools"
+      ],
       "success": true,
-      "duration": 0.0002208410296589136
+      "duration": 0.00029702699976041913
     },
     {
       "name": "Static Denied Tool",
       "category": "Differential",
       "cli_decision": "deny",
       "web_decision": "deny",
-      "cli_pols": [],
-      "web_pols": [],
+      "cli_pols": [
+        "policy0",
+        "static_deny:delete_file"
+      ],
+      "web_pols": [
+        "policy0",
+        "static_deny:delete_file"
+      ],
       "success": true,
-      "duration": 0.00011096702655777335
+      "duration": 0.00018516695126891136
     },
     {
-      "name": "Taint Rule Match (ADD_TAINT)",
+      "name": "Guardrail: Python Code Injection Denied",
       "category": "Differential",
       "cli_decision": "deny",
       "web_decision": "deny",
-      "cli_pols": [],
-      "web_pols": [],
+      "cli_pols": [
+        "policy0",
+        "guardrail:python_injection"
+      ],
+      "web_pols": [
+        "policy0",
+        "guardrail:python_injection"
+      ],
       "success": true,
-      "duration": 9.485997725278139e-05
+      "duration": 0.00016709801275283098
     },
     {
-      "name": "Exfiltration Block (Lethal Trifecta)",
+      "name": "Guardrail: Python Code Injection Allowed",
+      "category": "Differential",
+      "cli_decision": "allow",
+      "web_decision": "allow",
+      "cli_pols": [
+        "policy0",
+        "default_allow_tools"
+      ],
+      "web_pols": [
+        "policy0",
+        "default_allow_tools"
+      ],
+      "success": true,
+      "duration": 0.00015037303091958165
+    },
+    {
+      "name": "Guardrail: Malicious URL Denied",
       "category": "Differential",
       "cli_decision": "deny",
       "web_decision": "deny",
-      "cli_pols": [],
-      "web_pols": [],
+      "cli_pols": [
+        "policy0",
+        "guardrail:malicious_url"
+      ],
+      "web_pols": [
+        "policy0",
+        "guardrail:malicious_url"
+      ],
       "success": true,
-      "duration": 9.209802374243736e-05
+      "duration": 0.0001593329943716526
+    },
+    {
+      "name": "Guardrail: SQL Injection Denied",
+      "category": "Differential",
+      "cli_decision": "deny",
+      "web_decision": "deny",
+      "cli_pols": [
+        "policy0",
+        "guardrail:sql_injection"
+      ],
+      "web_pols": [
+        "policy0",
+        "guardrail:sql_injection"
+      ],
+      "success": true,
+      "duration": 0.00015720503870397806
+    },
+    {
+      "name": "Guardrail: System Path Write Denied",
+      "category": "Differential",
+      "cli_decision": "deny",
+      "web_decision": "deny",
+      "cli_pols": [
+        "policy0",
+        "guardrail:system_path_write"
+      ],
+      "web_pols": [
+        "policy0",
+        "guardrail:system_path_write"
+      ],
+      "success": true,
+      "duration": 0.00017199094872921705
+    },
+    {
+      "name": "Taint Rule: SECRET via file",
+      "category": "Differential",
+      "cli_decision": "allow",
+      "web_decision": "allow",
+      "cli_pols": [
+        "policy0",
+        "default_allow_tools",
+        "add_taint:SECRET:read_sensitive_file"
+      ],
+      "web_pols": [
+        "policy0",
+        "default_allow_tools",
+        "add_taint:SECRET:read_sensitive_file"
+      ],
+      "success": true,
+      "duration": 0.00011612102389335632
+    },
+    {
+      "name": "Taint Rule: SECRET via query",
+      "category": "Differential",
+      "cli_decision": "allow",
+      "web_decision": "allow",
+      "cli_pols": [
+        "policy0",
+        "add_taint:SECRET:query_sensitive_db",
+        "default_allow_tools"
+      ],
+      "web_pols": [
+        "policy0",
+        "add_taint:SECRET:query_sensitive_db",
+        "default_allow_tools"
+      ],
+      "success": true,
+      "duration": 0.00011345295934006572
+    },
+    {
+      "name": "Taint Rule: PII via csv",
+      "category": "Differential",
+      "cli_decision": "allow",
+      "web_decision": "allow",
+      "cli_pols": [
+        "policy0",
+        "default_allow_tools",
+        "add_taint:PII:read_pii_csv"
+      ],
+      "web_pols": [
+        "policy0",
+        "add_taint:PII:read_pii_csv",
+        "default_allow_tools"
+      ],
+      "success": true,
+      "duration": 0.00015533604891970754
+    },
+    {
+      "name": "Taint Rule: UNTRUSTED via doc",
+      "category": "Differential",
+      "cli_decision": "allow",
+      "web_decision": "allow",
+      "cli_pols": [
+        "policy0",
+        "default_allow_tools",
+        "add_taint:UNTRUSTED:read_untrusted_doc"
+      ],
+      "web_pols": [
+        "policy0",
+        "default_allow_tools",
+        "add_taint:UNTRUSTED:read_untrusted_doc"
+      ],
+      "success": true,
+      "duration": 0.00015550601528957486
+    },
+    {
+      "name": "Taint Rule: UNTRUSTED via web search",
+      "category": "Differential",
+      "cli_decision": "allow",
+      "web_decision": "allow",
+      "cli_pols": [
+        "policy0",
+        "default_allow_tools",
+        "add_taint:UNTRUSTED:web_search"
+      ],
+      "web_pols": [
+        "policy0",
+        "add_taint:UNTRUSTED:web_search",
+        "default_allow_tools"
+      ],
+      "success": true,
+      "duration": 0.00015693099703639746
+    },
+    {
+      "name": "Lethal Trifecta: Secrets Web Exfil Denied",
+      "category": "Differential",
+      "cli_decision": "deny",
+      "web_decision": "deny",
+      "cli_pols": [
+        "policy0",
+        "lethal_trifecta:secrets_exfil"
+      ],
+      "web_pols": [
+        "policy0",
+        "lethal_trifecta:secrets_exfil"
+      ],
+      "success": true,
+      "duration": 0.00018011900829151273
+    },
+    {
+      "name": "Lethal Trifecta: Secrets Web Exfil Allowed (Trusted Domain)",
+      "category": "Differential",
+      "cli_decision": "deny",
+      "web_decision": "deny",
+      "cli_pols": [
+        "policy0",
+        "lethal_trifecta:secrets_exfil"
+      ],
+      "web_pols": [
+        "policy0",
+        "lethal_trifecta:secrets_exfil"
+      ],
+      "success": true,
+      "duration": 0.00014600198483094573
+    },
+    {
+      "name": "Lethal Trifecta: PII Web Exfil Denied",
+      "category": "Differential",
+      "cli_decision": "deny",
+      "web_decision": "deny",
+      "cli_pols": [
+        "policy0",
+        "lethal_trifecta:pii_exfil"
+      ],
+      "web_pols": [
+        "policy0",
+        "lethal_trifecta:pii_exfil"
+      ],
+      "success": true,
+      "duration": 0.00011031801113858819
+    },
+    {
+      "name": "Lethal Trifecta: Terminal Exfil Denied",
+      "category": "Differential",
+      "cli_decision": "deny",
+      "web_decision": "deny",
+      "cli_pols": [
+        "policy0",
+        "lethal_trifecta:terminal_exfil"
+      ],
+      "web_pols": [
+        "policy0",
+        "lethal_trifecta:terminal_exfil"
+      ],
+      "success": true,
+      "duration": 0.00011018000077456236
     },
     {
       "name": "Agent-1 Allowed Tool",
@@ -66,7 +292,7 @@
         "allow-read-agent1"
       ],
       "success": true,
-      "duration": 6.128201493993402e-05
+      "duration": 5.7375989854335785e-05
     },
     {
       "name": "Agent-1 Denied Tool",
@@ -80,7 +306,7 @@
         "deny-delete-agent1"
       ],
       "success": true,
-      "duration": 4.658900434151292e-05
+      "duration": 3.837799886241555e-05
     },
     {
       "name": "Agent-2 Allowed Tool",
@@ -96,7 +322,7 @@
         "allow-delete-agent2"
       ],
       "success": true,
-      "duration": 4.1349034290760756e-05
+      "duration": 3.701401874423027e-05
     },
     {
       "name": "Agent-2 Denied Tool",
@@ -110,97 +336,67 @@
         "deny-read-agent2"
       ],
       "success": true,
-      "duration": 4.372902913019061e-05
+      "duration": 3.7655001506209373e-05
     },
     {
       "name": "Fuzz: Deeply Nested Object",
       "category": "Fuzzing Safety",
-      "cli_decision": "deny",
-      "web_decision": "deny",
+      "cli_decision": "allow",
+      "web_decision": "allow",
       "success": true,
-      "duration": 0.02466670301510021
+      "duration": 0.02887597499648109
     },
     {
       "name": "Fuzz: Giant Tool Name Buffer",
       "category": "Fuzzing Safety",
-      "cli_decision": "deny",
-      "web_decision": "error",
+      "cli_decision": "allow",
+      "web_decision": "allow",
       "success": true,
-      "duration": 8.01612424099585
+      "duration": 0.016020778042729944
     },
     {
       "name": "Fuzz: Null Byte Path Injection",
       "category": "Fuzzing Safety",
-      "cli_decision": "deny",
-      "web_decision": "error",
+      "cli_decision": "allow",
+      "web_decision": "allow",
       "success": true,
-      "duration": 8.030732028011698
+      "duration": 0.007840359001420438
     },
     {
       "name": "Fuzz: Directory Traversal",
       "category": "Fuzzing Safety",
-      "cli_decision": "deny",
-      "web_decision": "error",
+      "cli_decision": "allow",
+      "web_decision": "allow",
       "success": true,
-      "duration": 8.031136696052272
+      "duration": 0.006855382991489023
     },
     {
       "name": "Fuzz: Missing Event Name",
       "category": "Fuzzing Safety",
       "cli_decision": "deny",
-      "web_decision": "error",
+      "web_decision": "allow",
       "success": true,
-      "duration": 8.019657193974126
+      "duration": 0.0036216230364516377
     }
   ],
   "rules": {
-    "add_taint:PII:_5": "NOT USED",
-    "add_taint:PII:_6": "NOT USED",
-    "add_taint:SECRET:_1": "NOT USED",
-    "add_taint:SECRET:_2": "NOT USED",
-    "add_taint:SECRET:_3": "NOT USED",
-    "add_taint:SECRET:_4": "NOT USED",
-    "add_taint:UNTRUSTED_DOC:_10": "NOT USED",
-    "add_taint:UNTRUSTED_DOC:_7": "NOT USED",
-    "add_taint:UNTRUSTED_DOC:_8": "NOT USED",
-    "add_taint:UNTRUSTED_DOC:_9": "NOT USED",
+    "add_taint:PII:read_pii_csv": "USED",
+    "add_taint:SECRET:query_sensitive_db": "USED",
+    "add_taint:SECRET:read_sensitive_file": "USED",
+    "add_taint:UNTRUSTED:read_untrusted_doc": "USED",
+    "add_taint:UNTRUSTED:web_search": "USED",
     "allow-delete-agent2": "USED",
     "allow-read-agent1": "USED",
-    "default_resource_permit": "NOT USED",
+    "default_allow_tools": "USED",
     "deny-delete-agent1": "USED",
     "deny-read-agent2": "USED",
-    "rule_0": "NOT USED",
-    "rule_11": "NOT USED",
-    "rule_12": "NOT USED",
-    "rule_13": "NOT USED",
-    "rule_14": "NOT USED",
-    "rule_15": "NOT USED",
-    "rule_16": "NOT USED",
-    "rule_17": "NOT USED",
-    "rule_18": "NOT USED",
-    "rule_19": "NOT USED",
-    "static_Bash": "NOT USED",
-    "static_Glob": "NOT USED",
-    "static_Grep": "NOT USED",
-    "static_Read": "NOT USED",
-    "static_WebSearch": "NOT USED",
-    "static_Write": "NOT USED",
-    "static_bash": "NOT USED",
-    "static_create_file": "NOT USED",
-    "static_delete_file": "NOT USED",
-    "static_edit_file": "NOT USED",
-    "static_fetch_webpage": "NOT USED",
-    "static_glob": "NOT USED",
-    "static_grep_search": "NOT USED",
-    "static_ls": "NOT USED",
-    "static_manage_todo_list": "NOT USED",
-    "static_readFile": "NOT USED",
-    "static_read_file": "NOT USED",
-    "static_rg": "NOT USED",
-    "static_runCommand": "NOT USED",
-    "static_run_in_terminal": "NOT USED",
-    "static_search": "NOT USED",
-    "static_view": "NOT USED",
-    "static_web_fetch": "NOT USED"
+    "guardrail:malicious_url": "USED",
+    "guardrail:python_injection": "USED",
+    "guardrail:sql_injection": "USED",
+    "guardrail:system_path_write": "USED",
+    "lethal_trifecta:pii_exfil": "USED",
+    "lethal_trifecta:secrets_exfil": "USED",
+    "lethal_trifecta:terminal_exfil": "USED",
+    "static_deny:delete_file": "USED"
   }
 }
