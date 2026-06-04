@@ -831,9 +831,20 @@ pub async fn serve(bind_addr: &str, state: WebhookState) -> anyhow::Result<()> {
     }
 
     let app = build_router(state);
-    let listener = tokio::net::TcpListener::bind(bind_addr)
-        .await
+    let addr: std::net::SocketAddr = bind_addr
+        .parse()
+        .map_err(|e| anyhow::anyhow!("Invalid bind address '{bind_addr}': {e}"))?;
+    let socket = tokio::net::TcpSocket::new_v4()
+        .map_err(|e| anyhow::anyhow!("Failed to create TCP socket: {e}"))?;
+    socket
+        .set_reuseaddr(true)
+        .map_err(|e| anyhow::anyhow!("Failed to set SO_REUSEADDR: {e}"))?;
+    socket
+        .bind(addr)
         .map_err(|e| anyhow::anyhow!("Failed to bind to {bind_addr}: {e}"))?;
+    let listener = socket
+        .listen(65535)
+        .map_err(|e| anyhow::anyhow!("Failed to listen on {bind_addr}: {e}"))?;
 
     tracing::info!("Webhook server listening on {}", listener.local_addr()?);
     axum::serve(listener, app).await?;
