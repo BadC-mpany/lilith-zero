@@ -5,6 +5,7 @@ Covers Webhook (Local & Azure), CLI App Hooks (Claude, Copilot, CLI), latency pe
 and concurrent storage/network load metrics.
 """
 
+import argparse
 import json
 import glob
 import os
@@ -177,7 +178,7 @@ def make_rules_coverage_list(diff_report):
         items.append(f"- **{r}**: {usage}")
     return "\n".join(items)
 
-def make_sweep_table_and_markdown(results_dir):
+def make_sweep_table_and_markdown(results_dir, random_only=False):
     pattern = os.path.join(results_dir, "sweep_vu*_*.json")
     files = glob.glob(pattern)
 
@@ -215,7 +216,7 @@ def make_sweep_table_and_markdown(results_dir):
     # Sort: static first then random, then by VUs
     static_pts = sorted([p for p in data_points if p["mode"] == "static"], key=lambda x: x["vus"])
     random_pts = sorted([p for p in data_points if p["mode"] == "random"], key=lambda x: x["vus"])
-    sorted_points = static_pts + random_pts
+    sorted_points = ([] if random_only else static_pts) + random_pts
 
     rows = []
     for p in sorted_points:
@@ -248,12 +249,15 @@ def make_sweep_table_and_markdown(results_dir):
     if static_100 and static_100["p99"] >= 900.0:
         static_sla_str = f"**Exceeds the 900ms SLA threshold** at high concurrency (P99 at 100 VUs: **{static_100['p99']:.2f} ms** due to lock contention), sustaining a peak throughput of **{peak_static_tp:.2f} req/s**."
 
+    static_sla_entry = f"   - **Static Sessions (Lock Contention)**: {static_sla_str}\n" if not random_only else ""
+    static_bottleneck = "   - Under high lock contention (Static session), throughput scaling flattens and latency increases linearly with concurrency.\n" if not random_only else ""
+
     md_section = f"""
 ---
 
 ## 6. Concurrency Parameter Sweep & SLA Target Evaluation
 
-To verify system limits and SLA compliance (<900ms total round-trip latency with zero errors), we perform automated parameter sweeps by scaling virtual users (VUs) from 1 to 100 under both contended (Static Session) and isolated (Randomized Session) workloads.
+To verify system limits and SLA compliance (<900ms total round-trip latency with zero errors), we perform automated parameter sweeps by scaling virtual users (VUs) from 1 to 100 under isolated (Randomized Session) workloads.
 
 ### 6.1 Performance Curves
 
@@ -272,16 +276,23 @@ We visualize the latency-concurrency and latency-throughput profiles below:
 ### 6.3 Performance SLA Analysis
 1. **SLA compliance (<900ms latency, 0% errors)**:
    - **Randomized Sessions (Isolated Storage)**: {rand_sla_str}
-   - **Static Sessions (Lock Contention)**: {static_sla_str}
-2. **Key Bottlenecks identified**:
-   - Under high lock contention (Static session), throughput scaling flattens and latency increases linearly with concurrency.
-   - For independent workloads (Randomized sessions), performance scales linearly with VUs without showing lock contention overhead.
+{static_sla_entry}2. **Key Bottlenecks identified**:
+{static_bottleneck}   - For independent workloads (Randomized sessions), performance scales linearly with VUs without showing lock contention overhead.
 """
     return md_section
 
 def main():
+    parser = argparse.ArgumentParser(description="Generate unified Lilith-Zero benchmark report.")
+    parser.add_argument(
+        "--random-only",
+        action="store_true",
+        help="Exclude static-session (random_conversations=false) rows from all tables.",
+    )
+    args = parser.parse_args()
+    random_only = args.random_only
+
     results_dir = "examples/benchmarks/results"
-    
+
     # Load raw JSON metrics from benchmark runs
     diff_report = load_json(f"{results_dir}/differential_and_fuzz_report.json")
     claude_hook_report = load_json(f"{results_dir}/hook_benchmark_report_claude.json")
@@ -372,6 +383,30 @@ def main():
     if robustness_report:
         rob_count = robustness_report.get("summary", {}).get("total_runs", 0)
 
+    # Conditionally build static-session rows for sections 1 and 4
+    def section1_row(label, storage, data):
+        if not data:
+            return f"| {label} | {storage} | 33 Cedar rules (12/5/16 per-agent) | *Pending* | *Pending* | *Pending* | *Pending* | *Pending* | *Pending* | *Pending* | *Pending* |"
+        return (
+            f"| {label} | {storage} | 33 Cedar rules (12/5/16 per-agent) |"
+            f" {data['total']} | {data['vus']} | {data['rate']:.2f} |"
+            f" {data['err']:.2f}% | {data['avg']:.2f} | {data['med']:.2f} |"
+            f" {data['p95']:.2f} | {data['p99']:.2f} |"
+        )
+
+    if random_only:
+        section1_static_rows = ""
+        section4_static_rows = ""
+    else:
+        section1_static_rows = (
+            section1_row("**Webhook (Local, Static Session)**", "Local SSD", local_static) + "\n" +
+            section1_row("**Webhook (Azure, Static Session)**", "Azure Ephemeral Disk (/tmp)", azure_static) + "\n"
+        )
+        section4_static_rows = (
+            format_rows("**Webhook (Local, Static Session)**", local_static) + "\n" +
+            format_rows("**Webhook (Azure, Static Session)**", azure_static) + "\n"
+        )
+
     # Compile the detailed deployment comparison Markdown table
     md = f"""# Lilith-Zero: Deployment Benchmark & Verification Report
 
@@ -383,10 +418,8 @@ def main():
 |---|---|---|---|---|---|---|---|---|---|---|
 | **Local App Hook (Claude)** | Local SSD | 3 Cedar rules | {claude_payloads if claude_hook_report else '*Pending*'} | {claude_vus_str} | {claude_rate_str} | 0.00% | {f"{claude_avg:.2f}" if claude_hook_report else '*Pending*'} | {f"{claude_med:.2f}" if claude_hook_report else '*Pending*'} | {f"{claude_p95:.2f}" if claude_hook_report else '*Pending*'} | {f"{claude_p99:.2f}" if claude_hook_report else '*Pending*'} |
 | **Local App Hook (Copilot)**| Local SSD | 3 Cedar rules | {copilot_payloads if copilot_hook_report else '*Pending*'} | {copilot_vus_str} | {copilot_rate_str} | 0.00% | {f"{copilot_avg:.2f}" if copilot_hook_report else '*Pending*'} | {f"{copilot_med:.2f}" if copilot_hook_report else '*Pending*'} | {f"{copilot_p95:.2f}" if copilot_hook_report else '*Pending*'} | {f"{copilot_p99:.2f}" if copilot_hook_report else '*Pending*'} |
-| **Webhook (Local, Static Session)** | Local SSD | 33 Cedar rules (12/5/16 per-agent) | {local_static['total'] if local_static else '*Pending*'} | {local_static['vus'] if local_static else '*Pending*'} | {f"{local_static['rate']:.2f}" if local_static else '*Pending*'} | {f"{local_static['err']:.2f}%" if local_static else '*Pending*'} | {f"{local_static['avg']:.2f}" if local_static else '*Pending*'} | {f"{local_static['med']:.2f}" if local_static else '*Pending*'} | {f"{local_static['p95']:.2f}" if local_static else '*Pending*'} | {f"{local_static['p99']:.2f}" if local_static else '*Pending*'} |
-| **Webhook (Local, Random Sessions)**| Local SSD | 33 Cedar rules (12/5/16 per-agent) | {local_random['total'] if local_random else '*Pending*'} | {local_random['vus'] if local_random else '*Pending*'} | {f"{local_random['rate']:.2f}" if local_random else '*Pending*'} | {f"{local_random['err']:.2f}%" if local_random else '*Pending*'} | {f"{local_random['avg']:.2f}" if local_random else '*Pending*'} | {f"{local_random['med']:.2f}" if local_random else '*Pending*'} | {f"{local_random['p95']:.2f}" if local_random else '*Pending*'} | {f"{local_random['p99']:.2f}" if local_random else '*Pending*'} |
-| **Webhook (Azure, Static Session)** | Azure Files Share | 33 Cedar rules (12/5/16 per-agent) | {azure_static['total'] if azure_static else '*Pending*'} | {azure_static['vus'] if azure_static else '*Pending*'} | {f"{azure_static['rate']:.2f}" if azure_static else '*Pending*'} | {f"{azure_static['err']:.2f}%" if azure_static else '*Pending*'} | {f"{azure_static['avg']:.2f}" if azure_static else '*Pending*'} | {f"{azure_static['med']:.2f}" if azure_static else '*Pending*'} | {f"{azure_static['p95']:.2f}" if azure_static else '*Pending*'} | {f"{azure_static['p99']:.2f}" if azure_static else '*Pending*'} |
-| **Webhook (Azure, Random Sessions)**| Azure Files Share | 33 Cedar rules (12/5/16 per-agent) | {azure_random['total'] if azure_random else '*Pending*'} | {azure_random['vus'] if azure_random else '*Pending*'} | {f"{azure_random['rate']:.2f}" if azure_random else '*Pending*'} | {f"{azure_random['err']:.2f}%" if azure_random else '*Pending*'} | {f"{azure_random['avg']:.2f}" if azure_random else '*Pending*'} | {f"{azure_random['med']:.2f}" if azure_random else '*Pending*'} | {f"{azure_random['p95']:.2f}" if azure_random else '*Pending*'} | {f"{azure_random['p99']:.2f}" if azure_random else '*Pending*'} |
+{section1_static_rows}| **Webhook (Local, Random Sessions)**| Local SSD | 33 Cedar rules (12/5/16 per-agent) | {local_random['total'] if local_random else '*Pending*'} | {local_random['vus'] if local_random else '*Pending*'} | {f"{local_random['rate']:.2f}" if local_random else '*Pending*'} | {f"{local_random['err']:.2f}%" if local_random else '*Pending*'} | {f"{local_random['avg']:.2f}" if local_random else '*Pending*'} | {f"{local_random['med']:.2f}" if local_random else '*Pending*'} | {f"{local_random['p95']:.2f}" if local_random else '*Pending*'} | {f"{local_random['p99']:.2f}" if local_random else '*Pending*'} |
+| **Webhook (Azure, Random Sessions)**| Azure Ephemeral Disk (/tmp) | 33 Cedar rules (12/5/16 per-agent) | {azure_random['total'] if azure_random else '*Pending*'} | {azure_random['vus'] if azure_random else '*Pending*'} | {f"{azure_random['rate']:.2f}" if azure_random else '*Pending*'} | {f"{azure_random['err']:.2f}%" if azure_random else '*Pending*'} | {f"{azure_random['avg']:.2f}" if azure_random else '*Pending*'} | {f"{azure_random['med']:.2f}" if azure_random else '*Pending*'} | {f"{azure_random['p95']:.2f}" if azure_random else '*Pending*'} | {f"{azure_random['p99']:.2f}" if azure_random else '*Pending*'} |
 
 *Note: CLI Latencies measure complete cold-start process execution. Webhook latencies measure client round-trip HTTP request durations.*
 
@@ -414,7 +447,7 @@ def main():
 
 ### 3.1 Session Serialization and Lock Contention
 Lilith-Zero serializes write actions per session (conversation) using file-system advisory locking. Under load tests:
-- **Static Session (High Contention)**: Forces multiple concurrent virtual users (VUs) to block on the same lock. High lock wait times indicate correct execution sequencing to prevent state corruption.
+{"" if random_only else "- **Static Session (High Contention)**: Forces multiple concurrent virtual users (VUs) to block on the same lock. High lock wait times indicate correct execution sequencing to prevent state corruption."}
 - **Randomized Sessions (Independent Storage Writes)**: Bypasses lock contention by routing each VU to its own conversation ID, maximizing concurrent write operations on the underlying storage tier.
 
 ### 3.2 Azure Files Integration (Azure Webhook)
@@ -434,9 +467,7 @@ To pinpoint bottlenecks, we trace each phase of the evaluation lifecycle. The ta
 |---|---|---|---|---|---|---|---|---|
 {format_rows('**Local App Hook (Claude)**', claude_extracted)}
 {format_rows('**Local App Hook (Copilot)**', copilot_extracted)}
-{format_rows('**Webhook (Local, Static Session)**', local_static)}
-{format_rows('**Webhook (Local, Random Sessions)**', local_random)}
-{format_rows('**Webhook (Azure, Static Session)**', azure_static)}
+{section4_static_rows}{format_rows('**Webhook (Local, Random Sessions)**', local_random)}
 {format_rows('**Webhook (Azure, Random Sessions)**', azure_random)}
 
 *Note: For Local App Hooks (Claude & Copilot), the Network & Ingress Overhead column maps to Binary Startup/IO Overhead, and the Total Client RTT column maps to Total Process Execution Time.*
@@ -481,7 +512,7 @@ Validates state isolation, concurrency lock handling, and multi-tenant persisten
 List of all active policy rules matching the Universal policy configuration and their exercise status in the verification campaign:
 
 {make_rules_coverage_list(diff_report)}
-{make_sweep_table_and_markdown(results_dir)}
+{make_sweep_table_and_markdown(results_dir, random_only=random_only)}
 """
 
     output_path = f"{results_dir}/unified_benchmark_report.md"
