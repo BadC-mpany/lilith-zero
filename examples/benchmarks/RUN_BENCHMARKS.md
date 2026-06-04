@@ -47,7 +47,7 @@ Measure CLI cold-start overhead and policy evaluation latency (runs Claude and C
 
 ```bash
 # Run 10,000 iterations for both hook payload formats with 100 concurrent threads
-python3 examples/benchmarks/hook_benchmark.py --iterations 1000 --format all --concurrency 100
+python3 examples/benchmarks/hook_benchmark.py --iterations 1000 --format all --concurrency 10000
 ```
 
 ---
@@ -84,7 +84,7 @@ sleep 1
 cd examples/benchmarks
 LILITH_URL="http://127.0.0.1:8080/analyze-tool-execution" \
 LILITH_VUS=100 \
-LILITH_DURATION="30s" \
+LILITH_DURATION="100s" \
 LILITH_RANDOM_CONV=false \
 LILITH_AGENT_ID="5be3e14e-2e46-f111-bec6-7c1e52344333,77236ced-1146-f111-bec6-7ced8d71fac9,universal" \
 k6 run webhook_load_test.js
@@ -93,8 +93,8 @@ cd ../..
 # C. Randomized sessions (independent storage writes)
 cd examples/benchmarks
 LILITH_URL="http://127.0.0.1:8080/analyze-tool-execution" \
-LILITH_VUS=100 \
-LILITH_DURATION="30s" \
+LILITH_VUS=1000 \
+LILITH_DURATION="100s" \
 LILITH_RANDOM_CONV=true \
 LILITH_AGENT_ID="5be3e14e-2e46-f111-bec6-7c1e52344333,77236ced-1146-f111-bec6-7ced8d71fac9,universal" \
 k6 run webhook_load_test.js
@@ -115,8 +115,8 @@ Compare these numbers against the historical Azure Files results in the results 
 # A. Static session (high lock contention)
 cd examples/benchmarks
 LILITH_URL="https://lilith-zero.badcompany.xyz/analyze-tool-execution" \
-LILITH_VUS=100 \
-LILITH_DURATION="100s" \
+LILITH_VUS=150 \
+LILITH_DURATION="30s" \
 LILITH_RANDOM_CONV=false \
 LILITH_AGENT_ID="5be3e14e-2e46-f111-bec6-7c1e52344333,77236ced-1146-f111-bec6-7ced8d71fac9,universal" \
 k6 run webhook_load_test.js
@@ -125,7 +125,7 @@ cd ../..
 # B. Randomized sessions (independent storage writes)
 cd examples/benchmarks
 LILITH_URL="https://lilith-zero.badcompany.xyz/analyze-tool-execution" \
-LILITH_VUS=100 \
+LILITH_VUS=250 \
 LILITH_DURATION="100s" \
 LILITH_RANDOM_CONV=true \
 LILITH_AGENT_ID="5be3e14e-2e46-f111-bec6-7c1e52344333,77236ced-1146-f111-bec6-7ced8d71fac9,universal" \
@@ -145,7 +145,7 @@ Run random sessions only — static sessions serialize on one lock and obscure t
 # Sweep 1→300 VUs against Azure, 30s per step, random sessions only
 python3 examples/benchmarks/run_sweeps.py \
   --url "https://lilith-zero.badcompany.xyz/analyze-tool-execution" \
-  --vus "1,10,100,200,300" \
+  --vus "10,100,200,300,500,1000" \
   --duration "30s" \
   --random-only
 ```
@@ -165,7 +165,7 @@ Automate a sweep over multiple VU scales locally to generate performance curves.
 
 ```bash
 # A. Local sweep (automatically starts & stops the local server)
-python3 examples/benchmarks/run_sweeps.py --vus "1,10,100,500,1000,2000,5000,10000" --duration "100s"
+python3 examples/benchmarks/run_sweeps.py --vus "1,10,100,500,1000,2000" --duration "30s"
 
 # B. Generate latency-concurrency and throughput-latency PNG plots
 python3 examples/benchmarks/plot_sweeps.py
@@ -178,7 +178,7 @@ python3 examples/benchmarks/plot_sweeps.py
 Compile all individual results into a single unified Markdown report matrix:
 
 ```bash
-python3 examples/benchmarks/generate_unified_report.py
+python3 examples/benchmarks/generate_unified_report.py --random-only
 ```
 
 The compiled report is generated at `examples/benchmarks/results/unified_benchmark_report.md`.

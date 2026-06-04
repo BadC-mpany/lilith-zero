@@ -6,12 +6,12 @@
 
 | Deployment Type | Storage / Files Tier | Active Rules | Payloads Tested | Concurrent Load (VUs) | Throughput (req/s) | Error Rate | Avg Latency (ms) | Med Latency (ms) | P95 Latency (ms) | P99 Latency (ms) |
 |---|---|---|---|---|---|---|---|---|---|---|
-| **Local App Hook (Claude)** | Local SSD | 3 Cedar rules | 10000 | 100 | 439.11 | 0.00% | 205.87 | 175.83 | 483.57 | 676.68 |
-| **Local App Hook (Copilot)**| Local SSD | 3 Cedar rules | 10000 | 100 | 264.63 | 0.00% | 367.30 | 386.58 | 634.09 | 787.17 |
-| **Webhook (Local, Static Session)** | Local SSD | 33 Cedar rules (12/5/16 per-agent) | 7097 | 100 | 69.94 | 0.00% | 1408.24 | 1297.55 | 2014.73 | 2826.77 |
-| **Webhook (Local, Random Sessions)**| Local SSD | 33 Cedar rules (12/5/16 per-agent) | 185233 | 100 | 1851.54 | 0.00% | 42.51 | 40.81 | 77.45 | 96.84 |
-| **Webhook (Azure, Static Session)** | Azure Files Share | 33 Cedar rules (12/5/16 per-agent) | 3415 | 100 | 33.22 | 0.00% | 2945.08 | 2914.13 | 3980.04 | 5826.73 |
-| **Webhook (Azure, Random Sessions)**| Azure Files Share | 33 Cedar rules (12/5/16 per-agent) | 4383 | 100 | 42.59 | 0.00% | 2290.01 | 2145.03 | 3447.83 | 4094.83 |
+| **Local App Hook (Claude)** | Local SSD | 3 Cedar rules | 1000 | 10000 | 454.64 | 0.00% | 79.54 | 67.69 | 185.15 | 245.74 |
+| **Local App Hook (Copilot)**| Local SSD | 3 Cedar rules | 1000 | 10000 | 442.06 | 0.00% | 80.92 | 66.59 | 198.00 | 274.12 |
+| **Webhook (Local, Static Session)** | Local SSD | 33 Cedar rules (12/5/16 per-agent) | 3673 | 100 | 35.73 | 0.00% | 2749.13 | 2482.77 | 4806.81 | 5645.89 |
+| **Webhook (Azure, Static Session)** | Azure Ephemeral Disk (/tmp) | 33 Cedar rules (12/5/16 per-agent) | 8998 | 50 | 298.06 | 0.00% | 147.59 | 132.97 | 234.93 | 346.37 |
+| **Webhook (Local, Random Sessions)**| Local SSD | 33 Cedar rules (12/5/16 per-agent) | 177611 | 1000 | 1767.74 | 0.00% | 552.05 | 533.69 | 816.49 | 937.12 |
+| **Webhook (Azure, Random Sessions)**| Azure Ephemeral Disk (/tmp) | 33 Cedar rules (12/5/16 per-agent) | 55185 | 250 | 549.35 | 0.00% | 438.98 | 423.63 | 710.00 | 886.77 |
 
 *Note: CLI Latencies measure complete cold-start process execution. Webhook latencies measure client round-trip HTTP request durations.*
 
@@ -22,7 +22,7 @@
 ### 2.1 Test Suite Scale
 - **Differential Verification Scenarios**: 20 equivalent test cases (validating exact CLI vs Webhook decision output).
 - **Fuzzing Robustness Scenarios**: 5/5 cases evaluating malformed/overflow inputs.
-- **Lock Contention & Taint Persistence Scenarios**: 0 scenarios.
+- **Lock Contention & Taint Persistence Scenarios**: 3 scenarios.
 - **Policies Loaded**:
   - Cedar Policy Engine: 3 Policies (33 Cedar rules total: 12 rules for `5be3e14e...`, 5 rules for `77236ce...`, and 16 rules for `universal`).
 
@@ -30,8 +30,8 @@
 - **Fail-Closed on Invalid Input**: **PASS** (rejections on malformed JSON, deep nesting, null bytes, and traversal paths).
 - **File Descriptor Leak Delta**: **0 FDs** (monitored via `/proc` during active load).
 - **Memory Footprint**:
-  - CLI hook execution peak memory: **28760 KB**
-  - Webhook daemon peak memory (VmHWM): **11116 KB**
+  - CLI hook execution peak memory: **28604 KB**
+  - Webhook daemon peak memory (VmHWM): **10920 KB**
 
 ---
 
@@ -57,24 +57,24 @@ To pinpoint bottlenecks, we trace each phase of the evaluation lifecycle. The ta
 
 | Deployment Target | Metric | Lock Acquire | State Load (Read) | Cedar Policy Eval | State Save (Write) | Internal Server Time | Network & Ingress Overhead / CLI Process Overhead | Total Client RTT / CLI Total Process |
 |---|---|---|---|---|---|---|---|---|
-| **Local App Hook (Claude)** | Avg | 0.12 | 0.03 | 2.90 | 0.04 | 3.09 | 202.77 | 205.87 |
-| | Med | 0.04 | 0.02 | 1.65 | 0.03 | 1.73 | 174.10 | 175.83 |
-| | P99 | 2.23 | 0.12 | 16.22 | 0.23 | 18.80 | 657.88 | 676.68 |
-| **Local App Hook (Copilot)** | Avg | 352.03 | 1.23 | 1.32 | 1.14 | 355.72 | 11.58 | 367.30 |
-| | Med | 376.61 | 1.22 | 1.24 | 1.13 | 380.21 | 6.37 | 386.58 |
-| | P99 | 776.56 | 2.84 | 3.34 | 2.81 | 785.55 | 1.62 | 787.17 |
-| **Webhook (Local, Static Session)** | Avg | 39.53 | 7.11 | 0.48 | 6.68 | 56.00 | 1352.24 | 1408.24 |
-| | Med | 38.99 | 6.96 | 0.45 | 6.44 | 55.33 | 1242.22 | 1297.55 |
-| | P99 | 53.71 | 10.16 | 0.79 | 10.31 | 75.94 | 2750.83 | 2826.77 |
-| **Webhook (Local, Random Sessions)** | Avg | 0.13 | 0.02 | 1.39 | 0.06 | 1.98 | 40.53 | 42.51 |
-| | Med | 0.08 | 0.01 | 0.88 | 0.03 | 1.50 | 39.31 | 40.81 |
-| | P99 | 1.26 | 0.08 | 5.88 | 0.82 | 7.22 | 89.62 | 96.84 |
-| **Webhook (Azure, Static Session)** | Avg | 2.10 | 0.05 | 3.21 | 35.76 | 43.30 | 2901.78 | 2945.08 |
-| | Med | 1.17 | 0.03 | 0.62 | 33.30 | 40.00 | 2874.13 | 2914.13 |
-| | P99 | 17.12 | 0.08 | 20.32 | 67.99 | 89.81 | 5736.92 | 5826.73 |
-| **Webhook (Azure, Random Sessions)** | Avg | 6.93 | 0.05 | 5.49 | 17.05 | 32.90 | 2257.11 | 2290.01 |
-| | Med | 2.15 | 0.01 | 1.40 | 13.24 | 28.89 | 2116.14 | 2145.03 |
-| | P99 | 67.87 | 0.06 | 37.03 | 50.33 | 109.79 | 3985.04 | 4094.83 |
+| **Local App Hook (Claude)** | Avg | 0.20 | 0.03 | 2.69 | 0.05 | 2.97 | 76.57 | 79.54 |
+| | Med | 0.04 | 0.02 | 1.69 | 0.03 | 1.78 | 65.92 | 67.69 |
+| | P99 | 5.38 | 0.11 | 11.34 | 0.60 | 17.42 | 228.32 | 245.74 |
+| **Local App Hook (Copilot)** | Avg | 0.17 | 0.03 | 2.83 | 0.04 | 3.06 | 77.86 | 80.92 |
+| | Med | 0.04 | 0.01 | 1.63 | 0.03 | 1.71 | 64.88 | 66.59 |
+| | P99 | 4.16 | 0.09 | 13.32 | 0.15 | 17.73 | 256.39 | 274.12 |
+| **Webhook (Local, Static Session)** | Avg | 77.84 | 14.00 | 0.48 | 13.43 | 109.73 | 2639.40 | 2749.13 |
+| | Med | 75.42 | 13.60 | 0.45 | 12.85 | 106.31 | 2376.46 | 2482.77 |
+| | P99 | 148.75 | 23.95 | 0.86 | 25.95 | 203.76 | 5442.13 | 5645.89 |
+| **Webhook (Azure, Static Session)** | Avg | 1.29 | 0.69 | 0.95 | 0.84 | 4.91 | 142.68 | 147.59 |
+| | Med | 0.91 | 0.60 | 0.75 | 0.77 | 4.61 | 128.36 | 132.97 |
+| | P99 | 7.74 | 2.59 | 4.09 | 3.15 | 15.49 | 330.89 | 346.37 |
+| **Webhook (Local, Random Sessions)** | Avg | 0.14 | 0.02 | 1.44 | 0.06 | 2.08 | 549.97 | 552.05 |
+| | Med | 0.09 | 0.01 | 0.91 | 0.04 | 1.56 | 532.13 | 533.69 |
+| | P99 | 1.31 | 0.09 | 6.97 | 0.76 | 8.55 | 928.57 | 937.12 |
+| **Webhook (Azure, Random Sessions)** | Avg | 0.29 | 0.02 | 1.45 | 0.10 | 3.33 | 435.65 | 438.98 |
+| | Med | 0.08 | 0.01 | 0.80 | 0.03 | 1.32 | 422.30 | 423.63 |
+| | P99 | 2.58 | 0.12 | 10.04 | 0.88 | 43.78 | 842.99 | 886.77 |
 
 *Note: For Local App Hooks (Claude & Copilot), the Network & Ingress Overhead column maps to Binary Startup/IO Overhead, and the Total Client RTT column maps to Total Process Execution Time.*
 
@@ -135,7 +135,9 @@ Validates state isolation, concurrency lock handling, and multi-tenant persisten
 
 | Robustness Scenario | Duration | Status |
 |---|---|---|
-*No Robustness Scenarios Data Available*
+| Fail-Closed on Invalid Inputs | 0.008s | PASS |
+| Lock Contention / Session Safety | 0.021s | PASS |
+| Cedar Taint Persistence Workflow | 0.029s | PASS |
 
 ### 5.4 Cedar Policy Rule Coverage
 List of all active policy rules matching the Universal policy configuration and their exercise status in the verification campaign:
@@ -163,7 +165,7 @@ List of all active policy rules matching the Universal policy configuration and 
 
 ## 6. Concurrency Parameter Sweep & SLA Target Evaluation
 
-To verify system limits and SLA compliance (<900ms total round-trip latency with zero errors), we perform automated parameter sweeps by scaling virtual users (VUs) from 1 to 100 under both contended (Static Session) and isolated (Randomized Session) workloads.
+To verify system limits and SLA compliance (<900ms total round-trip latency with zero errors), we perform automated parameter sweeps by scaling virtual users (VUs) from 1 to 100 under isolated (Randomized Session) workloads.
 
 ### 6.1 Performance Curves
 
@@ -177,27 +179,25 @@ We visualize the latency-concurrency and latency-throughput profiles below:
 
 | Concurrency (VUs) | Session Write Mode | Throughput (req/s) | Error Rate (%) | Med Latency (ms) | P95 Latency (ms) | P99 Latency (ms) |
 |---|---|---|---|---|---|---|
-| 1 | Static Session (Contended) | 5.12 | 0.00% | 188.20 | 198.78 | 227.09 |
-| 10 | Static Session (Contended) | 36.25 | 0.00% | 258.23 | 398.64 | 464.43 |
-| 100 | Static Session (Contended) | 32.92 | 0.00% | 2714.10 | 4496.99 | 4715.72 |
-| 500 | Static Session (Contended) | 33.51 | 0.00% | 10021.11 | 20490.69 | 21519.72 |
-| 1000 | Static Session (Contended) | 34.95 | 0.00% | 18183.81 | 32315.73 | 33611.67 |
-| 2000 | Static Session (Contended) | 31.88 | 0.06% | 16934.65 | 44584.64 | 46473.54 |
-| 5000 | Static Session (Contended) | 39.60 | 47.15% | 20526.84 | 44443.21 | 46916.83 |
-| 10000 | Static Session (Contended) | 61.75 | 100.00% | 0.00 | 0.00 | 0.00 |
-| 1 | Randomized (Isolated) | 5.54 | 0.00% | 170.35 | 198.39 | 252.64 |
-| 10 | Randomized (Isolated) | 42.46 | 0.00% | 169.20 | 452.14 | 709.49 |
-| 100 | Randomized (Isolated) | 37.73 | 0.00% | 2477.69 | 3529.23 | 3696.57 |
-| 500 | Randomized (Isolated) | 49.05 | 0.00% | 7163.15 | 13543.56 | 14319.43 |
-| 1000 | Randomized (Isolated) | 35.87 | 0.00% | 16413.96 | 35656.41 | 37779.65 |
-| 2000 | Randomized (Isolated) | 43.55 | 0.00% | 22552.12 | 44232.77 | 45356.03 |
-| 5000 | Randomized (Isolated) | 45.64 | 22.18% | 20147.91 | 43347.71 | 46471.09 |
-| 10000 | Randomized (Isolated) | 2.90 | 0.68% | 4457.49 | 12730.92 | 19910.63 |
+| 1 | Static Session (Contended) | 22.88 | 0.00% | 30.47 | 47.45 | 57.78 |
+| 10 | Static Session (Contended) | 34.98 | 0.00% | 291.67 | 389.19 | 466.07 |
+| 100 | Static Session (Contended) | 34.61 | 0.00% | 2678.34 | 5022.38 | 6043.65 |
+| 500 | Static Session (Contended) | 34.53 | 0.00% | 10316.01 | 22523.29 | 22534.41 |
+| 1000 | Static Session (Contended) | 34.22 | 0.00% | 22585.17 | 38207.77 | 39246.46 |
+| 2000 | Static Session (Contended) | 1617.06 | 0.75% | 197.15 | 498.31 | 4080.40 |
+| 1 | Randomized (Isolated) | 65.90 | 0.00% | 3.38 | 4.74 | 61.61 |
+| 10 | Randomized (Isolated) | 643.16 | 0.00% | 2.00 | 12.74 | 61.13 |
+| 100 | Randomized (Isolated) | 1804.70 | 0.00% | 40.68 | 82.49 | 118.64 |
+| 200 | Randomized (Isolated) | 529.09 | 0.00% | 331.69 | 585.90 | 859.49 |
+| 300 | Randomized (Isolated) | 530.02 | 0.00% | 510.47 | 890.45 | 1190.17 |
+| 500 | Randomized (Isolated) | 1752.73 | 0.00% | 213.22 | 514.22 | 656.18 |
+| 1000 | Randomized (Isolated) | 1813.85 | 0.00% | 533.80 | 824.42 | 934.63 |
+| 2000 | Randomized (Isolated) | 2700.15 | 0.50% | 133.03 | 321.66 | 422.23 |
 
 ### 6.3 Performance SLA Analysis
 1. **SLA compliance (<900ms latency, 0% errors)**:
-   - **Randomized Sessions (Isolated Storage)**: **Exceeds the 900ms SLA threshold** at high concurrency (P99 at 100 VUs: **3696.57 ms**), but sustains a peak throughput of **49.05 req/s**.
-   - **Static Sessions (Lock Contention)**: **Exceeds the 900ms SLA threshold** at high concurrency (P99 at 100 VUs: **4715.72 ms** due to lock contention), sustaining a peak throughput of **61.75 req/s**.
+   - **Randomized Sessions (Isolated Storage)**: **Complies fully** with the <900ms SLA target up to 100 VUs (P99 at 100 VUs: **118.64 ms**, Median: **40.68 ms**), sustaining a peak throughput of **2700.15 req/s**.
+   - **Static Sessions (Lock Contention)**: **Exceeds the 900ms SLA threshold** at high concurrency (P99 at 100 VUs: **6043.65 ms** due to lock contention), sustaining a peak throughput of **1617.06 req/s**.
 2. **Key Bottlenecks identified**:
    - Under high lock contention (Static session), throughput scaling flattens and latency increases linearly with concurrency.
    - For independent workloads (Randomized sessions), performance scales linearly with VUs without showing lock contention overhead.

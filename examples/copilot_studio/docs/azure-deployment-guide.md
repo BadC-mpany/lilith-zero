@@ -68,16 +68,29 @@ cd ..
 ```
 
 ### 2. Build and Push the Container
-To prevent Docker from scanning the huge compilation `target/` directory (which can exceed 20GB and freeze the CLI), copy the binary to a root path and exclude `target/` in `.dockerignore`:
+The `az acr build` command enumerates the full directory tree before applying `.dockerignore` rules.
+With a 20GB+ Rust `target/` directory this causes the CLI to hang at "Packing source code into tar".
+Work around it by building from a minimal temp context containing only what the Dockerfile needs:
+
 ```bash
 # Copy binary out
 cp lilith-zero/target/release/lilith-zero ./lilith-zero-bin
 
-# Build on Azure Container Registry
-az acr build --registry "lilithzeromzcr" --image "lilith-zero:latest" --file Dockerfile .
+# Stage a minimal build context in /tmp (no target/ tree to walk)
+mkdir -p /tmp/acr-ctx/examples/copilot_studio
+cp lilith-zero-bin /tmp/acr-ctx/
+cp Dockerfile /tmp/acr-ctx/
+cp -r examples/copilot_studio/policies /tmp/acr-ctx/examples/copilot_studio/
+
+# Build from the tiny temp directory — completes in seconds
+az acr build \
+  --registry "lilithzeromzcr" \
+  --image "lilith-zero:latest" \
+  --file /tmp/acr-ctx/Dockerfile \
+  /tmp/acr-ctx
 
 # Clean up
-rm -f ./lilith-zero-bin
+rm -rf /tmp/acr-ctx lilith-zero-bin
 ```
 
 ### 3. Web App Creation
@@ -163,3 +176,62 @@ az webapp log tail --name "lilith-zero-webhook-mz" --resource-group "BadCompany"
 # Restart the application to reload container/settings
 az webapp restart --name "lilith-zero-webhook-mz" --resource-group "BadCompany"
 ```
+
+---
+
+## 5. Current Live Configuration
+
+State of `lilith-zero-webhook-mz` as of 2026-06-04. Use this as the reference when re-deploying or comparing against a fresh create.
+
+| Setting | Value | How to change |
+|---|---|---|
+| Subscription | Azure for Startups (`4d062d5a-...`) | — |
+| Tenant | `26f834b9-3844-4b6a-8305-fbec7a80cb95` | — |
+| Resource Group | `BadCompany`, East US 2 | — |
+| App Service Plan | `lilith-zero-plan-new`, B1 Basic, 1 worker (max 3) | `az appservice plan update --sku` |
+| Always On | **Enabled** | `az webapp config set --always-on true/false` |
+| Worker Process | **64-bit** | `az webapp config set --use-32bit-worker-process false` |
+| Startup Command | `/app/lilith-zero serve --bind 0.0.0.0:8080 --auth-mode none --policy /app/policies` | `az webapp config set --startup-file "..."` |
+| Session Storage | **Local ephemeral disk** `LILITH_ZERO_SESSION_STORAGE_DIR=/tmp/lilith/sessions` | `az webapp config appsettings set --settings LILITH_ZERO_SESSION_STORAGE_DIR=...` |
+| Auth Mode | `none` (testing) — switch to `entra` for production | Change `--auth-mode` in startup command |
+| Timing Headers | `LILITH_EXPOSE_TIMING=true` | `az webapp config appsettings set` |
+
+### Changes from original deployment (pre-2026-06-04)
+
+| What | Before | After | Reason |
+|---|---|---|---|
+| Worker process | 32-bit | 64-bit | No reason to constrain a Rust binary to 32-bit address space |
+| Always On | Disabled | Enabled | Cold-start kills from Azure idle timeout would blow Copilot Studio's 1000ms response budget |
+| Session storage | `/home/.lilith/sessions` (Azure Files, SMB) | `/tmp/lilith/sessions` (local ephemeral) | Azure Files added 17–36 ms per state save; local disk drops this to <0.1 ms. Trade-off: sessions lost on container restart. Revisit when moving to Redis. |
+| Startup command | `--auth-mode none` (no `--policy`) | `--auth-mode none --policy /app/policies` | Without `--policy`, the policy store was empty and the server denied every request (correct fail-closed behavior, but functionally broken). See Gotcha F below. |
+
+### Performance impact of session storage change
+
+Single-request timing from `x-lilith-*` headers (warm container, no contention):
+
+| Phase | Before (Azure Files) | After (`/tmp`) |
+|---|---|---|
+| Lock acquire | 2–7 ms | ~0.2 ms |
+| State save | 17–36 ms | ~0.05 ms |
+| Server total | ~43 ms | ~12 ms |
+
+---
+
+## 6. Additional Gotchas
+
+### Gotcha F: `appCommandLine` silently drops Dockerfile CMD arguments
+
+* **Problem**: Azure App Service's startup command (`appCommandLine`) fully **replaces** the Docker `CMD`. If the Dockerfile `CMD` includes flags (e.g. `--policy /app/policies`) and `appCommandLine` is set without them, those flags are silently dropped. The container starts without error but with missing configuration.
+* **Symptom**: Policies not loaded → server denies every request with `"Denied by Cedar policy"` even for tools that should be allowed. Indistinguishable from a working deny decision at first glance.
+* **Solution**: Always reproduce the full flag set in `appCommandLine`. Verify with a request to a known-allowed tool and confirm `blockAction: false`:
+  ```bash
+  curl -s -X POST https://lilith-zero.badcompany.xyz/analyze-tool-execution \
+    -H "Content-Type: application/json" \
+    -d '{"plannerContext":{"userMessage":"test"},"toolDefinition":{"id":"Search-Web","type":"CustomToolDefinition","name":"SearchWeb","description":"Search"},"inputValues":{"query":"test"},"conversationMetadata":{"agent":{"id":"5be3e14e-2e46-f111-bec6-7c1e52344333","tenantId":"t","environmentId":"e","isPublished":true},"conversationId":"smoke-test-001"}}'
+  # Correct response: {"blockAction":false}
+  ```
+
+### Gotcha G: `POLICIES_YAML_PATH` is a dead env var
+
+* **Problem**: The app setting `POLICIES_YAML_PATH=/app/policies` set in the original deployment does nothing. The binary reads `LILITH_POLICIES_YAML_PATH` for single-file YAML policy paths, and the `--policy <dir>` CLI flag for Cedar policy directories. Neither matches `POLICIES_YAML_PATH`.
+* **Solution**: Policy directory must be set via `--policy /app/policies` in the startup command. The dead `POLICIES_YAML_PATH` app setting can be left in place (harmless) or removed for cleanliness.

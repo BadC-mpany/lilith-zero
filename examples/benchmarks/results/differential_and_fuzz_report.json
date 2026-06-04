@@ -4,12 +4,12 @@
     "passed": 25,
     "failed": 0,
     "skipped": 0,
-    "duration_sec": 0.07730281096883118,
+    "duration_sec": 0.07518931600498036,
     "rule_coverage_pct": 100.0,
-    "webhook_peak_rss_kb": 11116,
-    "webhook_peak_vm_kb": 349468,
+    "webhook_peak_rss_kb": 10920,
+    "webhook_peak_vm_kb": 349044,
     "webhook_fd_leak": 0,
-    "cli_peak_rss_kb": 28760
+    "cli_peak_rss_kb": 28604
   },
   "scenarios": [
     {
@@ -26,7 +26,7 @@
         "default_allow_tools"
       ],
       "success": true,
-      "duration": 0.00029702699976041913
+      "duration": 0.0002026060246862471
     },
     {
       "name": "Static Denied Tool",
@@ -42,7 +42,7 @@
         "static_deny:delete_file"
       ],
       "success": true,
-      "duration": 0.00018516695126891136
+      "duration": 0.00011184305185452104
     },
     {
       "name": "Guardrail: Python Code Injection Denied",
@@ -58,7 +58,7 @@
         "guardrail:python_injection"
       ],
       "success": true,
-      "duration": 0.00016709801275283098
+      "duration": 0.00010822498006746173
     },
     {
       "name": "Guardrail: Python Code Injection Allowed",
@@ -74,7 +74,7 @@
         "default_allow_tools"
       ],
       "success": true,
-      "duration": 0.00015037303091958165
+      "duration": 0.00010150996968150139
     },
     {
       "name": "Guardrail: Malicious URL Denied",
@@ -90,7 +90,7 @@
         "guardrail:malicious_url"
       ],
       "success": true,
-      "duration": 0.0001593329943716526
+      "duration": 8.71740048751235e-05
     },
     {
       "name": "Guardrail: SQL Injection Denied",
@@ -106,7 +106,7 @@
         "guardrail:sql_injection"
       ],
       "success": true,
-      "duration": 0.00015720503870397806
+      "duration": 8.48500058054924e-05
     },
     {
       "name": "Guardrail: System Path Write Denied",
@@ -122,7 +122,7 @@
         "guardrail:system_path_write"
       ],
       "success": true,
-      "duration": 0.00017199094872921705
+      "duration": 9.889504872262478e-05
     },
     {
       "name": "Taint Rule: SECRET via file",
@@ -140,7 +140,7 @@
         "add_taint:SECRET:read_sensitive_file"
       ],
       "success": true,
-      "duration": 0.00011612102389335632
+      "duration": 0.00010487402323633432
     },
     {
       "name": "Taint Rule: SECRET via query",
@@ -158,7 +158,7 @@
         "default_allow_tools"
       ],
       "success": true,
-      "duration": 0.00011345295934006572
+      "duration": 0.00011732900748029351
     },
     {
       "name": "Taint Rule: PII via csv",
@@ -176,7 +176,7 @@
         "default_allow_tools"
       ],
       "success": true,
-      "duration": 0.00015533604891970754
+      "duration": 0.00010881002526730299
     },
     {
       "name": "Taint Rule: UNTRUSTED via doc",
@@ -194,7 +194,7 @@
         "add_taint:UNTRUSTED:read_untrusted_doc"
       ],
       "success": true,
-      "duration": 0.00015550601528957486
+      "duration": 0.00010782998288050294
     },
     {
       "name": "Taint Rule: UNTRUSTED via web search",
@@ -212,7 +212,7 @@
         "default_allow_tools"
       ],
       "success": true,
-      "duration": 0.00015693099703639746
+      "duration": 0.00010776100680232048
     },
     {
       "name": "Lethal Trifecta: Secrets Web Exfil Denied",
@@ -228,7 +228,7 @@
         "lethal_trifecta:secrets_exfil"
       ],
       "success": true,
-      "duration": 0.00018011900829151273
+      "duration": 0.00010998302605003119
     },
     {
       "name": "Lethal Trifecta: Secrets Web Exfil Allowed (Trusted Domain)",
@@ -244,7 +244,7 @@
         "lethal_trifecta:secrets_exfil"
       ],
       "success": true,
-      "duration": 0.00014600198483094573
+      "duration": 9.284197585657239e-05
     },
     {
       "name": "Lethal Trifecta: PII Web Exfil Denied",
@@ -260,7 +260,7 @@
         "lethal_trifecta:pii_exfil"
       ],
       "success": true,
-      "duration": 0.00011031801113858819
+      "duration": 8.969602640718222e-05
     },
     {
       "name": "Lethal Trifecta: Terminal Exfil Denied",
@@ -276,7 +276,7 @@
         "lethal_trifecta:terminal_exfil"
       ],
       "success": true,
-      "duration": 0.00011018000077456236
+      "duration": 9.798200335353613e-05
     },
     {
       "name": "Agent-1 Allowed Tool",
@@ -292,7 +292,7 @@
         "allow-read-agent1"
       ],
       "success": true,
-      "duration": 5.7375989854335785e-05
+      "duration": 6.718304939568043e-05
     },
     {
       "name": "Agent-1 Denied Tool",
@@ -306,7 +306,7 @@
         "deny-delete-agent1"
       ],
       "success": true,
-      "duration": 3.837799886241555e-05
+      "duration": 6.625603418797255e-05
     },
     {
       "name": "Agent-2 Allowed Tool",
@@ -322,7 +322,7 @@
         "allow-delete-agent2"
       ],
       "success": true,
-      "duration": 3.701401874423027e-05
+      "duration": 5.671597318723798e-05
     },
     {
       "name": "Agent-2 Denied Tool",
@@ -336,7 +336,7 @@
         "deny-read-agent2"
       ],
       "success": true,
-      "duration": 3.7655001506209373e-05
+      "duration": 5.728000542148948e-05
     },
     {
       "name": "Fuzz: Deeply Nested Object",
@@ -344,7 +344,7 @@
       "cli_decision": "allow",
       "web_decision": "allow",
       "success": true,
-      "duration": 0.02887597499648109
+      "duration": 0.028384099015966058
     },
     {
       "name": "Fuzz: Giant Tool Name Buffer",
@@ -352,7 +352,7 @@
       "cli_decision": "allow",
       "web_decision": "allow",
       "success": true,
-      "duration": 0.016020778042729944
+      "duration": 0.01652429497335106
     },
     {
       "name": "Fuzz: Null Byte Path Injection",
@@ -360,7 +360,7 @@
       "cli_decision": "allow",
       "web_decision": "allow",
       "success": true,
-      "duration": 0.007840359001420438
+      "duration": 0.0068423449993133545
     },
     {
       "name": "Fuzz: Directory Traversal",
@@ -368,7 +368,7 @@
       "cli_decision": "allow",
       "web_decision": "allow",
       "success": true,
-      "duration": 0.006855382991489023
+      "duration": 0.007158740016166121
     },
     {
       "name": "Fuzz: Missing Event Name",
@@ -376,7 +376,7 @@
       "cli_decision": "deny",
       "web_decision": "allow",
       "success": true,
-      "duration": 0.0036216230364516377
+      "duration": 0.003995786013547331
     }
   ],
   "rules": {

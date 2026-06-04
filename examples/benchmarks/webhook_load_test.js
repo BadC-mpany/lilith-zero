@@ -84,8 +84,9 @@ export default function () {
   if (stateSave) stateSaveTrend.add(parseFloat(stateSave));
   if (serverTime) serverTimeTrend.add(parseFloat(serverTime));
 
-  // Small pacing interval
-  sleep(0.01);
+  // Pacing interval — set LILITH_SLEEP_MS=0 for max-throughput benchmarks
+  const sleepMs = __ENV.LILITH_SLEEP_MS !== undefined ? parseFloat(__ENV.LILITH_SLEEP_MS) : 10;
+  if (sleepMs > 0) sleep(sleepMs / 1000);
 }
 
 export function handleSummary(data) {
