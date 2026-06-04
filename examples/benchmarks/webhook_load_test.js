@@ -126,7 +126,7 @@ export function handleSummary(data) {
       target_url: targetUrl,
       virtual_users: vus,
       random_conversations: isRandomConv,
-      storage_type: targetUrl.includes("badcompany.xyz") ? "Azure Files Share" : "Local Disk Storage",
+      storage_type: __ENV.LILITH_STORAGE_LABEL || (targetUrl.includes("badcompany.xyz") ? "Azure Ephemeral Disk (/tmp)" : "Local Disk Storage"),
       total_requests: httpReqs.count,
       throughput_req_sec: httpReqs.rate,
       error_rate_pct: errors.rate * 100.0,

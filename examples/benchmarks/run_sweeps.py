@@ -30,10 +30,11 @@ def main():
     parser.add_argument("--duration", default="10s", help="Duration for each k6 run")
     parser.add_argument("--vus", default="1,5,10,20,50,100", help="Comma-separated VU values to sweep")
     parser.add_argument("--agent-id", default="5be3e14e-2e46-f111-bec6-7c1e52344333,77236ced-1146-f111-bec6-7ced8d71fac9,universal", help="LILITH_AGENT_ID list")
+    parser.add_argument("--random-only", action="store_true", help="Only run randomized session mode, skip static (useful for infrastructure ceiling tests)")
     args = parser.parse_args()
 
     vus = [int(v.strip()) for v in args.vus.split(",") if v.strip()]
-    random_modes = [True, False]
+    random_modes = [True] if args.random_only else [True, False]
 
     is_local = "localhost" in args.url or "127.0.0.1" in args.url
     server_proc = None
