@@ -8,7 +8,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 # Copy the pre-built release binary and multi-tenant policies
-COPY lilith-zero/target/release/lilith-zero /app/lilith-zero
+COPY lilith-zero-bin /app/lilith-zero
 COPY examples/copilot_studio/policies /app/policies
 
 RUN chmod +x /app/lilith-zero && \

@@ -68,6 +68,8 @@ pub struct SecurityCore {
     /// Whether to strictly validate session HMAC signatures.
     pub validate_session_tokens: bool,
     telemetry: Option<Arc<dyn TelemetryHook>>,
+    /// Matched Cedar policy rule IDs from the last evaluation.
+    pub last_matched_policies: Vec<String>,
 }
 
 impl SecurityCore {
@@ -96,6 +98,7 @@ impl SecurityCore {
             seen_request_ids: HashMap::new(),
             validate_session_tokens: true,
             telemetry: None,
+            last_matched_policies: Vec::new(),
         })
     }
 
@@ -149,6 +152,20 @@ impl SecurityCore {
         info!("Successfully loaded Cedar PolicySet");
     }
 
+    fn extract_matched_policies(
+        response: &cedar_policy::Response,
+        cedar_eval: &CedarEvaluator,
+    ) -> Vec<String> {
+        let mut matched = Vec::new();
+        for policy_id in response.diagnostics().reason() {
+            let id = cedar_eval
+                .get_policy_annotation(policy_id, "id")
+                .unwrap_or_else(|| policy_id.to_string());
+            matched.push(id);
+        }
+        matched
+    }
+
     /// Register a telemetry hook for distributed tracing.
     ///
     /// Called by [`crate::mcp::server::McpMiddleware::with_telemetry`] — prefer
@@ -194,8 +211,9 @@ impl SecurityCore {
     /// Errors in policy evaluation produce `Deny` (fail-closed).
     #[must_use]
     pub async fn evaluate(&mut self, event: SecurityEvent) -> SecurityDecision {
-        // Description: Executes the evaluate logic.
-        match event {
+        self.last_matched_policies.clear();
+        let mut matched_pols = Vec::new();
+        let decision = match event {
             SecurityEvent::Handshake {
                 client_info: _,
                 audience_token,
@@ -364,6 +382,8 @@ impl SecurityCore {
                             &classes,
                         );
                         if let Ok(response) = res {
+                            matched_pols
+                                .extend(Self::extract_matched_policies(&response, cedar_eval));
                             if response.decision() == CedarDecision::Deny {
                                 path_denied =
                                     Some(format!("Path '{}' blocked by resource rules", path));
@@ -385,6 +405,8 @@ impl SecurityCore {
                             &classes,
                         ) {
                             Ok(response) => {
+                                matched_pols
+                                    .extend(Self::extract_matched_policies(&response, cedar_eval));
                                 if response.decision() == CedarDecision::Allow {
                                     let mut taints_to_add = vec![];
                                     let mut taints_to_remove = vec![];
@@ -531,6 +553,8 @@ impl SecurityCore {
                         &[],
                     ) {
                         Ok(response) => {
+                            matched_pols
+                                .extend(Self::extract_matched_policies(&response, cedar_eval));
                             if response.decision() == CedarDecision::Allow {
                                 for policy_id in response.diagnostics().reason() {
                                     let effective_id = cedar_eval
@@ -605,7 +629,7 @@ impl SecurityCore {
                 let canonical_paths = extract_and_canonicalize_paths(&mut args_clone);
 
                 let allow_access = if let Some(cedar_eval) = &self.cedar_evaluator {
-                    matches!(cedar_eval.evaluate(
+                    match cedar_eval.evaluate(
                         &self.session_id,
                         "prompts/get",
                         &prompt_name_str,
@@ -613,7 +637,13 @@ impl SecurityCore {
                         &canonical_paths,
                         &self.taints,
                         &[],
-                    ), Ok(res) if res.decision() == CedarDecision::Allow)
+                    ) {
+                        Ok(res) => {
+                            matched_pols.extend(Self::extract_matched_policies(&res, cedar_eval));
+                            res.decision() == CedarDecision::Allow
+                        }
+                        Err(_) => false,
+                    }
                 } else {
                     false
                 };
@@ -636,7 +666,7 @@ impl SecurityCore {
                 let canonical_paths = extract_and_canonicalize_paths(&mut messages_clone);
 
                 let allow_access = if let Some(cedar_eval) = &self.cedar_evaluator {
-                    matches!(cedar_eval.evaluate(
+                    match cedar_eval.evaluate(
                         &self.session_id,
                         "sampling/createMessage",
                         "sampling",
@@ -644,7 +674,13 @@ impl SecurityCore {
                         &canonical_paths,
                         &self.taints,
                         &[],
-                    ), Ok(res) if res.decision() == CedarDecision::Allow)
+                    ) {
+                        Ok(res) => {
+                            matched_pols.extend(Self::extract_matched_policies(&res, cedar_eval));
+                            res.decision() == CedarDecision::Allow
+                        }
+                        Err(_) => false,
+                    }
                 } else {
                     false
                 };
@@ -669,7 +705,13 @@ impl SecurityCore {
                 SecurityDecision::Allow
             }
             SecurityEvent::Passthrough { .. } => SecurityDecision::Allow,
+        };
+        for id in matched_pols {
+            if !self.last_matched_policies.contains(&id) {
+                self.last_matched_policies.push(id);
+            }
         }
+        decision
     }
 
     /// Register dynamically discovered tool classes (e.g. from a tools/list response).

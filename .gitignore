@@ -104,3 +104,6 @@ examples/copilot_studio/scaffolding/*
 examples/copilot_studio/split_connectors/*
 examples/copilot_studio/all_tools.json
 .env.lilith
+examples/benchmarks/results/sessions_sweep/*
+examples/benchmarks/results/*
+examples/benchmarks/results/*.json

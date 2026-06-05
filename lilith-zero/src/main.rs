@@ -498,7 +498,10 @@ async fn run_hook(
                 return Ok(());
             }
 
-            let session_id = derive_session_id(&copilot_input.cwd);
+            let session_id = copilot_input
+                .session_id
+                .clone()
+                .unwrap_or_else(|| derive_session_id(&copilot_input.cwd));
             let tool_args = copilot_input.decoded_tool_args();
             let tool_output = copilot_input
                 .tool_result

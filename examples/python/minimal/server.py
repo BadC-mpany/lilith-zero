@@ -40,7 +40,17 @@ def query_database(sql: str) -> str:
     return f"[DB] Result for: {sql!r}"
 
 
+def public_info() -> str:
+    """Return public mock system information."""
+    return "Lilith-Zero v0.2.6 running on Python SDK"
+
+
 TOOLS: dict = {
+    "public_info": {
+        "fn": public_info,
+        "description": public_info.__doc__,
+        "inputSchema": {"type": "object", "properties": {}},
+    },
     "search_web": {
         "fn": search_web,
         "description": search_web.__doc__,

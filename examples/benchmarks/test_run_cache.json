@@ -1,0 +1,320 @@
+{
+  "293fe3ab40e488e1ea42bd74e1c942e161e934831544feceaa46a807fdbe5672": {
+    "decision": "deny",
+    "policies": []
+  },
+  "3608e9c7902db0d1cc19c9dba1ff15c03a51b9fe8e667653badb3d6612918682": {
+    "decision": "deny",
+    "policies": []
+  },
+  "e049547bfde8bd312552b55b5b484db5d03d183b2068b2f69cfdcf0fe619f20a": {
+    "decision": "deny",
+    "policies": []
+  },
+  "6f687f8a3a14063392c6eb89a36128acfa522cdf2d6d427241891805d547c177": {
+    "decision": "deny",
+    "policies": []
+  },
+  "2826c0844619e3918755a4bcf89f2b4ee6fdc41e3b25b371082610abce35209b": {
+    "decision": "deny",
+    "policies": []
+  },
+  "0b5c19566521e73ea409b9172efff629f308ab5d1a1bc9014bd2dce870e852a1": {
+    "decision": "deny",
+    "policies": []
+  },
+  "e9fae64b53065d6a32f872469abad1c529281bff586904f4e196a7f539b0f9f3": {
+    "decision": "deny",
+    "policies": []
+  },
+  "e4cf5f42ceb5f246245ff91eef0ae218de61d5fe1e0c626982240d4a8a2f96d0": {
+    "decision": "deny",
+    "policies": []
+  },
+  "6eab964b793c262a9be97f91c77125cd0f38caec28b0789d8482c1ec789202d8": {
+    "decision": "allow",
+    "policies": [
+      "policy0",
+      "allow-read-agent1"
+    ]
+  },
+  "54cffb77337bce5e8394921420a5951dab7afe6dd3a2dbf54a31a9f14e22e2ca": {
+    "decision": "allow",
+    "policies": [
+      "policy0",
+      "allow-read-agent1"
+    ]
+  },
+  "ee52cb6808e64920f624cce07272d0b55b8fcda1732b8ab22f764151e2b14321": {
+    "decision": "deny",
+    "policies": [
+      "deny-delete-agent1"
+    ]
+  },
+  "9eed0e6aebc809dc968441a9e6c260197d3c114bee343065e0f27c1c59ccc4f5": {
+    "decision": "deny",
+    "policies": [
+      "deny-delete-agent1"
+    ]
+  },
+  "0aa2c2a1cfd8ef09ac55d08fb17ff486ca76045da79178442bf8dd9e16d7e66b": {
+    "decision": "allow",
+    "policies": [
+      "policy0",
+      "allow-delete-agent2"
+    ]
+  },
+  "9bc856e7c62a34242ba20be2e8e2966365af5b7045dcffc71c6316362e90dc37": {
+    "decision": "allow",
+    "policies": [
+      "policy0",
+      "allow-delete-agent2"
+    ]
+  },
+  "b1dd4b14b46ddbe0de97d7bedf3c2affe1b42ce528dfc7c7d1188d7f7a265feb": {
+    "decision": "deny",
+    "policies": [
+      "deny-read-agent2"
+    ]
+  },
+  "b25bf2861e70c0407f8a2da65b417e93e3653cf3b44a5b975121f0e506415b01": {
+    "decision": "deny",
+    "policies": [
+      "deny-read-agent2"
+    ]
+  },
+  "88ce250ad0248bef8fefe51cd214a2cffc11c9a7b0a2d63c2ae9dec5b6bfb307": {
+    "decision": "allow",
+    "policies": [
+      "policy0",
+      "default_allow_tools"
+    ]
+  },
+  "c53e71c65b99e8f9725173c2911bfca1caafa04f1d816214d248fd2902173870": {
+    "decision": "allow",
+    "policies": [
+      "policy0",
+      "default_allow_tools"
+    ]
+  },
+  "8a0c6be43c37c71ede5e4e57cd5e88547205c09880519fec4046c00099ac3494": {
+    "decision": "deny",
+    "policies": [
+      "policy0",
+      "static_deny:delete_file"
+    ]
+  },
+  "349daf8bf3f460aef89ee9e0856a5c641e441d1d176cc3863f4f9bc710b12ffb": {
+    "decision": "deny",
+    "policies": [
+      "policy0",
+      "static_deny:delete_file"
+    ]
+  },
+  "a8b9f555e4994f190b037b7a453cc4fd8ee3b9d22540853d4471fb0e902f9a9e": {
+    "decision": "deny",
+    "policies": [
+      "policy0",
+      "guardrail:python_injection"
+    ]
+  },
+  "9a333b42fe41bf7592beba48c681310507e9544ade472304570f1c6de8f851ae": {
+    "decision": "deny",
+    "policies": [
+      "policy0",
+      "guardrail:python_injection"
+    ]
+  },
+  "20fcdb333ec9d70eb822b89801ca4eb36a38375b3e2a31320e3a1a59fdb67029": {
+    "decision": "allow",
+    "policies": [
+      "policy0",
+      "default_allow_tools"
+    ]
+  },
+  "34fc0fceb052a8456b8e550232b7140bdde80863506ba079eb2fe2c8854341af": {
+    "decision": "allow",
+    "policies": [
+      "policy0",
+      "default_allow_tools"
+    ]
+  },
+  "4367307f1dfb7fd3d6533c02b164618be6fda234d9cb72477a1e9e1939297827": {
+    "decision": "deny",
+    "policies": [
+      "policy0",
+      "guardrail:malicious_url"
+    ]
+  },
+  "8d276731928ce9bf5ed9eca7429f29be2d17c77dc6cfdeb797ccfac040e2f717": {
+    "decision": "deny",
+    "policies": [
+      "policy0",
+      "guardrail:malicious_url"
+    ]
+  },
+  "17823cf94bc094bfabbbdc4440d0f39f0c31475a07f57ad615791af78d7143ab": {
+    "decision": "deny",
+    "policies": [
+      "policy0",
+      "guardrail:sql_injection"
+    ]
+  },
+  "6b666133573604d2f2ec93d7b6fe0b6532f2ce5833192df82e00071ece1419f5": {
+    "decision": "deny",
+    "policies": [
+      "policy0",
+      "guardrail:sql_injection"
+    ]
+  },
+  "03ad5efd07e058d80cdae794ffbabb3f4c5d1dd71e30c2fbe279ce4aeca2da2d": {
+    "decision": "deny",
+    "policies": [
+      "policy0",
+      "guardrail:system_path_write"
+    ]
+  },
+  "83192127acdb932dc0fa140729ee511af4614a8bc4bf3e0f13908219776e59e3": {
+    "decision": "deny",
+    "policies": [
+      "policy0",
+      "guardrail:system_path_write"
+    ]
+  },
+  "11440a0d32cfde9c72569aac9c003dfe04a69cdb424dcc807b3ed2fae6a1b518": {
+    "decision": "allow",
+    "policies": [
+      "policy0",
+      "default_allow_tools",
+      "add_taint:SECRET:read_sensitive_file"
+    ]
+  },
+  "f71c6d9af754124139ca6ea56c4ff0d68a84bdd786df9102e5c3afd8f83928c9": {
+    "decision": "allow",
+    "policies": [
+      "policy0",
+      "default_allow_tools",
+      "add_taint:SECRET:read_sensitive_file"
+    ]
+  },
+  "39bc05656c72c50986c7629deb4d5b65a3f177c938179d25fc678c77f656c0b0": {
+    "decision": "allow",
+    "policies": [
+      "policy0",
+      "add_taint:SECRET:query_sensitive_db",
+      "default_allow_tools"
+    ]
+  },
+  "285b3306aa138148ad1d8256168f9275701099e46ed213d3a5f7cdc20bdc6218": {
+    "decision": "allow",
+    "policies": [
+      "policy0",
+      "add_taint:SECRET:query_sensitive_db",
+      "default_allow_tools"
+    ]
+  },
+  "5b87fc42bc4b5c957dc3fdb451df1787d5a951069d593d012b68dd6dd7eff38e": {
+    "decision": "allow",
+    "policies": [
+      "policy0",
+      "default_allow_tools",
+      "add_taint:PII:read_pii_csv"
+    ]
+  },
+  "8f0920eba0433ba98da2103a7fb50636c1163848747d944cccdc3bfa8300a6bc": {
+    "decision": "allow",
+    "policies": [
+      "policy0",
+      "add_taint:PII:read_pii_csv",
+      "default_allow_tools"
+    ]
+  },
+  "f09c55fef3f6d15c79edbea9677b9d9193f8121a7eb6e328f1d081e1f1932a6e": {
+    "decision": "allow",
+    "policies": [
+      "policy0",
+      "default_allow_tools",
+      "add_taint:UNTRUSTED:read_untrusted_doc"
+    ]
+  },
+  "41cecdceea777888ed53d4749671846712902eb0f2a05f7ecd8b117d24dde37e": {
+    "decision": "allow",
+    "policies": [
+      "policy0",
+      "default_allow_tools",
+      "add_taint:UNTRUSTED:read_untrusted_doc"
+    ]
+  },
+  "5603cb0fb2cbcc4094f939649508e11f0d96582346d1893d3525f2b7b17b30f3": {
+    "decision": "allow",
+    "policies": [
+      "policy0",
+      "default_allow_tools",
+      "add_taint:UNTRUSTED:web_search"
+    ]
+  },
+  "6dade7274e477610800ebf48e6bb28b41b2705e7e0c267f922ef4a351c0e1b7c": {
+    "decision": "allow",
+    "policies": [
+      "policy0",
+      "add_taint:UNTRUSTED:web_search",
+      "default_allow_tools"
+    ]
+  },
+  "b5e4ca01154d4365a5ead80186846b798d794d9912f231ce40741f2cceebe82e": {
+    "decision": "deny",
+    "policies": [
+      "policy0",
+      "lethal_trifecta:secrets_exfil"
+    ]
+  },
+  "ff07eb822346022b1cf9548fa23f061b0f8c5772870000fe2ee8c2dc6f5871a9": {
+    "decision": "deny",
+    "policies": [
+      "policy0",
+      "lethal_trifecta:secrets_exfil"
+    ]
+  },
+  "1594ce6b8ea0bfa586d20193bd84654d8b0c949252a0c71f00368b86d8cc9b35": {
+    "decision": "deny",
+    "policies": [
+      "policy0",
+      "lethal_trifecta:secrets_exfil"
+    ]
+  },
+  "212a2ec6ffadcaad007c2f8acc1f5b81510c81e9d069545301a9a2a127f3fda6": {
+    "decision": "deny",
+    "policies": [
+      "policy0",
+      "lethal_trifecta:secrets_exfil"
+    ]
+  },
+  "00ce12b96743a89d91e3c94e1905547d4d046c33ce11e0d718f94bcfa1173653": {
+    "decision": "deny",
+    "policies": [
+      "policy0",
+      "lethal_trifecta:pii_exfil"
+    ]
+  },
+  "cf104fc72589962bb0036818dd8ecc2a48f12a4b47ad3d0f10340279f2a2295b": {
+    "decision": "deny",
+    "policies": [
+      "policy0",
+      "lethal_trifecta:pii_exfil"
+    ]
+  },
+  "41abcc05ba1e4ce628a842deb7f10ffeb649486dde1875fea53a641dd2bd8d16": {
+    "decision": "deny",
+    "policies": [
+      "policy0",
+      "lethal_trifecta:terminal_exfil"
+    ]
+  },
+  "92b62dbd1a08e95a3ab4e8a91d750a2dcffd1e00d2d5423a3da36f138b6e48d3": {
+    "decision": "deny",
+    "policies": [
+      "policy0",
+      "lethal_trifecta:terminal_exfil"
+    ]
+  }
+}

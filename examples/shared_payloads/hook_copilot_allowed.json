@@ -1,0 +1,7 @@
+{
+  "timestamp": 1704614600000,
+  "cwd": "/workspace/my-project",
+  "sessionId": "SESSION_ID_PLACEHOLDER",
+  "toolName": "read_file",
+  "toolArgs": "{\"path\":\"src/lib.rs\"}"
+}

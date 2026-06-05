@@ -1,0 +1,13 @@
+# Lilith Zero Benchmark Policy
+id: benchmark-policy
+customer_id: test-customer
+name: "Benchmark Policy"
+version: 1
+
+static_rules:
+  read_file: ALLOW
+  Execute-Python: DENY
+
+taint_rules: []
+resource_rules: []
+protect_lethal_trifecta: false
