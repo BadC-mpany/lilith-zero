@@ -277,7 +277,7 @@ impl HookHandler {
                 Ok((2, Some(reason))) // Claude Code "Block" exit code, reason for diagnostics
             }
             SecurityDecision::AllowWithTransforms {
-                taints_to_add: _, ..
+                ..
             } => {
                 // If the evaluator adds taints during REQUEST (e.g. static rule), apply them now.
                 // Normally evaluate() updates the internal core state too, but let's be explicit.
