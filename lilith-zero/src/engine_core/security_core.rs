@@ -659,8 +659,6 @@ impl SecurityCore {
                 }
             }
             SecurityEvent::ToolResponse {
-                tool_name: _,
-                result: _,
                 ..
             } => {
                 // Currently, we don't have explicit "post-execution" rules in PolicyDefinition.
